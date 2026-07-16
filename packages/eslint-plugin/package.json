@@ -1,6 +1,6 @@
 {
   "name": "@jsx-contracts/eslint-plugin",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "license": "MIT",
   "description": "ESLint plugin that enforces JSX composition contracts — declared slot and subtree rules for how components may be nested.",
@@ -33,8 +33,7 @@
   ],
   "sideEffects": false,
   "scripts": {
-    "prepack": "node -e \"require('node:fs').copyFileSync('../../README.md','README.md')\"",
-    "postpack": "node -e \"require('node:fs').rmSync('README.md',{force:true})\""
+    "prepack": "node -e \"require('node:fs').copyFileSync('../../README.md','README.md')\""
   },
   "peerDependencies": {
     "eslint": ">=9"
