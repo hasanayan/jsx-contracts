@@ -1,6 +1,6 @@
 {
   "name": "@jsx-contracts/eslint-plugin",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "type": "module",
   "license": "MIT",
   "description": "ESLint plugin that enforces JSX composition contracts — declared slot and subtree rules for how components may be nested.",
