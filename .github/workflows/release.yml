@@ -1,6 +1,8 @@
 # Publishes @jsx-contracts/eslint-plugin to npm when a v* tag is pushed (tags are
-# created by `pnpm release`, see scripts/release.ts). Needs the NPM_TOKEN
-# repository secret; id-token gives npm provenance.
+# created by `pnpm release`, see scripts/release.ts). Auth is npm trusted
+# publishing over OIDC — no token secret; the trusted publisher is configured on
+# npmjs for this repo + workflow. id-token: write mints the OIDC token and backs
+# provenance (provenance needs the repo to be public to resolve visibility).
 name: Release
 
 on:
@@ -41,5 +43,4 @@ jobs:
 
       - run: pnpm -r publish --access public --no-git-checks
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
