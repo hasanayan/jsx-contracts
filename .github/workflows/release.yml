@@ -41,6 +41,6 @@ jobs:
       - name: Check tag matches package version
         run: node scripts/check-release-tag.ts "$GITHUB_REF_NAME"
 
-      - run: pnpm -r stage publish --access public
+      - run: pnpm -r stage publish --access public --no-git-checks
         env:
           NPM_CONFIG_PROVENANCE: "true"
