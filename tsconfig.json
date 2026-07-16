@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true
+  },
+  "include": [
+    "eslint.config.ts",
+    "knip.config.ts",
+    "vitest.config.ts",
+    "scripts/**/*.ts"
+  ],
+  "references": [
+    { "path": "packages/eslint-plugin" },
+    { "path": "packages/playground" }
+  ]
+}

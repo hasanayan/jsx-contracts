@@ -1,0 +1,48 @@
+{
+  "name": "@jsx-contracts/eslint-plugin",
+  "version": "0.0.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "ESLint plugin that enforces JSX composition contracts — declared slot and subtree rules for how components may be nested.",
+  "keywords": [
+    "eslint",
+    "eslint-plugin",
+    "eslintplugin",
+    "jsx",
+    "react",
+    "composition",
+    "contracts",
+    "slots",
+    "design-system"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hasanayan/jsx-contracts.git",
+    "directory": "packages/eslint-plugin"
+  },
+  "homepage": "https://github.com/hasanayan/jsx-contracts#readme",
+  "bugs": "https://github.com/hasanayan/jsx-contracts/issues",
+  "exports": {
+    ".": "./build/index.js"
+  },
+  "files": [
+    "build/**/*.js",
+    "build/**/*.js.map",
+    "build/**/*.d.ts",
+    "build/**/*.d.ts.map"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "prepack": "node -e \"require('node:fs').copyFileSync('../../README.md','README.md')\"",
+    "postpack": "node -e \"require('node:fs').rmSync('README.md',{force:true})\""
+  },
+  "peerDependencies": {
+    "eslint": ">=9"
+  },
+  "dependencies": {
+    "@typescript-eslint/utils": "8.62.1"
+  },
+  "devDependencies": {
+    "vitest": "4.1.9"
+  }
+}

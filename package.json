@@ -1,0 +1,39 @@
+{
+  "name": "jsx-contracts",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.8.0",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf packages/*/build tsconfig.tsbuildinfo",
+    "lint": "pnpm run build && pnpm run lint:eslint && pnpm run lint:prettier && pnpm run lint:knip",
+    "lint:eslint": "eslint --max-warnings=0 .",
+    "lint:prettier": "prettier --check .",
+    "lint:knip": "knip",
+    "lint:fix": "eslint --fix . && prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "release": "node scripts/release.ts",
+    "publish": "pnpm -r publish --access public"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.4",
+    "@jsx-contracts/eslint-plugin": "workspace:*",
+    "@stylistic/eslint-plugin": "5.10.0",
+    "@tsconfig/node24": "24.0.4",
+    "@tsconfig/strictest": "2.0.8",
+    "@types/node": "24.13.2",
+    "@typescript-eslint/rule-tester": "8.62.1",
+    "@vitest/eslint-plugin": "1.6.20",
+    "eslint": "9.39.4",
+    "eslint-plugin-check-file": "3.3.1",
+    "eslint-plugin-import": "2.32.0",
+    "jiti": "^2",
+    "knip": "6.24.0",
+    "prettier": "3.9.4",
+    "tsx": "4.22.4",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.62.1",
+    "vitest": "4.1.9"
+  }
+}
