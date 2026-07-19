@@ -1,18 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import type { ContractBuilder } from "./define-contracts.js";
+import type {
+  AncestorRow,
+  ContractRow,
+  PropsRow,
+  SlotsRow,
+  SubtreeRow,
+} from "@jsx-contracts/eslint-plugin";
+
+import type { CompiledContracts, ContractBuilder } from "./define-contracts.js";
 import {
   contract,
   contractsFor,
   defineContracts,
   mergeContracts,
 } from "./define-contracts.js";
-import type {
-  AncestorConfig,
-  ContainerConfig,
-  NoDescendantsConfig,
-  PropsConfig,
-} from "./payload.js";
+
+// The compiled payload is one flat table; nearly every assertion below is about
+// a single facet's rows, so narrow the table to that facet's arm once here.
+const rowsFor = <F extends ContractRow["facet"]>(
+  contracts: CompiledContracts,
+  facet: F,
+): Extract<ContractRow, { facet: F }>[] =>
+  contracts.rows.filter(
+    (row): row is Extract<ContractRow, { facet: F }> => row.facet === facet,
+  );
 
 describe("defineContracts compilation", () => {
   const compiled = defineContracts("*/ds/widget", {
@@ -51,11 +63,12 @@ describe("defineContracts compilation", () => {
     },
   });
 
-  it("emits one ContainerConfig per slots facet, with shorthand expanded", () => {
-    const expected: ContainerConfig[] = [
+  it("emits one slots row per slots facet, with shorthand expanded", () => {
+    const expected: SlotsRow[] = [
       {
+        facet: "slots",
         importPath: "*/ds/widget",
-        container: "Widget.Tray",
+        component: "Widget.Tray",
         slots: [
           { name: "Widget.Tray.Action", minCount: 1, maxCount: 3 },
           { name: "Widget.Tray.Label" },
@@ -67,24 +80,27 @@ describe("defineContracts compilation", () => {
       },
     ];
 
-    expect(compiled.slots).toEqual(expected);
+    expect(rowsFor(compiled, "slots")).toEqual(expected);
   });
 
   it("fans each subtree ban out to one row, re-stamped with gate + name", () => {
-    const expected: NoDescendantsConfig[] = [
+    const expected: SubtreeRow[] = [
       {
+        facet: "subtree",
         importPath: "@acme/widget",
         component: "Widget",
         when: { prop: "compact" },
         forbid: ["Widget.Footer", { name: "button", importPath: "*/ds/*" }],
       },
       {
+        facet: "subtree",
         importPath: "@acme/widget",
         component: "Widget",
         when: { prop: "size", values: ["large", "Size.huge"] },
         forbidProps: ["autoFocus"],
       },
       {
+        facet: "subtree",
         importPath: "*/ds/widget",
         component: "Menu",
         when: { prop: "open" },
@@ -92,12 +108,13 @@ describe("defineContracts compilation", () => {
       },
     ];
 
-    expect(compiled.subtree).toEqual(expected);
+    expect(rowsFor(compiled, "subtree")).toEqual(expected);
   });
 
-  it("emits one PropsConfig per component with a prop or component contract", () => {
-    const expected: PropsConfig[] = [
+  it("emits one props row per component with a prop or component contract", () => {
+    const expected: PropsRow[] = [
       {
+        facet: "props",
         importPath: "*/ds/widget",
         component: "Widget.Tray",
         required: ["id", ["href", "onClick"]],
@@ -105,17 +122,18 @@ describe("defineContracts compilation", () => {
         deprecated: { color: "tone", legacy: true },
       },
       {
+        facet: "props",
         importPath: "*/ds/widget",
         component: "Menu",
         deprecatedComponent: "Nav",
       },
     ];
 
-    expect(compiled.props).toEqual(expected);
+    expect(rowsFor(compiled, "props")).toEqual(expected);
   });
 
   it("omits count keys the author did not set", () => {
-    const [tray] = compiled.slots;
+    const [tray] = rowsFor(compiled, "slots");
 
     // The compiler only ever emits the object slot form; the string arm of the
     // wire shape is for hand-written payloads.
@@ -131,7 +149,7 @@ describe("defineContracts compilation", () => {
   });
 
   it("emits presence-activation `when` with no values array", () => {
-    const presence = compiled.subtree.find(
+    const presence = rowsFor(compiled, "subtree").find(
       (row) => row.component === "Menu",
     )?.when;
 
@@ -139,11 +157,8 @@ describe("defineContracts compilation", () => {
     expect(presence).not.toHaveProperty("values");
   });
 
-  it("produces plain JSON payloads", () => {
-    expect(JSON.parse(JSON.stringify(compiled.slots))).toEqual(compiled.slots);
-    expect(JSON.parse(JSON.stringify(compiled.subtree))).toEqual(
-      compiled.subtree,
-    );
+  it("produces a plain JSON payload", () => {
+    expect(JSON.parse(JSON.stringify(compiled.rows))).toEqual(compiled.rows);
   });
 
   describe("rules() severity forms", () => {
@@ -165,42 +180,30 @@ describe("defineContracts compilation", () => {
       ]);
     });
 
-    it("defaults every feature to error over its facet's payload", () => {
+    it("defaults every feature to error over the rule table", () => {
       expect(compiled.rules()).toEqual({
-        "@jsx-contracts/slots.children": ["error", compiled.slots],
-        "@jsx-contracts/slots.count": ["error", compiled.slots],
-        "@jsx-contracts/slots.placement": ["error", compiled.slots],
-        "@jsx-contracts/slots.requires": ["error", compiled.slots],
-        "@jsx-contracts/slots.exclusive": ["error", compiled.slots],
-        "@jsx-contracts/slots.strict": ["error", compiled.slots],
-        "@jsx-contracts/subtree.forbid": ["error", compiled.subtree],
-        "@jsx-contracts/subtree.forbidProps": ["error", compiled.subtree],
-        "@jsx-contracts/subtree.count": ["error", compiled.subtree],
-        "@jsx-contracts/props.required": ["error", compiled.props],
-        "@jsx-contracts/props.exclusive": ["error", compiled.props],
-        "@jsx-contracts/props.deprecated": ["error", compiled.props],
-        "@jsx-contracts/ancestor.forbid": ["error", compiled.ancestor],
+        "@jsx-contracts/slots.children": ["error", compiled.rows],
+        "@jsx-contracts/slots.count": ["error", compiled.rows],
+        "@jsx-contracts/slots.placement": ["error", compiled.rows],
+        "@jsx-contracts/slots.requires": ["error", compiled.rows],
+        "@jsx-contracts/slots.exclusive": ["error", compiled.rows],
+        "@jsx-contracts/slots.strict": ["error", compiled.rows],
+        "@jsx-contracts/subtree.forbid": ["error", compiled.rows],
+        "@jsx-contracts/subtree.forbidProps": ["error", compiled.rows],
+        "@jsx-contracts/subtree.count": ["error", compiled.rows],
+        "@jsx-contracts/props.required": ["error", compiled.rows],
+        "@jsx-contracts/props.exclusive": ["error", compiled.rows],
+        "@jsx-contracts/props.deprecated": ["error", compiled.rows],
+        "@jsx-contracts/ancestor.forbid": ["error", compiled.rows],
       });
     });
 
-    it("hands every variant of a facet the same payload instance for caching", () => {
+    it("hands every rule the same table instance for caching", () => {
       const rules = compiled.rules();
 
-      expect(rules["@jsx-contracts/slots.count"][1]).toBe(
-        rules["@jsx-contracts/slots.requires"][1],
-      );
-
-      expect(rules["@jsx-contracts/subtree.forbid"][1]).toBe(
-        rules["@jsx-contracts/subtree.forbidProps"][1],
-      );
-
-      expect(rules["@jsx-contracts/subtree.forbid"][1]).toBe(
-        rules["@jsx-contracts/subtree.count"][1],
-      );
-
-      expect(rules["@jsx-contracts/props.required"][1]).toBe(
-        rules["@jsx-contracts/props.deprecated"][1],
-      );
+      for (const [, payload] of Object.values(rules)) {
+        expect(payload).toBe(compiled.rows);
+      }
     });
 
     it("applies a single severity to both facets", () => {
@@ -244,11 +247,12 @@ describe("descendants compilation", () => {
   });
 
   it("compiles descendants to one when-less require row, shorthand expanded", () => {
-    const requireRow = compiled.subtree.find(
+    const requireRow = rowsFor(compiled, "subtree").find(
       (row) => row.require !== undefined,
     );
 
     expect(requireRow).toEqual({
+      facet: "subtree",
       importPath: "@acme/tabs",
       component: "Tabs.Root",
       require: [
@@ -260,7 +264,7 @@ describe("descendants compilation", () => {
   });
 
   it("leaves the require row without a `when`", () => {
-    const requireRow = compiled.subtree.find(
+    const requireRow = rowsFor(compiled, "subtree").find(
       (row) => row.require !== undefined,
     );
 
@@ -268,7 +272,7 @@ describe("descendants compilation", () => {
   });
 
   it("omits count keys the author did not set", () => {
-    const requireRow = compiled.subtree.find(
+    const requireRow = rowsFor(compiled, "subtree").find(
       (row) => row.require !== undefined,
     );
 
@@ -282,11 +286,14 @@ describe("descendants compilation", () => {
   });
 
   it("emits the conditional ban row beside the require row", () => {
-    expect(compiled.subtree).toHaveLength(2);
+    expect(rowsFor(compiled, "subtree")).toHaveLength(2);
 
-    const banRow = compiled.subtree.find((row) => row.forbid !== undefined);
+    const banRow = rowsFor(compiled, "subtree").find(
+      (row) => row.forbid !== undefined,
+    );
 
     expect(banRow).toEqual({
+      facet: "subtree",
       importPath: "@acme/tabs",
       component: "Tabs.Root",
       when: { prop: "compact" },
@@ -299,7 +306,7 @@ describe("descendants compilation", () => {
       "Tabs.Root": { descendants: {} },
     });
 
-    expect(empty.subtree).toEqual([]);
+    expect(rowsFor(empty, "subtree")).toEqual([]);
   });
 
   it("matches the fluent .hasDescendants builder", () => {
@@ -314,7 +321,7 @@ describe("descendants compilation", () => {
       },
     });
 
-    expect(fluent.subtree).toEqual(object.subtree);
+    expect(rowsFor(fluent, "subtree")).toEqual(rowsFor(object, "subtree"));
   });
 
   it("rejects declaring the same descendant twice", () => {
@@ -338,14 +345,16 @@ describe("ancestor compilation", () => {
     },
   });
 
-  it("emits one AncestorConfig per component, restamped with the gate", () => {
-    const expected: AncestorConfig[] = [
+  it("emits one ancestor row per component, restamped with the gate", () => {
+    const expected: AncestorRow[] = [
       {
+        facet: "ancestor",
         importPath: "@acme/ds",
         component: "Button",
         notInside: ["Button"],
       },
       {
+        facet: "ancestor",
         importPath: "@acme/ds",
         component: "Card.Action",
         notInside: [
@@ -355,13 +364,11 @@ describe("ancestor compilation", () => {
       },
     ];
 
-    expect(compiled.ancestor).toEqual(expected);
+    expect(rowsFor(compiled, "ancestor")).toEqual(expected);
   });
 
   it("produces a plain JSON payload", () => {
-    expect(JSON.parse(JSON.stringify(compiled.ancestor))).toEqual(
-      compiled.ancestor,
-    );
+    expect(JSON.parse(JSON.stringify(compiled.rows))).toEqual(compiled.rows);
   });
 
   it("emits nothing when no component forbids an ancestor", () => {
@@ -369,7 +376,7 @@ describe("ancestor compilation", () => {
       Widget: { slots: { ".Action": true } },
     });
 
-    expect(none.ancestor).toEqual([]);
+    expect(rowsFor(none, "ancestor")).toEqual([]);
   });
 
   it("matches the fluent .notInside builder", () => {
@@ -384,7 +391,7 @@ describe("ancestor compilation", () => {
       },
     });
 
-    expect(fluent.ancestor).toEqual(object.ancestor);
+    expect(rowsFor(fluent, "ancestor")).toEqual(rowsFor(object, "ancestor"));
   });
 
   it("appends across repeated .notInside calls", () => {
@@ -392,7 +399,10 @@ describe("ancestor compilation", () => {
       .notInside("Button")
       .notInside("Link");
 
-    expect(built.ancestor[0]?.notInside).toEqual(["Button", "Link"]);
+    expect(rowsFor(built, "ancestor")[0]?.notInside).toEqual([
+      "Button",
+      "Link",
+    ]);
   });
 
   it("rejects forbidding the same ancestor twice", () => {
@@ -411,8 +421,8 @@ describe("ancestor compilation", () => {
     const base = contract("Button", "@acme/ds").requiresProp("id");
     const withAncestor = base.notInside("Button");
 
-    expect(base.ancestor).toEqual([]);
-    expect(withAncestor.ancestor[0]?.notInside).toEqual(["Button"]);
+    expect(rowsFor(base, "ancestor")).toEqual([]);
+    expect(rowsFor(withAncestor, "ancestor")[0]?.notInside).toEqual(["Button"]);
   });
 });
 
@@ -524,25 +534,21 @@ describe("mergeContracts", () => {
     Menu: { subtree: { dense: { forbid: ["Menu.Footer"] } } },
   });
 
-  it("concatenates the slots and subtree of every contract", () => {
+  it("concatenates the rows of every contract", () => {
     const merged = mergeContracts(widget, menu);
 
-    expect(merged.slots).toEqual([...widget.slots, ...menu.slots]);
-    expect(merged.subtree).toEqual([...widget.subtree, ...menu.subtree]);
+    expect(merged.rows).toEqual([...widget.rows, ...menu.rows]);
   });
 
-  it("exposes a rules() over the combined payloads", () => {
+  it("exposes a rules() over the combined table", () => {
     const merged = mergeContracts(widget, menu);
     const rules = merged.rules();
 
-    expect(rules["@jsx-contracts/slots.count"]).toEqual([
-      "error",
-      merged.slots,
-    ]);
+    expect(rules["@jsx-contracts/slots.count"]).toEqual(["error", merged.rows]);
 
     expect(rules["@jsx-contracts/subtree.forbid"]).toEqual([
       "error",
-      merged.subtree,
+      merged.rows,
     ]);
 
     expect(
@@ -550,23 +556,25 @@ describe("mergeContracts", () => {
     ).toBe("warn");
   });
 
-  it("merges nothing into empty payloads", () => {
+  it("merges nothing into an empty table", () => {
     const merged = mergeContracts();
 
-    expect(merged.slots).toEqual([]);
-    expect(merged.subtree).toEqual([]);
-    expect(merged.ancestor).toEqual([]);
+    expect(merged.rows).toEqual([]);
   });
 
-  it("concatenates the ancestor payload of every contract", () => {
+  it("concatenates the ancestor rows of every contract", () => {
     const button = contract("Button", "g").notInside("Button");
     const link = contract("Link", "g").notInside("Link");
 
     const merged = mergeContracts(button, link);
 
-    expect(merged.ancestor).toEqual([...button.ancestor, ...link.ancestor]);
+    expect(rowsFor(merged, "ancestor")).toEqual([
+      ...rowsFor(button, "ancestor"),
+      ...rowsFor(link, "ancestor"),
+    ]);
+
     expect(merged.rules()["@jsx-contracts/ancestor.forbid"][1]).toBe(
-      merged.ancestor,
+      merged.rows,
     );
   });
 
@@ -578,10 +586,9 @@ describe("mergeContracts", () => {
     const flat = mergeContracts(widget, menu, layout);
 
     // Merging a merged contract equals merging the parts directly.
-    expect(nested.slots).toEqual(flat.slots);
-    expect(nested.subtree).toEqual(flat.subtree);
+    expect(nested.rows).toEqual(flat.rows);
     // rules() at the outermost level reflects every contract.
-    expect(nested.rules()["@jsx-contracts/slots.count"][1]).toEqual(flat.slots);
+    expect(nested.rules()["@jsx-contracts/slots.count"][1]).toEqual(flat.rows);
   });
 });
 
@@ -609,8 +616,7 @@ describe("contractsFor", () => {
       },
     });
 
-    expect(bound.slots).toEqual(direct.slots);
-    expect(bound.subtree).toEqual(direct.subtree);
+    expect(bound.rows).toEqual(direct.rows);
   });
 
   it("drops entries explicitly set to undefined", () => {
@@ -623,8 +629,8 @@ describe("contractsFor", () => {
       Widget: undefined,
     } as never);
 
-    expect(compiled.slots).toHaveLength(1);
-    expect(compiled.subtree).toHaveLength(0);
+    expect(rowsFor(compiled, "slots")).toHaveLength(1);
+    expect(rowsFor(compiled, "subtree")).toHaveLength(0);
   });
 });
 
@@ -655,8 +661,7 @@ describe("contract builder", () => {
       },
     });
 
-    expect(fluent.slots).toEqual(object.slots);
-    expect(fluent.subtree).toEqual(object.subtree);
+    expect(fluent.rows).toEqual(object.rows);
   });
 
   it("compiles the same props payload as the object DSL", () => {
@@ -679,7 +684,7 @@ describe("contract builder", () => {
       },
     });
 
-    expect(fluent.props).toEqual(object.props);
+    expect(rowsFor(fluent, "props")).toEqual(rowsFor(object, "props"));
   });
 
   it("rejects deprecating the same prop twice", () => {
@@ -700,8 +705,8 @@ describe("contract builder", () => {
     const base = contract("Widget.Tray", "g").hasSlots({ ".A": true });
     const strictVariant = base.strict();
 
-    expect(base.slots[0]?.strict).toBeUndefined();
-    expect(strictVariant.slots[0]?.strict).toBe(true);
+    expect(rowsFor(base, "slots")[0]?.strict).toBeUndefined();
+    expect(rowsFor(strictVariant, "slots")[0]?.strict).toBe(true);
   });
 
   it("is a CompiledContracts, so mergeContracts combines builders", () => {
@@ -710,8 +715,8 @@ describe("contract builder", () => {
 
     const merged = mergeContracts(tray, widget);
 
-    expect(merged.slots).toHaveLength(1);
-    expect(merged.subtree).toHaveLength(1);
+    expect(rowsFor(merged, "slots")).toHaveLength(1);
+    expect(rowsFor(merged, "subtree")).toHaveLength(1);
   });
 
   it("rejects a reference to an undeclared slot at call time", () => {
@@ -747,7 +752,7 @@ describe("contract builder", () => {
     const define = contractsFor("*/ds/widget");
     const built = define.contract("Widget.Tray").hasSlots({ ".A": true });
 
-    expect(built.slots[0]?.importPath).toBe("*/ds/widget");
+    expect(rowsFor(built, "slots")[0]?.importPath).toBe("*/ds/widget");
   });
 });
 

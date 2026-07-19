@@ -5,11 +5,10 @@
 // nesting visible in the file is definitely wrong (sound per-file). Requiring an
 // ancestor is deliberately not enforced — it is unsound per-file.
 
-import type { AncestorConfig } from "@jsx-contracts/helpers";
-
 import type { ImportMatcher } from "./import-matcher.js";
 import { createImportMatcher, matchesGate } from "./import-matcher.js";
 import type { Ref, Violation } from "./model.js";
+import type { AncestorRow } from "./payload.js";
 import { normalizeForbid } from "./validate.js";
 
 /** Message ids reported by `@jsx-contracts/ancestor`. */
@@ -25,27 +24,34 @@ export interface AncestorFact {
   importSource: string | null;
 }
 
+// `importPath` is kept beside the compiled matcher because it — not the
+// function — is what two rows must share for their entries to be the same
+// statement rather than two.
 interface PreparedForbiddenAncestor {
   name: string;
+  importPath?: string;
   matcher?: ImportMatcher;
 }
 
-export interface PreparedAncestor {
-  component: string;
-  // The constrained component's own import gate. Consumed by the adapter to
-  // decide whether a rendered <component> is in scope; the evaluator does not
-  // read it.
-  matcher: ImportMatcher;
+/** One ancestor row, prepared. Merged with the other active rows before use. */
+export interface PreparedAncestorRow {
   notInside: PreparedForbiddenAncestor[];
 }
 
-export function prepareAncestor(config: AncestorConfig): PreparedAncestor {
-  const notInside: PreparedForbiddenAncestor[] = config.notInside.map(
+/** The effective ancestor contract for one element: the merge of its active rows. */
+export interface MergedAncestor {
+  component: string;
+  notInside: PreparedForbiddenAncestor[];
+}
+
+export function prepareAncestorRow(row: AncestorRow): PreparedAncestorRow {
+  const notInside: PreparedForbiddenAncestor[] = row.notInside.map(
     (rawEntry) => {
       const entry = normalizeForbid(rawEntry);
       const prepared: PreparedForbiddenAncestor = { name: entry.name };
 
       if (entry.importPath !== undefined) {
+        prepared.importPath = entry.importPath;
         prepared.matcher = createImportMatcher(entry.importPath);
       }
 
@@ -53,18 +59,39 @@ export function prepareAncestor(config: AncestorConfig): PreparedAncestor {
     },
   );
 
-  return {
-    component: config.component,
-    matcher: createImportMatcher(config.importPath),
-    notInside,
-  };
+  return { notInside };
+}
+
+/**
+ * Combine the rows active on one element into one effective contract: the union
+ * of their forbidden ancestors. Entries naming the same ancestor under the same
+ * gate are one statement, not two — the evaluator reports once per entry, so a
+ * repeat would double the diagnostic for a single illegal nesting.
+ */
+export function mergeAncestor(
+  component: string,
+  rows: PreparedAncestorRow[],
+): MergedAncestor {
+  const notInside = new Map<string, PreparedForbiddenAncestor>();
+
+  for (const row of rows) {
+    for (const entry of row.notInside) {
+      const key = `${entry.name}\n${entry.importPath ?? ""}`;
+
+      if (!notInside.has(key)) {
+        notInside.set(key, entry);
+      }
+    }
+  }
+
+  return { component, notInside: [...notInside.values()] };
 }
 
 // One violation per forbidden-ancestor entry that matches an enclosing element.
 // `ancestors` is innermost-first, so the `find` reports the nearest match and
 // stops; separate entries matching different ancestors each report once.
 export function evaluateAncestor(
-  prepared: PreparedAncestor,
+  prepared: MergedAncestor,
   ancestors: AncestorFact[],
   elementRef: Ref,
 ): AncestorViolation[] {

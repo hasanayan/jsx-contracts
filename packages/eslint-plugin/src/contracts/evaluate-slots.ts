@@ -1,7 +1,9 @@
 // Pure evaluation of a container's children facet. Check order is significant:
 // it fixes which violation is reported first.
-
-import type { ContainerConfig } from "@jsx-contracts/helpers";
+//
+// A row is prepared once, at intern time; the active rows for one element are
+// merged into one effective config and evaluated once, so a violation is
+// reported once and its message describes what the combined state allows.
 
 import { formatList } from "./format.js";
 import type { ImportMatcher } from "./import-matcher.js";
@@ -14,6 +16,7 @@ import type {
   Violation,
 } from "./model.js";
 import { canCoexist } from "./model.js";
+import type { SlotsRow } from "./payload.js";
 import { normalizeSlot } from "./validate.js";
 
 /** Message ids reported by `@jsx-contracts/slots`. */
@@ -35,24 +38,33 @@ export interface PreparedSlot {
   matcher: ImportMatcher;
 }
 
-export interface PreparedContainer {
+/** One slots row, prepared. Merged with the other active rows before use. */
+export interface PreparedSlotsRow {
+  slots: Map<string, PreparedSlot>;
+  requires: Record<string, string> | undefined;
+  exclusive: [string[], string[]][] | undefined;
+  strict: boolean | undefined;
+}
+
+/** The effective children contract for one element: the merge of its active rows. */
+export interface MergedSlots {
   container: string;
   slots: Map<string, PreparedSlot>;
-  slotNames: Set<string>;
   slotList: string;
-  containerMatcher: ImportMatcher;
-  requires?: Record<string, string>;
-  exclusive?: [string[], string[]][];
-  strict?: boolean;
+  // A slot may require more than one other slot once rows accumulate, so the
+  // merged form is a list where a single row's payload holds one name.
+  requires: Map<string, string[]>;
+  exclusive: [string[], string[]][];
+  strict: boolean;
 }
 
 // Count-bound defaults: neither bound means at most one; only minCount lifts
 // the upper bound; only maxCount keeps a lower bound of zero.
-export function prepareContainer(config: ContainerConfig): PreparedContainer {
-  const containerMatcher = createImportMatcher(config.importPath);
+export function prepareSlotsRow(row: SlotsRow): PreparedSlotsRow {
+  const containerMatcher = createImportMatcher(row.importPath);
   const slots = new Map<string, PreparedSlot>();
 
-  for (const rawSlot of config.slots) {
+  for (const rawSlot of row.slots) {
     const slot = normalizeSlot(rawSlot);
     const maxCount =
       slot.maxCount ?? (slot.minCount !== undefined ? Infinity : 1);
@@ -68,27 +80,107 @@ export function prepareContainer(config: ContainerConfig): PreparedContainer {
     });
   }
 
-  const prepared: PreparedContainer = {
-    container: config.container,
+  return {
     slots,
-    slotNames: new Set(slots.keys()),
-    slotList: formatList([...slots.keys()].map((name) => `<${name}>`)),
-    containerMatcher,
+    requires: row.requires,
+    exclusive: row.exclusive,
+    strict: row.strict,
   };
+}
 
-  if (config.requires !== undefined) {
-    prepared.requires = config.requires;
+// Two rows both declaring a slot narrow it: the slot must satisfy both gates.
+function bothGates(a: ImportMatcher, b: ImportMatcher): ImportMatcher {
+  return (specifier): boolean => a(specifier) && b(specifier);
+}
+
+/**
+ * Combine the rows active on one element into one effective contract.
+ *
+ * Allowed slots are the **intersection** across rows — a conditional row that
+ * lists fewer slots narrows what the container accepts. Bounds are the tightest
+ * among the rows that still allow the slot; everything else unions. The result
+ * is always satisfiable: a slot required by one row but intersected away by
+ * another is simply neither allowed nor required, and a cross-slot reference to
+ * a slot that did not survive is dropped rather than left unmeetable.
+ */
+export function mergeSlots(
+  container: string,
+  rows: PreparedSlotsRow[],
+): MergedSlots {
+  const [first, ...rest] = rows;
+  const slots = new Map<string, PreparedSlot>();
+
+  for (const [name, slot] of first?.slots ?? []) {
+    let merged = slot;
+    let dropped = false;
+
+    for (const row of rest) {
+      const other = row.slots.get(name);
+
+      if (other === undefined) {
+        dropped = true;
+        break;
+      }
+
+      merged = {
+        name,
+        minCount: Math.max(merged.minCount, other.minCount),
+        maxCount: Math.min(merged.maxCount, other.maxCount),
+        matcher: bothGates(merged.matcher, other.matcher),
+      };
+    }
+
+    if (!dropped) {
+      // Tightening from both ends can cross the bounds over; clamping the
+      // lower one keeps the merge total rather than unsatisfiable.
+      slots.set(name, {
+        ...merged,
+        minCount: Math.min(merged.minCount, merged.maxCount),
+      });
+    }
   }
 
-  if (config.exclusive !== undefined) {
-    prepared.exclusive = config.exclusive;
+  const requires = new Map<string, string[]>();
+
+  for (const row of rows) {
+    for (const [from, to] of Object.entries(row.requires ?? {})) {
+      // A reference whose target the intersection removed would be
+      // unsatisfiable; drop it instead.
+      if (!slots.has(from) || !slots.has(to)) {
+        continue;
+      }
+
+      const targets = requires.get(from) ?? [];
+
+      if (!targets.includes(to)) {
+        targets.push(to);
+        requires.set(from, targets);
+      }
+    }
   }
 
-  if (config.strict !== undefined) {
-    prepared.strict = config.strict;
+  const exclusive: [string[], string[]][] = [];
+  const seenExclusive = new Set<string>();
+
+  for (const row of rows) {
+    for (const pair of row.exclusive ?? []) {
+      const key = JSON.stringify(pair);
+
+      if (!seenExclusive.has(key)) {
+        seenExclusive.add(key);
+        exclusive.push(pair);
+      }
+    }
   }
 
-  return prepared;
+  return {
+    container,
+    slots,
+    slotList: formatList([...slots.keys()].map((name) => `<${name}>`)),
+    requires,
+    exclusive,
+    strict: rows.some((row) => row.strict === true),
+  };
 }
 
 export type ParentFact = { name: string; importSource: string | null } | null;
@@ -199,7 +291,7 @@ export function isPlacedInContainer(
 
 // `containerRef` is the node a tooFew violation reports on.
 export function evaluateSlots(
-  prepared: PreparedContainer,
+  prepared: MergedSlots,
   root: RenderedNode,
   containerRef: Ref,
 ): SlotsViolation[] {
@@ -269,7 +361,7 @@ export function evaluateSlots(
 
   // Both slots are statically present, so exclusivity holds regardless of any
   // unresolvable content elsewhere.
-  for (const [groupA, groupB] of prepared.exclusive ?? []) {
+  for (const [groupA, groupB] of prepared.exclusive) {
     const groupBNames = new Set(groupB);
     const others = formatList(groupB.map((name) => `<${name}>`));
 
@@ -307,24 +399,22 @@ export function evaluateSlots(
     return violations;
   }
 
+  // One violation per unmet requirement: accumulation can leave a slot
+  // requiring more than one other.
   for (const slot of found) {
-    const required = prepared.requires?.[slot.name];
+    for (const required of prepared.requires.get(slot.name) ?? []) {
+      const satisfied = found.some(
+        (other) =>
+          other.name === required && canCoexist(other.element, slot.element),
+      );
 
-    if (required === undefined) {
-      continue;
-    }
-
-    const satisfied = found.some(
-      (other) =>
-        other.name === required && canCoexist(other.element, slot.element),
-    );
-
-    if (!satisfied) {
-      violations.push({
-        ref: slot.element.ref,
-        messageId: "requiresSlot",
-        data: { container, name: slot.name, required },
-      });
+      if (!satisfied) {
+        violations.push({
+          ref: slot.element.ref,
+          messageId: "requiresSlot",
+          data: { container, name: slot.name, required },
+        });
+      }
     }
   }
 

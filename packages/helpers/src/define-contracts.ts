@@ -1,17 +1,19 @@
 // The `defineContracts` authoring DSL: a component-centric surface that
-// compiles to the three facets' frozen JSON payloads. See CONTEXT.md for the
-// terms.
+// compiles to the rule table — a flat list of facet-discriminated rows. The
+// table's types live in @jsx-contracts/eslint-plugin, the package that consumes
+// them; they are imported type-only, so this package keeps zero runtime
+// dependencies. See CONTEXT.md for the terms.
 
 import type {
-  AncestorConfig,
-  ContainerConfig,
+  ContractRows,
   ForbiddenElement,
-  NoDescendantsConfig,
-  PropsConfig,
+  PropsRow,
   RequiredDescendant,
   SlotConfig,
+  SlotsRow,
+  SubtreeRow,
   WhenCondition,
-} from "./payload.js";
+} from "@jsx-contracts/eslint-plugin";
 
 /** Severity of an emitted rule. */
 export type Severity = "error" | "warn";
@@ -26,16 +28,14 @@ type SeverityChoice =
       ancestor?: Severity;
     };
 
-/** The compiled payloads for all four facets, plus a `rules()` helper. */
+/** The compiled rule table, plus a `rules()` helper. */
 export interface CompiledContracts {
-  /** The `@jsx-contracts/slots` payload. */
-  slots: ContainerConfig[];
-  /** The `@jsx-contracts/subtree` payload. */
-  subtree: NoDescendantsConfig[];
-  /** The `@jsx-contracts/props` payload. */
-  props: PropsConfig[];
-  /** The `@jsx-contracts/ancestor` payload. */
-  ancestor: AncestorConfig[];
+  /**
+   * The rule table: a flat list of facet-discriminated rows, one per facet per
+   * component, and the identical payload every one of the thirteen rules takes.
+   * Reachable so it can be inspected or post-processed.
+   */
+  rows: ContractRows;
   /**
    * One flat-config entry per facet feature (`slots.children`, `slots.count`,
    * `subtree.forbid`, `subtree.count`, `props.deprecated`, `ancestor.forbid`,
@@ -52,21 +52,24 @@ export interface CompiledContracts {
    *   "@jsx-contracts/slots.exclusive": "off",
    * },
    */
-  rules(severity?: SeverityChoice): {
-    "@jsx-contracts/slots.children": [Severity, ContainerConfig[]];
-    "@jsx-contracts/slots.count": [Severity, ContainerConfig[]];
-    "@jsx-contracts/slots.placement": [Severity, ContainerConfig[]];
-    "@jsx-contracts/slots.requires": [Severity, ContainerConfig[]];
-    "@jsx-contracts/slots.exclusive": [Severity, ContainerConfig[]];
-    "@jsx-contracts/slots.strict": [Severity, ContainerConfig[]];
-    "@jsx-contracts/subtree.forbid": [Severity, NoDescendantsConfig[]];
-    "@jsx-contracts/subtree.forbidProps": [Severity, NoDescendantsConfig[]];
-    "@jsx-contracts/subtree.count": [Severity, NoDescendantsConfig[]];
-    "@jsx-contracts/props.required": [Severity, PropsConfig[]];
-    "@jsx-contracts/props.exclusive": [Severity, PropsConfig[]];
-    "@jsx-contracts/props.deprecated": [Severity, PropsConfig[]];
-    "@jsx-contracts/ancestor.forbid": [Severity, AncestorConfig[]];
-  };
+  rules(
+    severity?: SeverityChoice,
+  ): Record<
+    | "@jsx-contracts/slots.children"
+    | "@jsx-contracts/slots.count"
+    | "@jsx-contracts/slots.placement"
+    | "@jsx-contracts/slots.requires"
+    | "@jsx-contracts/slots.exclusive"
+    | "@jsx-contracts/slots.strict"
+    | "@jsx-contracts/subtree.forbid"
+    | "@jsx-contracts/subtree.forbidProps"
+    | "@jsx-contracts/subtree.count"
+    | "@jsx-contracts/props.required"
+    | "@jsx-contracts/props.exclusive"
+    | "@jsx-contracts/props.deprecated"
+    | "@jsx-contracts/ancestor.forbid",
+    [Severity, ContractRows]
+  >;
 }
 
 // -- authoring language (the input surface) -----------------------------------
@@ -411,10 +414,10 @@ function compile(
   contracts: Record<string, RuntimeEntry>,
   sharedGate: Gate | undefined,
 ): CompiledContracts {
-  const slots: ContainerConfig[] = [];
-  const subtree: NoDescendantsConfig[] = [];
-  const props: PropsConfig[] = [];
-  const ancestor: AncestorConfig[] = [];
+  // One flat table. A component contributes one row per facet it touches, in
+  // facet order, so its rows stay together and read in the order they were
+  // authored.
+  const rows: ContractRows = [];
 
   for (const [component, entry] of Object.entries(contracts)) {
     const gate = entry.from ?? sharedGate;
@@ -464,9 +467,10 @@ function compile(
         slotConfigs.push(slotConfig);
       }
 
-      const container: ContainerConfig = {
+      const container: SlotsRow = {
+        facet: "slots",
         importPath: gate,
-        container: component,
+        component,
         slots: slotConfigs,
       };
 
@@ -499,7 +503,7 @@ function compile(
         container.strict = entry.strict;
       }
 
-      slots.push(container);
+      rows.push(container);
     } else if (entry.requires !== undefined || entry.exclusive !== undefined) {
       // No slots, so every reference dangles — validate to surface the error.
       for (const reference of [
@@ -549,7 +553,8 @@ function compile(
         const when: WhenCondition =
           ban.is === undefined ? { prop } : { prop, values: [...ban.is] };
 
-        const row: NoDescendantsConfig = {
+        const row: SubtreeRow = {
+          facet: "subtree",
           importPath: gate,
           component,
           when,
@@ -563,7 +568,7 @@ function compile(
           row.forbidProps = [...ban.forbidProps];
         }
 
-        subtree.push(row);
+        rows.push(row);
       }
     }
 
@@ -593,11 +598,11 @@ function compile(
       }
 
       if (require.length > 0) {
-        subtree.push({ importPath: gate, component, require });
+        rows.push({ facet: "subtree", importPath: gate, component, require });
       }
     }
 
-    const propsRow: PropsConfig = { importPath: gate, component };
+    const propsRow: PropsRow = { facet: "props", importPath: gate, component };
     let hasProps = false;
 
     if (entry.props?.required !== undefined) {
@@ -645,7 +650,7 @@ function compile(
     }
 
     if (hasProps) {
-      props.push(propsRow);
+      rows.push(propsRow);
     }
 
     // One AncestorConfig row per component with forbidden ancestors, restamped
@@ -655,12 +660,17 @@ function compile(
       const notInside = entry.notInside.map(forbiddenElement);
 
       if (notInside.length > 0) {
-        ancestor.push({ importPath: gate, component, notInside });
+        rows.push({
+          facet: "ancestor",
+          importPath: gate,
+          component,
+          notInside,
+        });
       }
     }
   }
 
-  return makeContracts(slots, subtree, props, ancestor);
+  return makeContracts(rows);
 }
 
 type FacetSeverities = Record<
@@ -686,38 +696,31 @@ function facetSeverities(severity: SeverityChoice): FacetSeverities {
   };
 }
 
-function makeContracts(
-  slots: ContainerConfig[],
-  subtree: NoDescendantsConfig[],
-  props: PropsConfig[],
-  ancestor: AncestorConfig[],
-): CompiledContracts {
+function makeContracts(rows: ContractRows): CompiledContracts {
   return {
-    slots,
-    subtree,
-    props,
-    ancestor,
+    rows,
     rules(
       severity: SeverityChoice = "error",
     ): ReturnType<CompiledContracts["rules"]> {
       const facet = facetSeverities(severity);
 
-      // The variants of a facet all take the full payload; the rules intern
-      // it by content, so the per-file analysis runs once across them.
+      // Every rule takes the identical table; they intern it by content, so
+      // the per-file analysis runs once across all thirteen. Severity is still
+      // per facet — that is what the grouping below is for.
       return {
-        "@jsx-contracts/slots.children": [facet.slots, slots],
-        "@jsx-contracts/slots.count": [facet.slots, slots],
-        "@jsx-contracts/slots.placement": [facet.slots, slots],
-        "@jsx-contracts/slots.requires": [facet.slots, slots],
-        "@jsx-contracts/slots.exclusive": [facet.slots, slots],
-        "@jsx-contracts/slots.strict": [facet.slots, slots],
-        "@jsx-contracts/subtree.forbid": [facet.subtree, subtree],
-        "@jsx-contracts/subtree.forbidProps": [facet.subtree, subtree],
-        "@jsx-contracts/subtree.count": [facet.subtree, subtree],
-        "@jsx-contracts/props.required": [facet.props, props],
-        "@jsx-contracts/props.exclusive": [facet.props, props],
-        "@jsx-contracts/props.deprecated": [facet.props, props],
-        "@jsx-contracts/ancestor.forbid": [facet.ancestor, ancestor],
+        "@jsx-contracts/slots.children": [facet.slots, rows],
+        "@jsx-contracts/slots.count": [facet.slots, rows],
+        "@jsx-contracts/slots.placement": [facet.slots, rows],
+        "@jsx-contracts/slots.requires": [facet.slots, rows],
+        "@jsx-contracts/slots.exclusive": [facet.slots, rows],
+        "@jsx-contracts/slots.strict": [facet.slots, rows],
+        "@jsx-contracts/subtree.forbid": [facet.subtree, rows],
+        "@jsx-contracts/subtree.forbidProps": [facet.subtree, rows],
+        "@jsx-contracts/subtree.count": [facet.subtree, rows],
+        "@jsx-contracts/props.required": [facet.props, rows],
+        "@jsx-contracts/props.exclusive": [facet.props, rows],
+        "@jsx-contracts/props.deprecated": [facet.props, rows],
+        "@jsx-contracts/ancestor.forbid": [facet.ancestor, rows],
       };
     },
   };
@@ -737,12 +740,7 @@ function makeContracts(
 export function mergeContracts(
   ...contracts: CompiledContracts[]
 ): CompiledContracts {
-  return makeContracts(
-    contracts.flatMap((entry) => entry.slots),
-    contracts.flatMap((entry) => entry.subtree),
-    contracts.flatMap((entry) => entry.props),
-    contracts.flatMap((entry) => entry.ancestor),
-  );
+  return makeContracts(contracts.flatMap((entry) => entry.rows));
 }
 
 // -- fluent builder (`contract`) ----------------------------------------------
@@ -1103,17 +1101,8 @@ function makeBuilder(
         notInside: [...existing, ...elements],
       });
     },
-    get slots(): ContainerConfig[] {
-      return finalize().slots;
-    },
-    get subtree(): NoDescendantsConfig[] {
-      return finalize().subtree;
-    },
-    get props(): PropsConfig[] {
-      return finalize().props;
-    },
-    get ancestor(): AncestorConfig[] {
-      return finalize().ancestor;
+    get rows(): ContractRows {
+      return finalize().rows;
     },
     rules(severity): ReturnType<CompiledContracts["rules"]> {
       return finalize().rules(severity);

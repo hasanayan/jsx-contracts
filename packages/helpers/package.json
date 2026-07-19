@@ -3,7 +3,7 @@
   "version": "0.0.9",
   "type": "module",
   "license": "MIT",
-  "description": "Type-safe authoring helpers for JSX composition contracts — defineContracts, contractsFor, and the fluent contract() builder — plus the payload schema the @jsx-contracts/eslint-plugin rules consume.",
+  "description": "Type-safe authoring helpers for JSX composition contracts — defineContracts, contractsFor, and the fluent contract() builder that compile to the rule table the @jsx-contracts/eslint-plugin rules consume.",
   "keywords": [
     "jsx",
     "react",
@@ -34,6 +34,16 @@
     "prepack": "node -e \"require('node:fs').copyFileSync('../../README.md','README.md')\""
   },
   "devDependencies": {
+    "@jsx-contracts/eslint-plugin": "workspace:*",
+    "eslint": "9.39.4",
     "vitest": "4.1.9"
+  },
+  "peerDependencies": {
+    "@jsx-contracts/eslint-plugin": ">=0.0.9"
+  },
+  "peerDependenciesMeta": {
+    "@jsx-contracts/eslint-plugin": {
+      "optional": true
+    }
   }
 }

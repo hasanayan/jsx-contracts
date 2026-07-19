@@ -1,21 +1,21 @@
-// Pure evaluation of a subtree row: activate on the root's props (or always,
-// when the row is when-less), then walk. Forbid matches report the first per
-// path and stop descent there; descendant-count bounds tally every matching
-// occurrence, branch-aware, across the whole subtree.
-
-import type { NoDescendantsConfig } from "@jsx-contracts/helpers";
+// Pure evaluation of a component's subtree facet: walk everything below the
+// element and check it against the effective contract. Forbid matches report
+// the first per path and stop descent there; descendant-count bounds tally
+// every matching occurrence, branch-aware, across the whole subtree.
+//
+// Activation — the row's import gate and its when-condition — is decided by the
+// engine before this runs, so an inactive row is simply absent from the merge.
 
 import {
   allPairwiseCoexist,
   minimumGuaranteedCount,
   subsetsOfSize,
 } from "./evaluate-slots.js";
-import { formatList } from "./format.js";
 import type { ImportMatcher } from "./import-matcher.js";
 import { createImportMatcher, matchesGate } from "./import-matcher.js";
 import type { Branch, PropFact, Ref, Violation } from "./model.js";
-import type { NormalizedWhen } from "./validate.js";
-import { normalizeForbid, normalizeWhen } from "./validate.js";
+import type { SubtreeRow } from "./payload.js";
+import { normalizeForbid } from "./validate.js";
 
 /** Message ids reported by `@jsx-contracts/subtree`. */
 export type SubtreeMessageId =
@@ -61,8 +61,12 @@ interface SubtreeUnknown {
 
 export type SubtreeNode = SubtreeElement | SubtreeRef | SubtreeUnknown;
 
+// `importPath` is kept beside the compiled matcher because it — not the
+// function — is what two rows must share for their entries to be the same
+// statement rather than two.
 interface PreparedForbid {
   name: string;
+  importPath?: string;
   matcher?: ImportMatcher;
 }
 
@@ -70,16 +74,20 @@ interface PreparedRequire {
   name: string;
   minCount: number;
   maxCount: number;
+  importPath?: string;
   matcher?: ImportMatcher;
 }
 
-export interface PreparedSubtree {
+/** One subtree row, prepared. Merged with the other active rows before use. */
+export interface PreparedSubtreeRow {
+  forbid: PreparedForbid[];
+  forbidProps: string[];
+  require: PreparedRequire[];
+}
+
+/** The effective subtree contract for one element: the merge of its active rows. */
+export interface MergedSubtree {
   component: string;
-  // The component's own import gate. Consumed by the adapter to decide whether
-  // a rendered <component> is in scope; the evaluator does not read it.
-  matcher: ImportMatcher;
-  // Absent when the row is when-less: always active for the matched component.
-  when: NormalizedWhen | undefined;
   forbid: PreparedForbid[];
   forbidProps: Set<string>;
   require: PreparedRequire[];
@@ -92,12 +100,17 @@ interface Occurrence {
   branches: Branch[];
 }
 
-export function prepareSubtree(config: NoDescendantsConfig): PreparedSubtree {
-  const forbid: PreparedForbid[] = (config.forbid ?? []).map((rawEntry) => {
+function gateKey(entry: { name: string; importPath?: string }): string {
+  return `${entry.name}\n${entry.importPath ?? ""}`;
+}
+
+export function prepareSubtreeRow(row: SubtreeRow): PreparedSubtreeRow {
+  const forbid: PreparedForbid[] = (row.forbid ?? []).map((rawEntry) => {
     const entry = normalizeForbid(rawEntry);
     const prepared: PreparedForbid = { name: entry.name };
 
     if (entry.importPath !== undefined) {
+      prepared.importPath = entry.importPath;
       prepared.matcher = createImportMatcher(entry.importPath);
     }
 
@@ -107,7 +120,7 @@ export function prepareSubtree(config: NoDescendantsConfig): PreparedSubtree {
   // Count-bound defaults mirror the slots facet exactly: neither bound means at
   // most one; only min lifts the upper bound; only max keeps a lower bound of
   // zero.
-  const require: PreparedRequire[] = (config.require ?? []).map((entry) => {
+  const require: PreparedRequire[] = (row.require ?? []).map((entry) => {
     const prepared: PreparedRequire = {
       name: entry.name,
       minCount: entry.min ?? 0,
@@ -115,96 +128,82 @@ export function prepareSubtree(config: NoDescendantsConfig): PreparedSubtree {
     };
 
     if (entry.importPath !== undefined) {
+      prepared.importPath = entry.importPath;
       prepared.matcher = createImportMatcher(entry.importPath);
     }
 
     return prepared;
   });
 
-  return {
-    component: config.component,
-    matcher: createImportMatcher(config.importPath),
-    when: normalizeWhen(config.when),
-    forbid,
-    forbidProps: new Set(config.forbidProps ?? []),
-    require,
-  };
+  return { forbid, forbidProps: row.forbidProps ?? [], require };
 }
 
-// A when-less row carries no condition text; a conditional one carries its own
-// leading space, so the message templates read cleanly either way.
-function conditionText(when: NormalizedWhen | undefined): string {
-  if (when === undefined) {
-    return "";
+/**
+ * Combine the rows active on one element into one effective contract.
+ *
+ * Every key unions: a subtree row states prohibitions and requirements, and two
+ * rows stating them both apply. Entries naming the same element under the same
+ * gate are one statement, not two — a repeated `forbid` would otherwise report
+ * twice, and a repeated `require` would tally its occurrences into two buckets.
+ * Repeated bounds tighten, clamped so they cannot cross into unsatisfiable.
+ */
+export function mergeSubtree(
+  component: string,
+  rows: PreparedSubtreeRow[],
+): MergedSubtree {
+  const forbid = new Map<string, PreparedForbid>();
+  const forbidProps = new Set<string>();
+  const require = new Map<string, PreparedRequire>();
+
+  for (const row of rows) {
+    for (const entry of row.forbid) {
+      const key = gateKey(entry);
+
+      if (!forbid.has(key)) {
+        forbid.set(key, entry);
+      }
+    }
+
+    for (const prop of row.forbidProps) {
+      forbidProps.add(prop);
+    }
+
+    for (const entry of row.require) {
+      const key = gateKey(entry);
+      const existing = require.get(key);
+
+      if (existing === undefined) {
+        require.set(key, entry);
+
+        continue;
+      }
+
+      const maxCount = Math.min(existing.maxCount, entry.maxCount);
+
+      require.set(key, {
+        ...existing,
+        minCount: Math.min(
+          Math.max(existing.minCount, entry.minCount),
+          maxCount,
+        ),
+        maxCount,
+      });
+    }
   }
 
-  if (when.values === undefined) {
-    return ` with a \`${when.prop}\` prop`;
-  }
-
-  const quoted = when.values.map((value) => JSON.stringify(value));
-
-  if (quoted.length === 1) {
-    return ` with \`${when.prop}\` set to ${quoted[0]}`;
-  }
-
-  return ` with \`${when.prop}\` set to one of ${formatList(quoted)}`;
+  return {
+    component,
+    forbid: [...forbid.values()],
+    forbidProps,
+    require: [...require.values()],
+  };
 }
 
 function countWord(count: number): string {
   return count === 1 ? "one" : String(count);
 }
 
-// A resolved literal matches by equality; a member expression or identifier
-// matches a string candidate by its dotted source text (e.g. "Size.large").
-function propMatchesValues(
-  prop: PropFact,
-  values: (string | number | boolean)[],
-): boolean {
-  if (prop.value !== undefined && values.includes(prop.value)) {
-    return true;
-  }
-
-  return (
-    prop.source !== undefined &&
-    values.some(
-      (candidate) => typeof candidate === "string" && candidate === prop.source,
-    )
-  );
-}
-
-function isActive(
-  props: PropFact[],
-  when: NormalizedWhen | undefined,
-): boolean {
-  if (when === undefined) {
-    return true;
-  }
-
-  const prop = props.find((fact) => fact.name === when.prop);
-
-  if (prop === undefined) {
-    return false;
-  }
-
-  return when.values === undefined
-    ? prop.present
-    : propMatchesValues(prop, when.values);
-}
-
-// Whether the row applies to a component with these props. Lets the adapter
-// skip building the subtree of an inactive component.
-export function isActivated(
-  prepared: PreparedSubtree,
-  props: PropFact[],
-): boolean {
-  return isActive(props, prepared.when);
-}
-
-function matchesForbid(
-  node: SubtreeElement,
-  prepared: PreparedSubtree,
-): boolean {
+function matchesForbid(node: SubtreeElement, prepared: MergedSubtree): boolean {
   if (node.name === "") {
     return false;
   }
@@ -219,7 +218,7 @@ function matchesForbid(
 
 function matchesForbidProps(
   node: SubtreeElement,
-  prepared: PreparedSubtree,
+  prepared: MergedSubtree,
 ): string | undefined {
   for (const prop of node.props) {
     if (prepared.forbidProps.has(prop.name) && prop.present) {
@@ -240,16 +239,10 @@ function matchesRequire(node: SubtreeElement, entry: PreparedRequire): boolean {
 }
 
 export function evaluateSubtree(
-  prepared: PreparedSubtree,
+  prepared: MergedSubtree,
   root: SubtreeElement,
 ): SubtreeViolation[] {
   const violations: SubtreeViolation[] = [];
-
-  if (!isActive(root.props, prepared.when)) {
-    return violations;
-  }
-
-  const condition = conditionText(prepared.when);
 
   // Gates the forbid side only. A ref's init joins the set the first time the
   // walk reaches and resolves it, so a ref blocked behind a forbidden element
@@ -336,7 +329,7 @@ export function evaluateSubtree(
         violations.push({
           ref: node.ref,
           messageId: "forbiddenDescendant",
-          data: { name: node.name, component: prepared.component, condition },
+          data: { name: node.name, component: prepared.component },
         });
       }
 
@@ -350,7 +343,7 @@ export function evaluateSubtree(
         violations.push({
           ref: node.ref,
           messageId: "forbiddenPropDescendant",
-          data: { prop, component: prepared.component, condition },
+          data: { prop, component: prepared.component },
         });
       }
 
@@ -404,7 +397,6 @@ export function evaluateSubtree(
             messageId: "tooManyDescendants",
             data: {
               component: prepared.component,
-              condition,
               name: entry.name,
               max: countWord(entry.maxCount),
             },
@@ -424,7 +416,6 @@ export function evaluateSubtree(
         messageId: "tooFewDescendants",
         data: {
           component: prepared.component,
-          condition,
           name: entry.name,
           min: countWord(entry.minCount),
         },

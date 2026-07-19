@@ -1,10 +1,9 @@
 import { RuleTester } from "@typescript-eslint/rule-tester";
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, it } from "vitest";
 
-import { validateAncestorOptions } from "../contracts/validate.js";
+import type { ContractRows } from "../contracts/payload.js";
 
-import type { AncestorOptions } from "./ancestor.js";
 import { ancestor } from "./ancestor.js";
 
 RuleTester.afterAll = afterAll;
@@ -20,16 +19,18 @@ const ruleTester = new RuleTester({
   },
 });
 
-const buttonOptions: AncestorOptions = [
+const buttonOptions: ContractRows = [
   {
+    facet: "ancestor",
     importPath: "*/acme-ds/components/button",
     component: "Button",
     notInside: ["Button"],
   },
 ];
 
-const gatedOptions: AncestorOptions = [
+const gatedOptions: ContractRows = [
   {
+    facet: "ancestor",
     importPath: "*/acme-ds/components/card",
     component: "Card.Action",
     notInside: [
@@ -39,40 +40,14 @@ const gatedOptions: AncestorOptions = [
 ];
 
 // A dotted member ancestor, name-only.
-const memberOptions: AncestorOptions = [
+const memberOptions: ContractRows = [
   {
+    facet: "ancestor",
     importPath: "*/acme-ds/components/card",
     component: "Card.Action",
     notInside: ["Modal.Footer"],
   },
 ];
-
-describe("validateAncestorOptions", () => {
-  it("throws on a duplicate component", () => {
-    expect(() => {
-      validateAncestorOptions([
-        { importPath: "*/button", component: "Button", notInside: ["Button"] },
-        { importPath: "*/button", component: "Button", notInside: ["Link"] },
-      ]);
-    }).toThrow('ancestor: duplicate component "Button"');
-  });
-
-  it("throws on an empty notInside", () => {
-    expect(() => {
-      validateAncestorOptions([
-        { importPath: "*/button", component: "Button", notInside: [] },
-      ]);
-    }).toThrow("<Button> notInside must not be empty");
-  });
-
-  it("throws on a nameless notInside entry", () => {
-    expect(() => {
-      validateAncestorOptions([
-        { importPath: "*/button", component: "Button", notInside: [""] },
-      ]);
-    }).toThrow("<Button> notInside entry must name an element");
-  });
-});
 
 ruleTester.run("ancestor", ancestor, {
   valid: [

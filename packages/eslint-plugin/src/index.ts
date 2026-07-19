@@ -1,37 +1,34 @@
 import type { ESLint } from "eslint";
 
-import type {
-  AncestorConfig,
-  ContainerConfig,
-  ForbiddenElement,
-  NoDescendantsConfig,
-  PropsConfig,
-  SlotConfig,
-  WhenCondition,
-} from "@jsx-contracts/helpers";
-
 import { ancestorGranular } from "./rules/ancestor.js";
 import { propsGranular } from "./rules/props.js";
 import { slotsGranular } from "./rules/slots.js";
 import { subtreeGranular } from "./rules/subtree.js";
 
 // The authoring API (defineContracts, contractsFor, contract, mergeContracts)
-// lives in @jsx-contracts/helpers; this plugin only enforces. The payload
-// types are re-exported type-only so consumers can still annotate raw payloads
-// written by hand — @jsx-contracts/helpers stays the single source of truth.
+// lives in @jsx-contracts/helpers; this plugin only enforces. But the plugin
+// owns its own input contract: these are the payload types every rule accepts,
+// published so a generated or hand-written table can be type-checked against
+// the real thing. @jsx-contracts/helpers imports them type-only and compiles
+// to them.
 export type {
-  AncestorConfig,
-  ContainerConfig,
+  AncestorRow,
+  ConditionValue,
+  ContractRow,
+  ContractRows,
+  Facet,
   ForbiddenElement,
-  NoDescendantsConfig,
-  PropsConfig,
+  PropsRow,
+  RequiredDescendant,
   SlotConfig,
+  SlotsRow,
+  SubtreeRow,
   WhenCondition,
-};
-export type { SlotsOptions, SlotsMessageId } from "./rules/slots.js";
-export type { SubtreeOptions, SubtreeMessageId } from "./rules/subtree.js";
-export type { PropsOptions, PropsMessageId } from "./rules/props.js";
-export type { AncestorOptions, AncestorMessageId } from "./rules/ancestor.js";
+} from "./contracts/payload.js";
+export type { SlotsMessageId } from "./rules/slots.js";
+export type { SubtreeMessageId } from "./rules/subtree.js";
+export type { PropsMessageId } from "./rules/props.js";
+export type { AncestorMessageId } from "./rules/ancestor.js";
 
 /**
  * The plugin's thirteen rules — one per facet feature: `slots.children`,

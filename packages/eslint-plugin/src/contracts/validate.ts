@@ -1,114 +1,27 @@
-// The runtime validators for the rule payloads, authoritative for hand-written
-// payloads. The payload types themselves live in @jsx-contracts/helpers (the
-// authoring package that also compiles to them); they are imported type-only,
-// so the plugin gains no runtime dependency on it. See CONTEXT.md for the terms.
+// The runtime validators for the rule table, authoritative for hand-written
+// payloads. Config-load rejections throw rather than reporting, so they name
+// the offending row and the problem: a consumer hand-writing a table fixes it
+// without reading this source.
+//
+// There is deliberately no duplicate guard here. Rows accumulate — many rows
+// may name one component in one facet — so "duplicate component" is the normal
+// case rather than an error. Guarding against two independent contracts for one
+// component is @jsx-contracts/helpers' job, via `mergeContracts`. Hand-written
+// tables are unguarded, and that is accepted.
 
 import type {
-  AncestorConfig,
-  ContainerConfig,
+  AncestorRow,
+  ContractRow,
+  ContractRows,
   ForbiddenElement,
-  NoDescendantsConfig,
-  PropsConfig,
+  PropsRow,
   SlotConfig,
-  WhenCondition,
-} from "@jsx-contracts/helpers";
-
-// -- slots (children facet) payload --------------------------------------------
-
-/** Hand-writable payload for `@jsx-contracts/slots`. */
-export type SlotsOptions = ContainerConfig[];
+  SlotsRow,
+  SubtreeRow,
+} from "./payload.js";
 
 export function normalizeSlot(slot: string | SlotConfig): SlotConfig {
   return typeof slot === "string" ? { name: slot } : slot;
-}
-
-export function validateSlotsOptions(options: SlotsOptions): void {
-  const containerTags = new Set<string>();
-
-  for (const config of options) {
-    if (containerTags.has(config.container)) {
-      throw new Error(`slots: duplicate container "${config.container}".`);
-    }
-
-    containerTags.add(config.container);
-
-    const slots = new Set<string>();
-
-    for (const rawSlot of config.slots) {
-      const slot = normalizeSlot(rawSlot);
-
-      if (slots.has(slot.name)) {
-        throw new Error(
-          `slots: <${config.container}> lists duplicate slot "${slot.name}".`,
-        );
-      }
-
-      slots.add(slot.name);
-
-      if (
-        slot.minCount !== undefined &&
-        (!Number.isInteger(slot.minCount) || slot.minCount < 0)
-      ) {
-        throw new Error(
-          `slots: <${config.container}> slot "${slot.name}" minCount must be a non-negative integer.`,
-        );
-      }
-
-      if (
-        slot.maxCount !== undefined &&
-        (!Number.isInteger(slot.maxCount) || slot.maxCount < 1)
-      ) {
-        throw new Error(
-          `slots: <${config.container}> slot "${slot.name}" maxCount must be a positive integer.`,
-        );
-      }
-
-      if (
-        slot.minCount !== undefined &&
-        slot.maxCount !== undefined &&
-        slot.minCount > slot.maxCount
-      ) {
-        throw new Error(
-          `slots: <${config.container}> slot "${slot.name}" minCount exceeds maxCount.`,
-        );
-      }
-    }
-
-    const references = [
-      ...Object.entries(config.requires ?? {}).flat(),
-      ...(config.exclusive ?? []).flat(2),
-    ];
-
-    for (const reference of references) {
-      if (!slots.has(reference)) {
-        throw new Error(
-          `slots: "${reference}" is not one of <${config.container}>'s slots.`,
-        );
-      }
-    }
-  }
-}
-
-// -- subtree payload -----------------------------------------------------------
-
-/** Hand-writable payload for `@jsx-contracts/subtree`. */
-export type SubtreeOptions = NoDescendantsConfig[];
-
-export interface NormalizedWhen {
-  prop: string;
-  values?: (string | number | boolean)[];
-}
-
-// An absent `when` normalizes to `undefined`: the row is always active for the
-// matched component.
-export function normalizeWhen(
-  when: WhenCondition | undefined,
-): NormalizedWhen | undefined {
-  if (when === undefined) {
-    return undefined;
-  }
-
-  return typeof when === "string" ? { prop: when } : when;
 }
 
 export function normalizeForbid(
@@ -117,179 +30,184 @@ export function normalizeForbid(
   return typeof entry === "string" ? { name: entry } : entry;
 }
 
-export function validateSubtreeOptions(options: SubtreeOptions): void {
-  // At most one condition per component per when-prop; two would be ambiguous.
-  // A when-less row has no prop to key on, so it is exempt (a full-stop ban or a
-  // descendant-count row may sit beside any conditional rows).
-  const pairs = new Set<string>();
+// Every rejection is prefixed with the row's position and identity, so a table
+// of any size points at the row that has to change.
+function rowLabel(row: ContractRow, index: number): string {
+  return `row ${String(index)} (${row.facet} <${row.component}>)`;
+}
 
-  for (const config of options) {
-    const when = normalizeWhen(config.when);
+function fail(row: ContractRow, index: number, problem: string): never {
+  throw new Error(`contracts: ${rowLabel(row, index)} ${problem}.`);
+}
 
-    if (when !== undefined) {
-      const pair = `${config.component}\n${when.prop}`;
+function checkBounds(
+  row: ContractRow,
+  index: number,
+  subject: string,
+  min: number | undefined,
+  max: number | undefined,
+  minKey: string,
+  maxKey: string,
+): void {
+  if (min !== undefined && (!Number.isInteger(min) || min < 0)) {
+    fail(row, index, `${subject} ${minKey} must be a non-negative integer`);
+  }
 
-      if (pairs.has(pair)) {
-        throw new Error(
-          `subtree: duplicate condition on <${config.component}>'s "${when.prop}" prop.`,
-        );
-      }
+  if (max !== undefined && (!Number.isInteger(max) || max < 1)) {
+    fail(row, index, `${subject} ${maxKey} must be a positive integer`);
+  }
 
-      pairs.add(pair);
+  if (min !== undefined && max !== undefined && min > max) {
+    fail(row, index, `${subject} ${minKey} exceeds ${maxKey}`);
+  }
+}
 
-      if (when.values?.length === 0) {
-        throw new Error(
-          `subtree: <${config.component}> "${when.prop}" values must not be empty.`,
-        );
-      }
+function validateWhen(row: ContractRow, index: number): void {
+  if (typeof row.when === "object" && row.when.values?.length === 0) {
+    fail(row, index, `when "${row.when.prop}" values must not be empty`);
+  }
+}
+
+function validateSlotsRow(row: SlotsRow, index: number): void {
+  const slots = new Set<string>();
+
+  for (const rawSlot of row.slots) {
+    const slot = normalizeSlot(rawSlot);
+
+    // Within one row a repeated slot name is still ill-formed: the prepared
+    // slot map is keyed by name, so the second declaration would silently win.
+    // Two *rows* declaring the same slot are fine — that is accumulation.
+    if (slots.has(slot.name)) {
+      fail(row, index, `lists duplicate slot "${slot.name}"`);
     }
 
-    if (config.forbid?.length === 0) {
-      throw new Error(
-        `subtree: <${config.component}> forbid must not be empty.`,
-      );
-    }
+    slots.add(slot.name);
 
-    if (config.forbidProps?.length === 0) {
-      throw new Error(
-        `subtree: <${config.component}> forbidProps must not be empty.`,
-      );
-    }
+    checkBounds(
+      row,
+      index,
+      `slot "${slot.name}"`,
+      slot.minCount,
+      slot.maxCount,
+      "minCount",
+      "maxCount",
+    );
+  }
 
-    if (config.require?.length === 0) {
-      throw new Error(
-        `subtree: <${config.component}> require must not be empty.`,
-      );
-    }
+  // Cross-slot references resolve against the slots declared in the same row.
+  // After merging a reference may point at a slot another active row
+  // intersected away; the merge drops it rather than reporting, because
+  // whether that combination is reachable cannot be decided here.
+  const references = [
+    ...Object.entries(row.requires ?? {}).flat(),
+    ...(row.exclusive ?? []).flat(2),
+  ];
 
-    if (
-      (config.forbid?.length ?? 0) === 0 &&
-      (config.forbidProps?.length ?? 0) === 0 &&
-      (config.require?.length ?? 0) === 0
-    ) {
-      throw new Error(
-        `subtree: <${config.component}> must forbid an element or prop, or require a descendant.`,
-      );
-    }
-
-    for (const entry of config.require ?? []) {
-      if (entry.name.length === 0) {
-        throw new Error(
-          `subtree: <${config.component}> require entry must name an element.`,
-        );
-      }
-
-      if (
-        entry.min !== undefined &&
-        (!Number.isInteger(entry.min) || entry.min < 0)
-      ) {
-        throw new Error(
-          `subtree: <${config.component}> require "${entry.name}" min must be a non-negative integer.`,
-        );
-      }
-
-      if (
-        entry.max !== undefined &&
-        (!Number.isInteger(entry.max) || entry.max < 1)
-      ) {
-        throw new Error(
-          `subtree: <${config.component}> require "${entry.name}" max must be a positive integer.`,
-        );
-      }
-
-      if (
-        entry.min !== undefined &&
-        entry.max !== undefined &&
-        entry.min > entry.max
-      ) {
-        throw new Error(
-          `subtree: <${config.component}> require "${entry.name}" min exceeds max.`,
-        );
-      }
+  for (const reference of references) {
+    if (!slots.has(reference)) {
+      fail(row, index, `references "${reference}", which it does not declare`);
     }
   }
 }
 
-// -- props payload -------------------------------------------------------------
+function validateSubtreeRow(row: SubtreeRow, index: number): void {
+  if (row.forbid?.length === 0) {
+    fail(row, index, "forbid must not be empty");
+  }
 
-/** Hand-writable payload for `@jsx-contracts/props`. */
-export type PropsOptions = PropsConfig[];
+  if (row.forbidProps?.length === 0) {
+    fail(row, index, "forbidProps must not be empty");
+  }
 
-export function validatePropsOptions(options: PropsOptions): void {
-  const componentTags = new Set<string>();
+  if (row.require?.length === 0) {
+    fail(row, index, "require must not be empty");
+  }
 
-  for (const config of options) {
-    if (componentTags.has(config.component)) {
-      throw new Error(`props: duplicate component "${config.component}".`);
+  if (
+    (row.forbid?.length ?? 0) === 0 &&
+    (row.forbidProps?.length ?? 0) === 0 &&
+    (row.require?.length ?? 0) === 0
+  ) {
+    fail(row, index, "must forbid an element or prop, or require a descendant");
+  }
+
+  for (const entry of row.require ?? []) {
+    if (entry.name.length === 0) {
+      fail(row, index, "require entry must name an element");
     }
 
-    componentTags.add(config.component);
+    checkBounds(
+      row,
+      index,
+      `require "${entry.name}"`,
+      entry.min,
+      entry.max,
+      "min",
+      "max",
+    );
+  }
+}
 
-    const hasRequired = (config.required?.length ?? 0) > 0;
-    const hasExclusive = (config.exclusive?.length ?? 0) > 0;
-    const hasDeprecated =
-      config.deprecated !== undefined &&
-      Object.keys(config.deprecated).length > 0;
+function validatePropsRow(row: PropsRow, index: number): void {
+  const declares =
+    (row.required?.length ?? 0) > 0 ||
+    (row.exclusive?.length ?? 0) > 0 ||
+    Object.keys(row.deprecated ?? {}).length > 0 ||
+    row.deprecatedComponent !== undefined;
 
-    const hasDeprecatedComponent = config.deprecatedComponent !== undefined;
+  if (!declares) {
+    fail(row, index, "must declare at least one prop contract");
+  }
 
-    if (
-      !hasRequired &&
-      !hasExclusive &&
-      !hasDeprecated &&
-      !hasDeprecatedComponent
-    ) {
-      throw new Error(
-        `props: <${config.component}> must declare at least one prop contract.`,
-      );
+  for (const entry of row.required ?? []) {
+    if (Array.isArray(entry) && entry.length === 0) {
+      fail(row, index, "has an empty required group");
     }
+  }
 
-    for (const entry of config.required ?? []) {
-      if (Array.isArray(entry) && entry.length === 0) {
-        throw new Error(
-          `props: <${config.component}> has an empty required group.`,
-        );
-      }
-    }
-
-    for (const [groupA, groupB] of config.exclusive ?? []) {
-      if (groupA.length === 0 || groupB.length === 0) {
-        throw new Error(
-          `props: <${config.component}> has an empty exclusive group.`,
-        );
-      }
+  for (const [groupA, groupB] of row.exclusive ?? []) {
+    if (groupA.length === 0 || groupB.length === 0) {
+      fail(row, index, "has an empty exclusive group");
     }
   }
 }
 
-// -- ancestor payload ----------------------------------------------------------
+function validateAncestorRow(row: AncestorRow, index: number): void {
+  if (row.notInside.length === 0) {
+    fail(row, index, "notInside must not be empty");
+  }
 
-/** Hand-writable payload for `@jsx-contracts/ancestor`. */
-export type AncestorOptions = AncestorConfig[];
-
-export function validateAncestorOptions(options: AncestorOptions): void {
-  const componentTags = new Set<string>();
-
-  for (const config of options) {
-    if (componentTags.has(config.component)) {
-      throw new Error(`ancestor: duplicate component "${config.component}".`);
+  for (const rawEntry of row.notInside) {
+    if (normalizeForbid(rawEntry).name.length === 0) {
+      fail(row, index, "notInside entry must name an element");
     }
+  }
+}
 
-    componentTags.add(config.component);
+/** Shape-validate a rule table. Throws on the first malformed row. */
+export function validateContractRows(rows: ContractRows): void {
+  for (const [index, row] of rows.entries()) {
+    validateWhen(row, index);
 
-    if (config.notInside.length === 0) {
-      throw new Error(
-        `ancestor: <${config.component}> notInside must not be empty.`,
-      );
-    }
+    switch (row.facet) {
+      case "slots": {
+        validateSlotsRow(row, index);
+        break;
+      }
 
-    for (const rawEntry of config.notInside) {
-      const entry = normalizeForbid(rawEntry);
+      case "subtree": {
+        validateSubtreeRow(row, index);
+        break;
+      }
 
-      if (entry.name.length === 0) {
-        throw new Error(
-          `ancestor: <${config.component}> notInside entry must name an element.`,
-        );
+      case "props": {
+        validatePropsRow(row, index);
+        break;
+      }
+
+      case "ancestor": {
+        validateAncestorRow(row, index);
+        break;
       }
     }
   }

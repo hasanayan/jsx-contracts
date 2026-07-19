@@ -1,10 +1,9 @@
 import { RuleTester } from "@typescript-eslint/rule-tester";
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, it } from "vitest";
 
-import { validatePropsOptions } from "../contracts/validate.js";
+import type { ContractRows } from "../contracts/payload.js";
 
-import type { PropsOptions } from "./props.js";
 import { props } from "./props.js";
 
 RuleTester.afterAll = afterAll;
@@ -20,102 +19,59 @@ const ruleTester = new RuleTester({
   },
 });
 
-const requiredOptions: PropsOptions = [
+const requiredOptions: ContractRows = [
   {
+    facet: "props",
     importPath: "*/acme-ds/components/widget",
     component: "Widget",
     required: ["label", ["href", "onClick"]],
   },
 ];
 
-const exclusiveOptions: PropsOptions = [
+const exclusiveOptions: ContractRows = [
   {
+    facet: "props",
     importPath: "*/acme-ds/components/widget",
     component: "Widget",
     exclusive: [[["href"], ["onClick"]]],
   },
 ];
 
-const deprecatedOptions: PropsOptions = [
+const deprecatedOptions: ContractRows = [
   {
+    facet: "props",
     importPath: "*/acme-ds/components/widget",
     component: "Widget",
     deprecated: { color: "tone", legacy: true },
   },
 ];
 
-const deprecatedComponentOptions: PropsOptions = [
+const deprecatedComponentOptions: ContractRows = [
   {
+    facet: "props",
     importPath: "*/acme-ds/components/widget",
     component: "Widget",
     deprecatedComponent: "Panel",
   },
 ];
 
-const literalGateOptions: PropsOptions = [
+const literalGateOptions: ContractRows = [
   {
+    facet: "props",
     importPath: "~/acme-ds/components/widget",
     component: "Widget",
     required: ["label"],
   },
 ];
 
-const memberOptions: PropsOptions = [
+const memberOptions: ContractRows = [
   {
+    facet: "props",
     importPath: "*/acme-ds/components/widget",
     component: "Widget.Tray",
     required: ["title"],
   },
 ];
-
-describe("validatePropsOptions", () => {
-  it("throws on a duplicate component", () => {
-    expect(() => {
-      validatePropsOptions([
-        {
-          importPath: "*/widget",
-          component: "Widget",
-          required: ["label"],
-        },
-        {
-          importPath: "*/widget",
-          component: "Widget",
-          deprecatedComponent: true,
-        },
-      ]);
-    }).toThrow('props: duplicate component "Widget"');
-  });
-
-  it("throws when a config declares no prop contract", () => {
-    expect(() => {
-      validatePropsOptions([{ importPath: "*/widget", component: "Widget" }]);
-    }).toThrow("<Widget> must declare at least one prop contract");
-  });
-
-  it("throws on an empty required group", () => {
-    expect(() => {
-      validatePropsOptions([
-        {
-          importPath: "*/widget",
-          component: "Widget",
-          required: [[]],
-        },
-      ]);
-    }).toThrow("<Widget> has an empty required group");
-  });
-
-  it("throws on an empty exclusive group", () => {
-    expect(() => {
-      validatePropsOptions([
-        {
-          importPath: "*/widget",
-          component: "Widget",
-          exclusive: [[["href"], []]],
-        },
-      ]);
-    }).toThrow("<Widget> has an empty exclusive group");
-  });
-});
 
 ruleTester.run("props", props, {
   valid: [

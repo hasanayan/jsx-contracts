@@ -2,18 +2,12 @@
 // drive a real ESLint Linter, so consumers can toggle or eslint-disable one
 // feature of the contracts without touching the rest.
 
-import type { ESLint } from "eslint";
 import { Linter } from "eslint";
 import { describe, expect, it } from "vitest";
 
-import { defineContracts } from "@jsx-contracts/helpers";
+import plugin from "@jsx-contracts/eslint-plugin";
 
-import { ancestor } from "./rules/ancestor.js";
-import { props } from "./rules/props.js";
-import { slots } from "./rules/slots.js";
-import { subtree } from "./rules/subtree.js";
-
-import plugin from "./index.js";
+import { defineContracts } from "./index.js";
 
 const contracts = defineContracts("@acme/ds", {
   "Widget.Tray": {
@@ -80,28 +74,12 @@ describe("granular rules", () => {
     ]);
   });
 
-  it("hands every variant of a facet the same payload instance for caching", () => {
+  it("hands every rule the same rule table instance for caching", () => {
     const granular = contracts.rules();
 
-    expect(granular["@jsx-contracts/slots.count"][1]).toBe(
-      granular["@jsx-contracts/slots.requires"][1],
-    );
-
-    expect(granular["@jsx-contracts/subtree.forbid"][1]).toBe(
-      granular["@jsx-contracts/subtree.forbidProps"][1],
-    );
-
-    expect(granular["@jsx-contracts/subtree.forbid"][1]).toBe(
-      granular["@jsx-contracts/subtree.count"][1],
-    );
-
-    expect(granular["@jsx-contracts/props.required"][1]).toBe(
-      granular["@jsx-contracts/props.deprecated"][1],
-    );
-
-    expect(granular["@jsx-contracts/ancestor.forbid"][1]).toBe(
-      contracts.ancestor,
-    );
+    for (const [, payload] of Object.values(granular)) {
+      expect(payload).toBe(contracts.rows);
+    }
   });
 
   it("reports each violation under its feature's rule name only", () => {
@@ -205,35 +183,6 @@ export const example = (
     expect(ruleIds).toEqual(["@jsx-contracts/subtree.count"]);
   });
 
-  it("reports the same violations as the plain facet rules", () => {
-    const granularMessages = verify(violating, contracts.rules());
-
-    // The parent facet rules no longer ship in the plugin map, so drive them
-    // through an ad-hoc plugin built from the rule module exports, handed the
-    // same facet payloads the granular form spreads.
-    const parentPlugin = {
-      rules: { slots, subtree, props, ancestor },
-    } as unknown as ESLint.Plugin;
-
-    const linter = new Linter();
-    const plainMessages = linter.verify(violating, {
-      plugins: { "@jsx-contracts": parentPlugin },
-      languageOptions,
-      rules: {
-        "@jsx-contracts/slots": ["error", contracts.slots],
-        "@jsx-contracts/subtree": ["error", contracts.subtree],
-        "@jsx-contracts/props": ["error", contracts.props],
-        "@jsx-contracts/ancestor": ["error", contracts.ancestor],
-      },
-    });
-
-    expect(
-      granularMessages.map(({ messageId, line }) => ({ messageId, line })),
-    ).toEqual(
-      plainMessages.map(({ messageId, line }) => ({ messageId, line })),
-    );
-  });
-
   // Pins the reason the rules intern their options by content: ESLint clones
   // rule options per rule, so identity alone could never key a shared cache.
   // If this ever fails, ESLint stopped cloning and the interning could be
@@ -250,7 +199,7 @@ export const example = (
       },
     };
 
-    const payload = contracts.slots;
+    const payload = contracts.rows;
     const linter = new Linter();
 
     linter.verify("var x = 1;", {

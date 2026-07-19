@@ -41,10 +41,45 @@ export default [
 ];
 ```
 
-`defineContracts(sharedGate, contracts)` compiles to the two facets' JSON
-payloads (also hand-writable). The shared **import gate** is the module a
-component must be imported from for its contract to apply (a literal or a `*`
-glob); any component may override it with its own `from`.
+`defineContracts(sharedGate, contracts)` compiles to the **rule table** — a flat
+list of rows, each one statement about one component in one facet, and the
+identical payload every rule takes. It is also hand-writable, and reachable as
+`contracts.rows`. The shared **import gate** is the module a component must be
+imported from for its contract to apply (a literal or a `*` glob); any component
+may override it with its own `from`.
+
+Rows **accumulate**: many rows may name one component in one facet, and every
+row active on an element applies at once. They are combined into one effective
+contract before evaluating, so a violation is reported once and its message
+describes what the combined state actually allows. Allowed slots intersect
+across rows; everything else unions.
+
+That applies to import gates too, which are globs rather than equalities. Two
+rows whose gates both match one element are **both** active — a wide glob is not
+a fallback for a narrower row:
+
+```js
+// Both rows apply to a <Widget.Tray> imported from "@acme/ds". The tray then
+// accepts only <Title>, the intersection — not <Title> and <Action>.
+[
+  {
+    facet: "slots",
+    importPath: "@acme/*",
+    component: "Widget.Tray",
+    slots: ["Widget.Tray.Title", "Widget.Tray.Action"],
+  },
+  {
+    facet: "slots",
+    importPath: "*/ds",
+    component: "Widget.Tray",
+    slots: ["Widget.Tray.Title"],
+  },
+];
+```
+
+A hand-written table carries no duplicate guard: two rows for one component are
+the normal case, so nothing rejects a copy-paste. `mergeContracts` is the only
+place a duplicate is caught.
 
 `contracts.rules()` spreads one entry per facet _feature_ — `slots.children`,
 `slots.count`, `slots.placement`, `slots.requires`, `slots.exclusive`,
@@ -304,9 +339,10 @@ contract("Button", "@acme/ds").notInside("Button");
 pnpm workspace with two published packages. `packages/eslint-plugin` enforces:
 a framework-agnostic core (`src/contracts/`) that evaluates contracts over a
 pure rendered-tree model, plus ESLint adapters (`src/rules/`) that collect that
-model from the AST. `packages/helpers` is the authoring layer
+model from the AST. The plugin owns both halves of its own input contract: the
+rule table's TypeScript shapes, and the JSON schema plus runtime validators
+beside them. `packages/helpers` is the authoring layer
 (`@jsx-contracts/helpers`) — `defineContracts`, `contractsFor`, and the fluent
-`contract()` builder — and the single source of truth for the payload schema
-the plugin's rules consume (imported type-only, so it stays a zero-runtime-cost
-dependency). `packages/playground` is a manual smoke-check only; behaviour is
-verified by tests.
+`contract()` builder — which imports those types type-only and compiles to
+them, so it keeps zero runtime dependencies. `packages/playground` is a manual
+smoke-check only; behaviour is verified by tests.

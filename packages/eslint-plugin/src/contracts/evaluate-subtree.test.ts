@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type {
-  PreparedSubtree,
+  MergedSubtree,
   SubtreeElement,
   SubtreeNode,
   SubtreeRef,
 } from "./evaluate-subtree.js";
-import { evaluateSubtree, prepareSubtree } from "./evaluate-subtree.js";
+import { evaluateSubtree, prepareSubtreeRow } from "./evaluate-subtree.js";
 import { createImportMatcher } from "./import-matcher.js";
 import type { Branch, PropFact } from "./model.js";
 
@@ -44,14 +44,10 @@ function prop(name: string, extra: Partial<PropFact> = {}): PropFact {
   return { name, present: true, ...extra };
 }
 
-// A presence-activated ban forbidding <button>; the root activates on `to`.
-function forbidButton(
-  overrides: Partial<PreparedSubtree> = {},
-): PreparedSubtree {
+// A merged contract forbidding <button> anywhere below <Widget>.
+function forbidButton(overrides: Partial<MergedSubtree> = {}): MergedSubtree {
   return {
     component: "Widget",
-    matcher: createImportMatcher("*"),
-    when: { prop: "to" },
     forbid: [{ name: "button" }],
     forbidProps: new Set<string>(),
     require: [],
@@ -60,13 +56,9 @@ function forbidButton(
 }
 
 // A when-less row requiring exactly one <Tabs.List> anywhere below <Tabs.Root>.
-function requireList(
-  overrides: Partial<PreparedSubtree> = {},
-): PreparedSubtree {
+function requireList(overrides: Partial<MergedSubtree> = {}): MergedSubtree {
   return {
     component: "Tabs.Root",
-    matcher: createImportMatcher("*"),
-    when: undefined,
     forbid: [],
     forbidProps: new Set<string>(),
     require: [{ name: "Tabs.List", minCount: 1, maxCount: 1 }],
@@ -81,64 +73,6 @@ function tabsRoot(children: SubtreeNode[]): SubtreeElement {
 function active(children: SubtreeNode[]): SubtreeElement {
   return node("Widget", { props: [prop("to")], children });
 }
-
-describe("evaluateSubtree activation", () => {
-  it("does nothing when the when prop is absent", () => {
-    const root = node("Widget", { children: [node("button")] });
-
-    expect(evaluateSubtree(forbidButton(), root)).toHaveLength(0);
-  });
-
-  it("does nothing when a presence prop is literally false", () => {
-    const root = node("Widget", {
-      props: [prop("to", { present: false })],
-      children: [node("button")],
-    });
-
-    expect(evaluateSubtree(forbidButton(), root)).toHaveLength(0);
-  });
-
-  it("activates on the values form by resolved literal", () => {
-    const prepared = forbidButton({
-      when: { prop: "variant", values: ["primary"] },
-    });
-
-    const root = node("Widget", {
-      props: [prop("variant", { value: "primary" })],
-      children: [node("button")],
-    });
-
-    expect(evaluateSubtree(prepared, root).map((v) => v.messageId)).toEqual([
-      "forbiddenDescendant",
-    ]);
-  });
-
-  it("activates on the values form by member-expression source text", () => {
-    const prepared = forbidButton({
-      when: { prop: "size", values: ["Size.large"] },
-    });
-
-    const root = node("Widget", {
-      props: [prop("size", { source: "Size.large" })],
-      children: [node("button")],
-    });
-
-    expect(evaluateSubtree(prepared, root)).toHaveLength(1);
-  });
-
-  it("does not activate when the resolved value is not listed", () => {
-    const prepared = forbidButton({
-      when: { prop: "variant", values: ["primary"] },
-    });
-
-    const root = node("Widget", {
-      props: [prop("variant", { value: "ghost" })],
-      children: [node("button")],
-    });
-
-    expect(evaluateSubtree(prepared, root)).toHaveLength(0);
-  });
-});
 
 describe("evaluateSubtree forbid matching", () => {
   it("does not check the activated element itself, only its descendants", () => {
@@ -305,7 +239,6 @@ describe("evaluateSubtree descendant counts", () => {
     expect(violation?.ref).toBe(root.ref);
     expect(violation?.data).toEqual({
       component: "Tabs.Root",
-      condition: "",
       name: "Tabs.List",
       min: "one",
     });
@@ -355,7 +288,6 @@ describe("evaluateSubtree descendant counts", () => {
     expect(violation?.ref).toBe(second.ref);
     expect(violation?.data).toEqual({
       component: "Tabs.Root",
-      condition: "",
       name: "Tabs.List",
       max: "one",
     });
@@ -413,31 +345,6 @@ describe("evaluateSubtree descendant counts", () => {
     );
   });
 
-  it("carries the activating condition text into count messages", () => {
-    const prepared = requireList({
-      component: "Widget",
-      when: { prop: "compact" },
-      require: [{ name: "Widget.Body", minCount: 1, maxCount: 1 }],
-    });
-
-    const root = node("Widget", { props: [prop("compact")], children: [] });
-    const [violation] = evaluateSubtree(prepared, root);
-
-    expect(violation?.data["condition"]).toBe(" with a `compact` prop");
-  });
-
-  it("does not run a conditional count row when the prop is absent", () => {
-    const prepared = requireList({
-      component: "Widget",
-      when: { prop: "compact" },
-      require: [{ name: "Widget.Body", minCount: 1, maxCount: 1 }],
-    });
-
-    const root = node("Widget", { children: [] });
-
-    expect(evaluateSubtree(prepared, root)).toHaveLength(0);
-  });
-
   it("counts a shared JSX const referenced by two siblings toward the max", () => {
     // The same init is referenced from two sibling wrappers. Each reference site
     // must count, so the two occurrences exceed `max: 1` even though the init is
@@ -487,43 +394,13 @@ describe("evaluateSubtree descendant counts", () => {
   });
 });
 
-describe("prepareSubtree", () => {
-  it("normalizes a bare when string to presence activation", () => {
-    const prepared = prepareSubtree({
-      importPath: "*/widget",
-      component: "Widget",
-      when: "to",
-      forbid: ["button"],
-    });
-
-    expect(prepared.when).toEqual({ prop: "to" });
-  });
-
-  it("passes a values-form when through", () => {
-    const prepared = prepareSubtree({
-      importPath: "*/widget",
-      component: "Widget",
-      when: { prop: "variant", values: ["primary"] },
-      forbid: ["button"],
-    });
-
-    expect(prepared.when).toEqual({ prop: "variant", values: ["primary"] });
-  });
-
-  it("gates the component by its import path", () => {
-    const prepared = prepareSubtree({
-      importPath: "*/widget",
-      component: "Widget",
-      when: "to",
-      forbid: ["button"],
-    });
-
-    expect(prepared.matcher("~/widget")).toBe(true);
-    expect(prepared.matcher("~/other")).toBe(false);
-  });
-
+describe("prepareSubtreeRow", () => {
+  // Activation — the row's import gate and its when-condition — belongs to the
+  // engine now, and is covered at the rule-test seam. What preparation still
+  // owns is the per-entry gate and the count-bound defaults.
   it("gives a forbid entry a matcher only when it declares a gate", () => {
-    const prepared = prepareSubtree({
+    const prepared = prepareSubtreeRow({
+      facet: "subtree",
       importPath: "*/widget",
       component: "Widget",
       when: "to",
@@ -538,28 +415,20 @@ describe("prepareSubtree", () => {
   });
 
   it("collects forbidProps into a set", () => {
-    const prepared = prepareSubtree({
+    const prepared = prepareSubtreeRow({
+      facet: "subtree",
       importPath: "*/widget",
       component: "Widget",
       when: "to",
       forbidProps: ["onClick", "onKeyDown"],
     });
 
-    expect(prepared.forbidProps).toEqual(new Set(["onClick", "onKeyDown"]));
-  });
-
-  it("leaves the when undefined for a when-less row", () => {
-    const prepared = prepareSubtree({
-      importPath: "*/tabs",
-      component: "Tabs.Root",
-      require: [{ name: "Tabs.List" }],
-    });
-
-    expect(prepared.when).toBeUndefined();
+    expect(prepared.forbidProps).toEqual(["onClick", "onKeyDown"]);
   });
 
   it("defaults an unbounded require entry to at most one", () => {
-    const prepared = prepareSubtree({
+    const prepared = prepareSubtreeRow({
+      facet: "subtree",
       importPath: "*/tabs",
       component: "Tabs.Root",
       require: [{ name: "Tabs.List" }],
@@ -569,7 +438,8 @@ describe("prepareSubtree", () => {
   });
 
   it("lifts the upper bound when only min is set", () => {
-    const prepared = prepareSubtree({
+    const prepared = prepareSubtreeRow({
+      facet: "subtree",
       importPath: "*/tabs",
       component: "Tabs.Root",
       require: [{ name: "Tabs.List", min: 2 }],
@@ -582,7 +452,8 @@ describe("prepareSubtree", () => {
   });
 
   it("gives a require entry a matcher only when it declares a gate", () => {
-    const prepared = prepareSubtree({
+    const prepared = prepareSubtreeRow({
+      facet: "subtree",
       importPath: "*/tabs",
       component: "Tabs.Root",
       require: [

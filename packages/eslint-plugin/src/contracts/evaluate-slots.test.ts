@@ -1,20 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import type { ContainerConfig } from "@jsx-contracts/helpers";
-
 import type {
+  MergedSlots,
   ParentFact,
-  PreparedContainer,
   PreparedSlot,
 } from "./evaluate-slots.js";
 import {
   evaluateSlots,
   isPlacedInContainer,
+  mergeSlots,
   minimumGuaranteedCount,
-  prepareContainer,
+  prepareSlotsRow,
 } from "./evaluate-slots.js";
 import { createImportMatcher } from "./import-matcher.js";
 import type { Branch, RenderedNode } from "./model.js";
+import type { SlotsRow } from "./payload.js";
+
+// Preparing one row and merging it is what the engine does for a component
+// with a single active row.
+function prepareContainer(row: SlotsRow): MergedSlots {
+  return mergeSlots(row.component, [prepareSlotsRow(row)]);
+}
 
 function element(name: string, branches: Branch[] = []): RenderedNode {
   return {
@@ -142,13 +148,14 @@ describe("isPlacedInContainer", () => {
 });
 
 describe("evaluateSlots count bounds", () => {
-  function prepared(slot: PreparedSlot): PreparedContainer {
+  function prepared(slot: PreparedSlot): MergedSlots {
     return {
       container: "Widget.Tray",
       slots: new Map([[slot.name, slot]]),
-      slotNames: new Set([slot.name]),
       slotList: `<${slot.name}>`,
-      containerMatcher: createImportMatcher("*/widget"),
+      requires: new Map(),
+      exclusive: [],
+      strict: false,
     };
   }
 
@@ -201,13 +208,14 @@ describe("evaluateSlots count bounds", () => {
 });
 
 describe("prepareContainer count defaults", () => {
-  function boundsOf(slot: ContainerConfig["slots"][number]): {
+  function boundsOf(slot: SlotsRow["slots"][number]): {
     minCount: number;
     maxCount: number;
   } {
     const prepared = prepareContainer({
+      facet: "slots",
       importPath: "*/widget",
-      container: "Widget.Tray",
+      component: "Widget.Tray",
       slots: [slot],
     });
 
@@ -246,55 +254,61 @@ describe("prepareContainer count defaults", () => {
   });
 });
 
-describe("prepareContainer compilation", () => {
-  it("builds slotNames and a formatted slot list", () => {
+describe("slots row compilation", () => {
+  it("formats the slot list for the invalidChild message", () => {
     const prepared = prepareContainer({
+      facet: "slots",
       importPath: "*/widget",
-      container: "Widget.Tray",
+      component: "Widget.Tray",
       slots: ["A", "B", "C"],
     });
 
-    expect([...prepared.slotNames]).toEqual(["A", "B", "C"]);
+    expect([...prepared.slots.keys()]).toEqual(["A", "B", "C"]);
     expect(prepared.slotList).toBe("<A>, <B> and <C>");
   });
 
   it("gives a slot its own gate, falling back to the container's", () => {
     const prepared = prepareContainer({
+      facet: "slots",
       importPath: "*/widget",
-      container: "Widget.Tray",
+      component: "Widget.Tray",
       slots: [{ name: "Own", importPath: "*/chip" }, "Inherited"],
     });
 
     // The own-gated slot rejects the container's module and accepts its own.
     expect(prepared.slots.get("Own")?.matcher("~/widget")).toBe(false);
     expect(prepared.slots.get("Own")?.matcher("~/chip")).toBe(true);
-    // The inherited slot shares the container matcher instance.
-    expect(prepared.slots.get("Inherited")?.matcher).toBe(
-      prepared.containerMatcher,
-    );
+    // The inherited slot falls back to the container's gate.
+    expect(prepared.slots.get("Inherited")?.matcher("~/widget")).toBe(true);
+    expect(prepared.slots.get("Inherited")?.matcher("~/chip")).toBe(false);
   });
 
-  it("passes requires, exclusive and strict through only when present", () => {
+  // Absent keys are the merge's identity, not empty values, so a row that
+  // declares none contributes nothing rather than clearing what another row
+  // declared.
+  it("defaults the absent cross-slot keys to empty", () => {
     const bare = prepareContainer({
+      facet: "slots",
       importPath: "*/widget",
-      container: "Widget.Tray",
+      component: "Widget.Tray",
       slots: ["A", "B"],
     });
 
-    expect(bare.requires).toBeUndefined();
-    expect(bare.exclusive).toBeUndefined();
-    expect(bare.strict).toBeUndefined();
+    expect(bare.requires.size).toBe(0);
+    expect(bare.exclusive).toEqual([]);
+    expect(bare.strict).toBe(false);
 
     const full = prepareContainer({
+      facet: "slots",
       importPath: "*/widget",
-      container: "Widget.Tray",
+      component: "Widget.Tray",
       slots: ["A", "B"],
       requires: { A: "B" },
       exclusive: [[["A"], ["B"]]],
       strict: true,
     });
 
-    expect(full.requires).toEqual({ A: "B" });
+    expect(full.requires.get("A")).toEqual(["B"]);
     expect(full.exclusive).toEqual([[["A"], ["B"]]]);
     expect(full.strict).toBe(true);
   });

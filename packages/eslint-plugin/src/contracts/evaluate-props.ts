@@ -3,12 +3,9 @@
 // evaluator reasons only over the collected prop facts. Check order fixes which
 // violation is reported first: required, then exclusive, then deprecated.
 
-import type { PropsConfig } from "@jsx-contracts/helpers";
-
 import { formatList } from "./format.js";
-import type { ImportMatcher } from "./import-matcher.js";
-import { createImportMatcher } from "./import-matcher.js";
 import type { PropFact, Ref, Violation } from "./model.js";
+import type { PropsRow } from "./payload.js";
 
 /** Message ids reported by `@jsx-contracts/props`. */
 export type PropsMessageId =
@@ -20,31 +17,98 @@ export type PropsMessageId =
 
 type PropsViolation = Violation<PropsMessageId>;
 
-export interface PreparedProps {
+/** One props row, prepared. Merged with the other active rows before use. */
+export interface PreparedPropsRow {
+  required: (string | string[])[];
+  exclusive: [string[], string[]][];
+  deprecated: [string, string | true][];
+  deprecatedComponent: string | true | undefined;
+}
+
+/** The effective prop contract for one element: the merge of its active rows. */
+export interface MergedProps {
   component: string;
-  // The component's own import gate. Consumed by the adapter to decide whether a
-  // rendered <component> is in scope; the evaluator does not read it.
-  matcher: ImportMatcher;
   required: (string | string[])[];
   exclusive: [string[], string[]][];
   deprecated: [string, string | true][];
   deprecatedComponent?: string | true;
 }
 
-export function prepareProps(config: PropsConfig): PreparedProps {
-  const prepared: PreparedProps = {
-    component: config.component,
-    matcher: createImportMatcher(config.importPath),
-    required: config.required ?? [],
-    exclusive: config.exclusive ?? [],
-    deprecated: Object.entries(config.deprecated ?? {}),
+export function preparePropsRow(row: PropsRow): PreparedPropsRow {
+  return {
+    required: row.required ?? [],
+    exclusive: row.exclusive ?? [],
+    deprecated: Object.entries(row.deprecated ?? {}),
+    deprecatedComponent: row.deprecatedComponent,
+  };
+}
+
+/**
+ * Combine the rows active on one element into one effective contract.
+ *
+ * Everything unions: a props row states obligations, and two rows stating them
+ * both apply. Identical statements collapse — a requirement or an exclusive
+ * pair repeated across rows would otherwise report twice for one written prop.
+ * The first row to deprecate a prop (or the component) fixes its hint.
+ */
+export function mergeProps(
+  component: string,
+  rows: PreparedPropsRow[],
+): MergedProps {
+  const required: (string | string[])[] = [];
+  const exclusive: [string[], string[]][] = [];
+  const deprecated = new Map<string, string | true>();
+  const seen = new Set<string>();
+
+  const fresh = (kind: string, value: unknown): boolean => {
+    const key = `${kind}\n${JSON.stringify(value)}`;
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+
+    return true;
   };
 
-  if (config.deprecatedComponent !== undefined) {
-    prepared.deprecatedComponent = config.deprecatedComponent;
+  const merged: MergedProps = {
+    component,
+    required,
+    exclusive,
+    deprecated: [],
+  };
+
+  for (const row of rows) {
+    for (const entry of row.required) {
+      if (fresh("required", entry)) {
+        required.push(entry);
+      }
+    }
+
+    for (const pair of row.exclusive) {
+      if (fresh("exclusive", pair)) {
+        exclusive.push(pair);
+      }
+    }
+
+    for (const [prop, hint] of row.deprecated) {
+      if (!deprecated.has(prop)) {
+        deprecated.set(prop, hint);
+      }
+    }
+
+    if (
+      row.deprecatedComponent !== undefined &&
+      merged.deprecatedComponent === undefined
+    ) {
+      merged.deprecatedComponent = row.deprecatedComponent;
+    }
   }
 
-  return prepared;
+  merged.deprecated = [...deprecated];
+
+  return merged;
 }
 
 function hintText(replacement: string | true): string {
@@ -61,7 +125,7 @@ function quoted(props: string[]): string {
 // own `ref` reports exclusive and prop-level deprecations, falling back to the
 // element when the fact carries none.
 export function evaluateProps(
-  prepared: PreparedProps,
+  prepared: MergedProps,
   facts: PropFact[],
   hasSpread: boolean,
   elementRef: Ref,

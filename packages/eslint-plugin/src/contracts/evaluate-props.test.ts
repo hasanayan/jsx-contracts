@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { PreparedProps } from "./evaluate-props.js";
-import { evaluateProps, prepareProps } from "./evaluate-props.js";
-import { createImportMatcher } from "./import-matcher.js";
+import type { MergedProps } from "./evaluate-props.js";
+import { evaluateProps, preparePropsRow } from "./evaluate-props.js";
 import type { PropFact, Ref } from "./model.js";
 
 // A fresh `ref` per fact so an attribute-level violation can be matched back by
@@ -11,10 +10,9 @@ function fact(name: string, extra: Partial<PropFact> = {}): PropFact {
   return { name, present: true, ref: {}, ...extra };
 }
 
-function prep(overrides: Partial<PreparedProps> = {}): PreparedProps {
+function prep(overrides: Partial<MergedProps> = {}): MergedProps {
   return {
     component: "Widget",
-    matcher: createImportMatcher("*"),
     required: [],
     exclusive: [],
     deprecated: [],
@@ -163,20 +161,10 @@ describe("evaluateProps deprecated", () => {
   });
 });
 
-describe("prepareProps", () => {
-  it("gates the component by its import path", () => {
-    const prepared = prepareProps({
-      importPath: "*/widget",
-      component: "Widget",
-      required: ["to"],
-    });
-
-    expect(prepared.matcher("~/widget")).toBe(true);
-    expect(prepared.matcher("~/other")).toBe(false);
-  });
-
+describe("preparePropsRow", () => {
   it("normalizes the deprecated map into entry tuples", () => {
-    const prepared = prepareProps({
+    const prepared = preparePropsRow({
+      facet: "props",
       importPath: "*/widget",
       component: "Widget",
       deprecated: { color: "tone", legacy: true },
@@ -189,7 +177,8 @@ describe("prepareProps", () => {
   });
 
   it("defaults the absent facets to empty", () => {
-    const prepared = prepareProps({
+    const prepared = preparePropsRow({
+      facet: "props",
       importPath: "*/widget",
       component: "Widget",
       deprecatedComponent: true,

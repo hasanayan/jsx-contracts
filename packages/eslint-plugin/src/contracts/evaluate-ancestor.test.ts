@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { AncestorFact, PreparedAncestor } from "./evaluate-ancestor.js";
-import { evaluateAncestor, prepareAncestor } from "./evaluate-ancestor.js";
+import type { AncestorFact, MergedAncestor } from "./evaluate-ancestor.js";
+import { evaluateAncestor, prepareAncestorRow } from "./evaluate-ancestor.js";
 import { createImportMatcher } from "./import-matcher.js";
 import type { Ref } from "./model.js";
 
@@ -9,13 +9,18 @@ import type { Ref } from "./model.js";
 // identity.
 const element: Ref = {};
 
-function prep(overrides: Partial<PreparedAncestor> = {}): PreparedAncestor {
-  return {
-    component: "Button",
-    matcher: createImportMatcher("*"),
-    notInside: [],
-    ...overrides,
-  };
+function prep(overrides: Partial<MergedAncestor> = {}): MergedAncestor {
+  return { component: "Button", notInside: [], ...overrides };
+}
+
+// A merged forbidden-ancestor entry, name-only or self-gated.
+function forbidden(
+  name: string,
+  gate?: string,
+): MergedAncestor["notInside"][number] {
+  return gate === undefined
+    ? { name }
+    : { name, importPath: gate, matcher: createImportMatcher(gate) };
 }
 
 // Ancestors are innermost-first, matching the adapter's parent-chain walk.
@@ -28,7 +33,7 @@ function ancestor(
 
 describe("evaluateAncestor", () => {
   it("passes when no ancestor matches a forbidden entry", () => {
-    const prepared = prep({ notInside: [{ name: "Button" }] });
+    const prepared = prep({ notInside: [forbidden("Button")] });
 
     expect(
       evaluateAncestor(prepared, [ancestor("Card"), ancestor("div")], element),
@@ -36,7 +41,7 @@ describe("evaluateAncestor", () => {
   });
 
   it("reports the inner element when a forbidden ancestor is present", () => {
-    const prepared = prep({ notInside: [{ name: "Button" }] });
+    const prepared = prep({ notInside: [forbidden("Button")] });
     const [violation, ...rest] = evaluateAncestor(
       prepared,
       [ancestor("div"), ancestor("Button")],
@@ -50,7 +55,7 @@ describe("evaluateAncestor", () => {
   });
 
   it("reports only once, for the nearest matching ancestor", () => {
-    const prepared = prep({ notInside: [{ name: "Button" }] });
+    const prepared = prep({ notInside: [forbidden("Button")] });
     const violations = evaluateAncestor(
       prepared,
       [ancestor("Button"), ancestor("div"), ancestor("Button")],
@@ -64,7 +69,7 @@ describe("evaluateAncestor", () => {
   it("reports one violation per distinct forbidden entry that matches", () => {
     const prepared = prep({
       component: "Card.Action",
-      notInside: [{ name: "Modal.Footer" }, { name: "Dialog" }],
+      notInside: [forbidden("Modal.Footer"), forbidden("Dialog")],
     });
 
     const violations = evaluateAncestor(
@@ -81,7 +86,7 @@ describe("evaluateAncestor", () => {
 
   it("handles self-nesting: the component names itself as an ancestor", () => {
     const prepared = prep({
-      notInside: [{ name: "Widget" }],
+      notInside: [forbidden("Widget")],
       component: "Widget",
     });
 
@@ -92,7 +97,7 @@ describe("evaluateAncestor", () => {
 
   describe("gated ancestor entries", () => {
     const gated = prep({
-      notInside: [{ name: "Button", matcher: createImportMatcher("@acme/ds") }],
+      notInside: [forbidden("Button", "@acme/ds")],
     });
 
     it("matches when the ancestor's source passes the gate", () => {
@@ -115,17 +120,16 @@ describe("evaluateAncestor", () => {
   });
 });
 
-describe("prepareAncestor", () => {
-  it("gates the component by its import path and defaults name-only entries", () => {
-    const prepared = prepareAncestor({
+describe("prepareAncestorRow", () => {
+  // The row's own import gate is the engine's business, not the evaluator's;
+  // what preparation owns is the per-entry gate and its name-only default.
+  it("defaults name-only entries and compiles a self-gated one", () => {
+    const prepared = prepareAncestorRow({
+      facet: "ancestor",
       importPath: "*/widget",
       component: "Button",
       notInside: ["Button", { name: "Link", importPath: "@acme/ds" }],
     });
-
-    expect(prepared.component).toBe("Button");
-    expect(prepared.matcher("~/widget")).toBe(true);
-    expect(prepared.matcher("~/other")).toBe(false);
 
     const [nameOnly, gated] = prepared.notInside;
 

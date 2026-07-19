@@ -1,11 +1,8 @@
 import { RuleTester } from "@typescript-eslint/rule-tester";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, it } from "vitest";
 
-import type { ContainerConfig } from "@jsx-contracts/helpers";
+import type { ContractRows, SlotsRow } from "../contracts/payload.js";
 
-import { validateSlotsOptions } from "../contracts/validate.js";
-
-import type { SlotsOptions } from "./slots.js";
 import { slots } from "./slots.js";
 
 RuleTester.afterAll = afterAll;
@@ -21,10 +18,11 @@ const ruleTester = new RuleTester({
   },
 });
 
-const widgetOptions: SlotsOptions = [
+const widgetOptions: ContractRows = [
   {
+    facet: "slots",
     importPath: "*/acme-ds/components/widget",
-    container: "Widget.Tray",
+    component: "Widget.Tray",
     slots: [
       "Widget.Tray.ActionPrimary",
       "Widget.Tray.ActionSecondary",
@@ -44,38 +42,43 @@ const widgetOptions: SlotsOptions = [
     ],
   },
   {
+    facet: "slots",
     importPath: "*/acme-ds/components/widget",
-    container: "Widget.Tray.Menu",
+    component: "Widget.Tray.Menu",
     slots: ["Widget.Tray.Menu.Item"],
   },
   {
+    facet: "slots",
     importPath: "*/acme-ds/components/widget",
-    container: "Group",
+    component: "Group",
     slots: ["Group.Item"],
   },
   {
+    facet: "slots",
     importPath: "*/acme-ds/components/widget",
-    container: "GroupSelf",
+    component: "GroupSelf",
     slots: ["GroupSelf", "GroupSelf.Item"],
   },
 ];
 
-const literalOptions: SlotsOptions = [
+const literalOptions: ContractRows = [
   {
+    facet: "slots",
     importPath: "~/acme-ds/components/widget",
-    container: "Widget.Tray",
+    component: "Widget.Tray",
     slots: ["Widget.Tray.Link"],
   },
 ];
 
-const strictWidgetOptions: SlotsOptions = widgetOptions.map((config) =>
-  config.container === "Widget.Tray" ? { ...config, strict: true } : config,
+const strictWidgetOptions: ContractRows = widgetOptions.map((config) =>
+  config.component === "Widget.Tray" ? { ...config, strict: true } : config,
 );
 
-const overrideSlotOptions: SlotsOptions = [
+const overrideSlotOptions: ContractRows = [
   {
+    facet: "slots",
     importPath: "*/acme-ds/components/widget",
-    container: "Widget.Tray",
+    component: "Widget.Tray",
     slots: [
       "Widget.Tray.ActionPrimary",
       { name: "ExternalBadge", importPath: "*/acme-ds/components/badge" },
@@ -84,136 +87,45 @@ const overrideSlotOptions: SlotsOptions = [
   },
 ];
 
-const chipMaxTwoOptions: SlotsOptions = [
+const chipMaxTwoOptions: ContractRows = [
   {
+    facet: "slots",
     importPath: "*/acme-ds/components/widget",
-    container: "Widget.Tray",
+    component: "Widget.Tray",
     slots: [{ name: "Widget.Tray.Chip", maxCount: 2 }],
   },
 ];
 
-const chipMaxOneOptions: SlotsOptions = [
+const chipMaxOneOptions: ContractRows = [
   {
+    facet: "slots",
     importPath: "*/acme-ds/components/widget",
-    container: "Widget.Tray",
+    component: "Widget.Tray",
     slots: [{ name: "Widget.Tray.Chip", maxCount: 1 }],
   },
 ];
 
-const chipMinOneContainer: ContainerConfig = {
+const chipMinOneContainer: SlotsRow = {
+  facet: "slots",
   importPath: "*/acme-ds/components/widget",
-  container: "Widget.Tray",
+  component: "Widget.Tray",
   slots: [{ name: "Widget.Tray.Chip", minCount: 1 }],
 };
 
-const chipMinOneOptions: SlotsOptions = [chipMinOneContainer];
+const chipMinOneOptions: ContractRows = [chipMinOneContainer];
 
-const chipMinOneStrictOptions: SlotsOptions = [
+const chipMinOneStrictOptions: ContractRows = [
   { ...chipMinOneContainer, strict: true },
 ];
 
-const chipMinTwoOptions: SlotsOptions = [
+const chipMinTwoOptions: ContractRows = [
   {
+    facet: "slots",
     importPath: "*/acme-ds/components/widget",
-    container: "Widget.Tray",
+    component: "Widget.Tray",
     slots: [{ name: "Widget.Tray.Chip", minCount: 2 }],
   },
 ];
-
-describe("validateSlotsOptions", () => {
-  it("throws on duplicate containers", () => {
-    expect(() => {
-      validateSlotsOptions([
-        {
-          importPath: "*/acme-ds/components/widget",
-          container: "Widget.Tray",
-          slots: [],
-        },
-        {
-          importPath: "*/acme-ds/components/widget",
-          container: "Widget.Tray",
-          slots: [],
-        },
-      ]);
-    }).toThrow('duplicate container "Widget.Tray"');
-  });
-
-  it("throws on duplicate slots", () => {
-    expect(() => {
-      validateSlotsOptions([
-        {
-          importPath: "*/acme-ds/components/widget",
-          container: "Widget.Tray",
-          slots: ["Widget.Tray.Link", "Widget.Tray.Link"],
-        },
-      ]);
-    }).toThrow('duplicate slot "Widget.Tray.Link"');
-  });
-
-  it("throws on a negative minCount", () => {
-    expect(() => {
-      validateSlotsOptions([
-        {
-          importPath: "*/acme-ds/components/widget",
-          container: "Widget.Tray",
-          slots: [{ name: "Widget.Tray.Link", minCount: -1 }],
-        },
-      ]);
-    }).toThrow(
-      'slot "Widget.Tray.Link" minCount must be a non-negative integer',
-    );
-  });
-
-  it("throws on a maxCount of zero", () => {
-    expect(() => {
-      validateSlotsOptions([
-        {
-          importPath: "*/acme-ds/components/widget",
-          container: "Widget.Tray",
-          slots: [{ name: "Widget.Tray.Link", maxCount: 0 }],
-        },
-      ]);
-    }).toThrow('slot "Widget.Tray.Link" maxCount must be a positive integer');
-  });
-
-  it("throws when minCount exceeds maxCount", () => {
-    expect(() => {
-      validateSlotsOptions([
-        {
-          importPath: "*/acme-ds/components/widget",
-          container: "Widget.Tray",
-          slots: [{ name: "Widget.Tray.Link", minCount: 3, maxCount: 2 }],
-        },
-      ]);
-    }).toThrow('slot "Widget.Tray.Link" minCount exceeds maxCount');
-  });
-
-  it("throws when `requires` references an unknown slot", () => {
-    expect(() => {
-      validateSlotsOptions([
-        {
-          importPath: "*/acme-ds/components/widget",
-          container: "Widget.Tray",
-          slots: ["Widget.Tray.Link"],
-          requires: { "Widget.Tray.Link": "Widget.Tray.Missing" },
-        },
-      ]);
-    }).toThrow('"Widget.Tray.Missing" is not one of <Widget.Tray>\'s slots');
-  });
-
-  it("throws when `exclusive` references an unknown slot", () => {
-    expect(() => {
-      validateSlotsOptions([
-        {
-          importPath: "*/acme-ds/components/widget",
-          container: "Widget.Tray",
-          slots: ["Widget.Tray.Link"],
-          exclusive: [[["Widget.Tray.Link"], ["Widget.Tray.Missing"]]],
-        },
-      ]);
-    }).toThrow('"Widget.Tray.Missing" is not one of <Widget.Tray>\'s slots');
-  });
-});
 
 ruleTester.run("slots", slots, {
   valid: [
