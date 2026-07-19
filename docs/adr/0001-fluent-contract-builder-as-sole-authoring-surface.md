@@ -2,7 +2,8 @@
 
 Status: accepted — 2026-07-19
 
-Specified in full in issues #2 (enforcement) and #3 (authoring).
+Specified in full in issues #2 (the rule table and the engine), #3 (the
+authoring surface) and #4 (conditions), in that order.
 
 ## Decision
 
