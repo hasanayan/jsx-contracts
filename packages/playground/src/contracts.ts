@@ -13,11 +13,13 @@ import type * as widgets from "./widget.js";
 const { contract } = contractsFor<typeof widgets>("*/playground/src/widget.js");
 
 const tray = contract("Widget.Tray")
-  .hasSlots({
-    ".Title": { count: { min: 1, max: 1 } },
-    ".Action": { count: { min: 0, max: 2 } },
-    ".Overflow": true,
-  })
+  .hasSlot(".Title")
+  .atLeast(1)
+  .atMost(1)
+  .hasSlot(".Action")
+  .atLeast(0)
+  .atMost(2)
+  .hasSlot(".Overflow")
   // An <Action> only makes sense alongside a <Title>.
   .requires(".Action", ".Title")
   // An <Overflow> collapses the actions, so it cannot co-render with them.

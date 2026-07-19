@@ -12,8 +12,7 @@ export type Forbid = string | { name: string; from?: Gate };
 
 // Omitted bounds are left for the rule to default, never stamped here.
 /** `true` = default bounds (at most one); otherwise count bounds and/or an own gate. */
-export type SlotSpec =
-  true | { count?: { min?: number; max?: number }; from?: Gate };
+type SlotSpec = true | { count?: { min?: number; max?: number }; from?: Gate };
 
 // One ban's fields; `SubtreeBan` below makes it forbid at least one thing.
 interface SubtreeBanFields {

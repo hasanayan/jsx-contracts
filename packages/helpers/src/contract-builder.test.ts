@@ -21,7 +21,10 @@ const rowsFor = <F extends ContractRow["facet"]>(
 describe("contract builder", () => {
   it("compiles the same payload as the object DSL", () => {
     const fluent = contract("Widget.Tray", "*/ds/widget")
-      .hasSlots({ ".Action": { count: { min: 1, max: 3 } }, ".Label": true })
+      .hasSlot(".Action")
+      .atLeast(1)
+      .atMost(3)
+      .hasSlot(".Label")
       .requires(".Label", ".Action")
       .exclusive([".Action"], [".Label"])
       .strict()
@@ -86,7 +89,7 @@ describe("contract builder", () => {
   });
 
   it("is immutable: chaining does not change earlier builders", () => {
-    const base = contract("Widget.Tray", "g").hasSlots({ ".A": true });
+    const base = contract("Widget.Tray", "g").hasSlot(".A");
     const strictVariant = base.strict();
 
     expect(rowsFor(base, "slots")[0]?.strict).toBeUndefined();
@@ -94,7 +97,7 @@ describe("contract builder", () => {
   });
 
   it("is a CompiledContracts, so mergeContracts combines builders", () => {
-    const tray = contract("Widget.Tray", "g").hasSlots({ ".A": true });
+    const tray = contract("Widget.Tray", "g").hasSlot(".A");
     const widget = contract("Widget", "g").when("open").forbidProps("disabled");
 
     const merged = mergeContracts(tray, widget);
@@ -105,22 +108,16 @@ describe("contract builder", () => {
 
   it("rejects a reference to an undeclared slot at call time", () => {
     // The cast defeats the type-state to reach the runtime guard.
-    const loose = contract("W", "g").hasSlots({
-      ".A": true,
-    }) as ContractBuilder<string>;
+    const loose = contract("W", "g").hasSlot(".A") as ContractBuilder<string>;
 
     expect(() => loose.requires(".A", ".B")).toThrow('references slot ".B"');
   });
 
-  it("rejects a duplicate slot declaration", () => {
-    expect(() =>
-      contract("W", "g").hasSlots({ ".A": true }).hasSlots({ ".A": true }),
-    ).toThrow('declares slot ".A" twice');
-  });
-
   it("rejects a second requires for the same slot", () => {
     const built = contract("W", "g")
-      .hasSlots({ ".A": true, ".B": true, ".C": true })
+      .hasSlot(".A")
+      .hasSlot(".B")
+      .hasSlot(".C")
       .requires(".A", ".B");
 
     expect(() => built.requires(".A", ".C")).toThrow("already has a requires");
@@ -132,12 +129,62 @@ describe("contract builder", () => {
     expect(() => built.when("variant")).toThrow("already has a subtree ban");
   });
 
-  describe("hasDescendants", () => {
-    it("matches the fluent .hasDescendants builder", () => {
-      const fluent = contract("Tabs.Root", "@acme/tabs").hasDescendants({
-        ".List": { count: { min: 1, max: 1 } },
-        ".Panel": true,
-      });
+  describe("hasSlot", () => {
+    it("declares a slot in the chain, one call per slot", () => {
+      const fluent = contract("Widget.Tray", "g")
+        .hasSlot(".Title")
+        .hasSlot(".Action");
+
+      expect(rowsFor(fluent, "slots")[0]?.slots).toEqual([
+        { name: "Widget.Tray.Title" },
+        { name: "Widget.Tray.Action" },
+      ]);
+    });
+
+    it("emits the four count-default cases", () => {
+      const fluent = contract("Widget.Tray", "g")
+        .hasSlot(".Bare")
+        .hasSlot(".Lower")
+        .atLeast(1)
+        .hasSlot(".Upper")
+        .atMost(2)
+        .hasSlot(".Both")
+        .atLeast(1)
+        .atMost(3);
+
+      expect(rowsFor(fluent, "slots")[0]?.slots).toEqual([
+        { name: "Widget.Tray.Bare" },
+        { name: "Widget.Tray.Lower", minCount: 1 },
+        { name: "Widget.Tray.Upper", maxCount: 2 },
+        { name: "Widget.Tray.Both", minCount: 1, maxCount: 3 },
+      ]);
+    });
+
+    it("carries a part's own import gate to the emitted row", () => {
+      const fluent = contract("Widget.Tray", "g").hasSlot(
+        "Other.Badge",
+        "@other/pkg",
+      );
+
+      expect(rowsFor(fluent, "slots")[0]?.slots).toEqual([
+        { name: "Other.Badge", importPath: "@other/pkg" },
+      ]);
+    });
+
+    it("rejects declaring the same slot twice", () => {
+      expect(() => contract("W", "g").hasSlot(".A").hasSlot(".A")).toThrow(
+        'declares slot ".A" twice',
+      );
+    });
+  });
+
+  describe("hasDescendant", () => {
+    it("matches the map form it respells", () => {
+      const fluent = contract("Tabs.Root", "@acme/tabs")
+        .hasDescendant(".List")
+        .atLeast(1)
+        .atMost(1)
+        .hasDescendant(".Panel");
 
       const object = defineContracts("@acme/tabs", {
         "Tabs.Root": {
@@ -151,11 +198,22 @@ describe("contract builder", () => {
       expect(rowsFor(fluent, "subtree")).toEqual(rowsFor(object, "subtree"));
     });
 
+    it("carries a part's own import gate to the emitted row", () => {
+      const fluent = contract("Tabs.Root", "@acme/tabs").hasDescendant(
+        "Other.List",
+        "@other/pkg",
+      );
+
+      expect(rowsFor(fluent, "subtree")[0]?.require).toEqual([
+        { name: "Other.List", importPath: "@other/pkg" },
+      ]);
+    });
+
     it("rejects declaring the same descendant twice", () => {
       expect(() =>
         contract("Tabs.Root", "@acme/tabs")
-          .hasDescendants({ ".List": true })
-          .hasDescendants({ ".List": true }),
+          .hasDescendant(".List")
+          .hasDescendant(".List"),
       ).toThrow('declares descendant ".List" twice');
     });
   });
@@ -224,17 +282,44 @@ function typeLevelChecks(): void {
 
   // Builder: requires cannot reference an undeclared slot.
   contract("Widget.Tray", "g")
-    .hasSlots({ ".Title": true })
+    .hasSlot(".Title")
     // @ts-expect-error ".Bogus" is not a declared slot key.
     .requires(".Title", ".Bogus");
 
-  // Builder: nothing can be referenced before hasSlots declares it.
+  // Builder: nothing can be referenced before hasSlot declares it.
   // @ts-expect-error no slot keys exist yet.
   contract("Widget.Tray", "g").requires(".Title", ".Title");
 
   // Builder: a when ban must forbid something before the chain continues.
   // @ts-expect-error strict is not available on a pending ban.
   void contract("Widget", "g").when("open").strict;
+
+  // Count bounds are offered only directly after a declaration.
+  // @ts-expect-error nothing has been declared to bound.
+  void contract("Widget.Tray", "g").atLeast;
+
+  // …and vanish once anything else is chained, so a bound cannot silently
+  // attach to the wrong part.
+  // @ts-expect-error strict() closed the declaration.
+  void contract("Widget.Tray", "g").hasSlot(".Title").strict().atLeast;
+
+  // Each bound stays reachable after the other, so `.atLeast(1).atMost(1)`
+  // reads as one range.
+  contract("Widget.Tray", "g").hasSlot(".Title").atLeast(1).atMost(1);
+  contract("Widget.Tray", "g").hasDescendant(".List").atMost(1).atLeast(1);
+
+  // Names declared by hasSlot accumulate into the referenceable slot keys.
+  contract("Widget.Tray", "g")
+    .hasSlot(".Title")
+    .hasSlot(".Action")
+    .requires(".Action", ".Title")
+    .exclusive([".Title"], [".Action"]);
+
+  // A descendant is not a slot, so it is not referenceable.
+  contract("Widget.Tray", "g")
+    .hasDescendant(".List")
+    // @ts-expect-error ".List" is a descendant, not a declared slot key.
+    .requires(".List", ".List");
 }
 
 void typeLevelChecks;

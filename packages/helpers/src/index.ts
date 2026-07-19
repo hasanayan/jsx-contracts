@@ -5,6 +5,8 @@ export type {
   BanBuilder,
   ContractBuilder,
   PendingBan,
+  PendingCount,
+  SlotBuilder,
 } from "./contract-builder.js";
 export { contractsFor, defineContracts } from "./define-contracts.js";
 export type { BoundContracts } from "./define-contracts.js";

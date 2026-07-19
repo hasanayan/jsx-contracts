@@ -4,9 +4,14 @@
 
 import type { ContractRows } from "@jsx-contracts/eslint-plugin";
 
-import type { RuntimeBan, RuntimeEntry, RuntimeProps } from "./compile.js";
+import type {
+  RuntimeBan,
+  RuntimeEntry,
+  RuntimeProps,
+  RuntimeSlotSpec,
+} from "./compile.js";
 import { compile } from "./compile.js";
-import type { Forbid, Gate, Literal, SlotSpec } from "./contract-entry.js";
+import type { Forbid, Gate, Literal } from "./contract-entry.js";
 import type { CompiledContracts } from "./rule-table.js";
 
 /**
@@ -28,6 +33,26 @@ export type BanBuilder<SlotKey extends string> = ContractBuilder<SlotKey> &
   PendingBan<SlotKey>;
 
 /**
+ * Count bounds for the slot or descendant just declared. Offered by the
+ * type-state only directly after the declaration they bound — and after each
+ * other, so `.atLeast(1).atMost(1)` reads — so a bound cannot silently attach
+ * to the wrong part.
+ */
+export interface PendingCount<SlotKey extends string> {
+  /** The part must appear at least `count` times; the upper bound goes unbounded. */
+  atLeast(count: number): SlotBuilder<SlotKey>;
+  /** The part may appear at most `count` times; the lower bound stays nought. */
+  atMost(count: number): SlotBuilder<SlotKey>;
+}
+
+/**
+ * A builder whose latest slot or descendant declaration can still take count
+ * bounds; any other call closes the declaration.
+ */
+export type SlotBuilder<SlotKey extends string> = ContractBuilder<SlotKey> &
+  PendingCount<SlotKey>;
+
+/**
  * One component's contract, built fluently. A builder is already a
  * `CompiledContracts`: call `rules()` on it directly, or combine several with
  * `mergeContracts`. Every call returns a new builder — earlier references
@@ -35,7 +60,8 @@ export type BanBuilder<SlotKey extends string> = ContractBuilder<SlotKey> &
  *
  * @example
  * const tray = contract("Widget.Tray")
- *   .hasSlots({ ".Title": { count: { min: 1 } }, ".Action": true })
+ *   .hasSlot(".Title").atLeast(1)
+ *   .hasSlot(".Action")
  *   .requires(".Action", ".Title")
  *   .strict();
  */
@@ -43,13 +69,24 @@ export interface ContractBuilder<
   SlotKey extends string,
 > extends CompiledContracts {
   /**
-   * Declare slots; later `requires`/`exclusive` references are type-checked
-   * against the keys declared so far. A key starting with `.` is shorthand
-   * for `<Component><key>`.
+   * Declare one slot — a component allowed as a direct child. A name starting
+   * with `.` is shorthand for `<Component><name>`. `from` is the slot's own
+   * import gate, for a part sourced from a different package than its
+   * container; omitted, the slot inherits the container's gate. Later
+   * `requires`/`exclusive` references are type-checked against the names
+   * declared so far. Declaring a slot twice throws.
+   *
+   * The count bounds that follow apply to this slot alone and are offered by
+   * the type-state only here: a bare declaration allows nought or one.
+   *
+   * @example
+   * .hasSlot(".Title").atLeast(1).atMost(1)
+   * .hasSlot("Other.Badge", "@other/pkg")
    */
-  hasSlots<const S extends Record<string, SlotSpec>>(
-    slots: S,
-  ): ContractBuilder<SlotKey | Extract<keyof S, string>>;
+  hasSlot<const Name extends string>(
+    name: Name,
+    from?: Gate,
+  ): SlotBuilder<SlotKey | Name>;
   /** The `slot` may only render alongside `requiredSlot`. */
   requires(slot: SlotKey, requiredSlot: SlotKey): ContractBuilder<SlotKey>;
   /** The two slot groups may not co-render. */
@@ -60,17 +97,18 @@ export interface ContractBuilder<
   /** Report unresolvable children as violations; presence checks always run. */
   strict(): ContractBuilder<SlotKey>;
   /**
-   * Require descendants anywhere below the component, with count bounds — for
-   * parts that may sit under wrapper elements the direct-child slots facet
-   * can't see. A key starting with `.` is shorthand for `<Component><key>`;
-   * `true` = default bounds (at most one).
+   * Require one descendant anywhere below the component — for a part that may
+   * sit under wrapper elements the direct-child slots facet can't see. A name
+   * starting with `.` is shorthand for `<Component><name>`; `from` is the
+   * descendant's own import gate. Declaring a descendant twice throws.
+   *
+   * The count bounds that follow apply to this descendant alone, with the same
+   * defaults as a slot's.
    *
    * @example
-   * .hasDescendants({ ".List": { count: { min: 1, max: 1 } }, ".Panel": true })
+   * .hasDescendant(".List").atLeast(1)
    */
-  hasDescendants(
-    descendants: Record<string, SlotSpec>,
-  ): ContractBuilder<SlotKey>;
+  hasDescendant(name: string, from?: Gate): SlotBuilder<SlotKey>;
   /**
    * Start a subtree ban activated by `prop` — on presence, or only when its
    * value is one of `is`. At most one ban per prop.
@@ -111,13 +149,16 @@ export interface ContractBuilder<
  * builder by destructuring `contract` off a `contractsFor` binding, which
  * supplies `from` — the gate is stated once for the whole design system rather
  * than repeated per component. The type-state enforces order: slots must be
- * declared before `requires`/`exclusive` can reference them, and a `when` ban
- * must forbid something before the chain continues.
+ * declared before `requires`/`exclusive` can reference them, count bounds are
+ * offered only directly after the declaration they bound, and a `when` ban must
+ * forbid something before the chain continues.
  *
  * @example
  * const { contract } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
  * export const tray = contract("Widget.Tray")
- *   .hasSlots({ ".Title": { count: { min: 1, max: 1 } }, ".Overflow": true, ".Action": true })
+ *   .hasSlot(".Title").atLeast(1).atMost(1)
+ *   .hasSlot(".Overflow")
+ *   .hasSlot(".Action")
  *   .requires(".Action", ".Title")
  *   .exclusive([".Overflow"], [".Action"])
  *   .when("variant", ["compact"]).forbid("Widget.Footer");
@@ -131,11 +172,36 @@ export function contract(
   return makeBuilder(component, { from });
 }
 
+// The untyped view of a builder: every method the surface can offer, before the
+// type-state hides the ones the chain state does not reach.
+type AnyBuilder = BanBuilder<string> & PendingCount<string>;
+
+// The slot or descendant a count bound would attach to; absent once anything
+// else is chained.
+/**
+ * Which kind of part a declaration names. A slot is the children facet's unit
+ * and a descendant the subtree facet's, but both are declared and bounded the
+ * same way, so the builder carries the kind rather than the facet.
+ */
+type PartKind = "slot" | "descendant";
+
+/** Where a kind's parts live on the runtime entry. */
+const partsKey = {
+  slot: "slots",
+  descendant: "descendants",
+} as const satisfies Record<PartKind, keyof RuntimeEntry>;
+
+interface PendingPart {
+  readonly kind: PartKind;
+  readonly name: string;
+}
+
 function makeBuilder(
   component: string,
   entry: RuntimeEntry,
   banProp?: string,
-): BanBuilder<string> {
+  pendingPart?: PendingPart,
+): AnyBuilder {
   // Builders are immutable, so the compilation is computed once and reused by
   // every payload access (`slots`, `subtree`, `rules()`, …).
   let compiled: CompiledContracts | undefined;
@@ -147,7 +213,7 @@ function makeBuilder(
     if (entry.slots?.[reference] === undefined) {
       throw new Error(
         `contract: component "${component}" references slot "${reference}" ` +
-          "before declaring it in hasSlots().",
+          "before declaring it in hasSlot().",
       );
     }
   };
@@ -171,6 +237,64 @@ function makeBuilder(
     subtree: { ...entry.subtree, [prop]: ban },
   });
 
+  const withPart = (
+    kind: PartKind,
+    name: string,
+    spec: RuntimeSlotSpec,
+  ): RuntimeEntry => ({
+    ...entry,
+    [partsKey[kind]]: { ...entry[partsKey[kind]], [name]: spec },
+  });
+
+  // One part declared into `slots` or `descendants`, refusing a name the
+  // component already declares as that kind.
+  const declarePart = (
+    kind: PartKind,
+    name: string,
+    from: Gate | undefined,
+  ): AnyBuilder => {
+    if (entry[partsKey[kind]]?.[name] !== undefined) {
+      throw new Error(
+        `contract: component "${component}" declares ${kind} "${name}" twice.`,
+      );
+    }
+
+    const spec: RuntimeSlotSpec = from === undefined ? {} : { from };
+
+    return makeBuilder(component, withPart(kind, name, spec), undefined, {
+      kind,
+      name,
+    });
+  };
+
+  // A count bound on the part just declared. The type-state only surfaces
+  // `atLeast`/`atMost` there, so the throw is for untyped callers.
+  const boundPart = (bound: "min" | "max", count: number): AnyBuilder => {
+    if (pendingPart === undefined) {
+      throw new Error(
+        `contract: component "${component}" has no slot or descendant to ` +
+          "bound — declare one with hasSlot() or hasDescendant().",
+      );
+    }
+
+    const { kind, name } = pendingPart;
+    // A pending part was written by `declarePart`, so it is always an object
+    // spec; the `true` shorthand only reaches an entry through the map form.
+    const declared = entry[partsKey[kind]]?.[name];
+    const spec: RuntimeSlotSpec =
+      declared === undefined || declared === true ? {} : declared;
+
+    return makeBuilder(
+      component,
+      withPart(kind, name, {
+        ...spec,
+        count: { ...spec.count, [bound]: count },
+      }),
+      undefined,
+      pendingPart,
+    );
+  };
+
   const currentProps = (): RuntimeProps => entry.props ?? {};
 
   const withProps = (next: RuntimeProps): RuntimeEntry => ({
@@ -179,21 +303,16 @@ function makeBuilder(
   });
 
   return {
-    hasSlots(slots): BanBuilder<string> {
-      for (const key of Object.keys(slots)) {
-        if (entry.slots?.[key] !== undefined) {
-          throw new Error(
-            `contract: component "${component}" declares slot "${key}" twice.`,
-          );
-        }
-      }
-
-      return makeBuilder(component, {
-        ...entry,
-        slots: { ...entry.slots, ...slots },
-      });
+    hasSlot(name, from): AnyBuilder {
+      return declarePart("slot", name, from);
     },
-    requires(slot, requiredSlot): BanBuilder<string> {
+    atLeast(count): AnyBuilder {
+      return boundPart("min", count);
+    },
+    atMost(count): AnyBuilder {
+      return boundPart("max", count);
+    },
+    requires(slot, requiredSlot): AnyBuilder {
       requireDeclared(slot);
       requireDeclared(requiredSlot);
 
@@ -209,7 +328,7 @@ function makeBuilder(
         requires: { ...entry.requires, [slot]: requiredSlot },
       });
     },
-    exclusive(groupA, groupB): BanBuilder<string> {
+    exclusive(groupA, groupB): AnyBuilder {
       for (const member of [...groupA, ...groupB]) {
         requireDeclared(member);
       }
@@ -219,22 +338,11 @@ function makeBuilder(
         exclusive: [...(entry.exclusive ?? []), [groupA, groupB]],
       });
     },
-    strict(): BanBuilder<string> {
+    strict(): AnyBuilder {
       return makeBuilder(component, { ...entry, strict: true });
     },
-    hasDescendants(descendants): BanBuilder<string> {
-      for (const key of Object.keys(descendants)) {
-        if (entry.descendants?.[key] !== undefined) {
-          throw new Error(
-            `contract: component "${component}" declares descendant "${key}" twice.`,
-          );
-        }
-      }
-
-      return makeBuilder(component, {
-        ...entry,
-        descendants: { ...entry.descendants, ...descendants },
-      });
+    hasDescendant(name, from): AnyBuilder {
+      return declarePart("descendant", name, from);
     },
     when(prop, is): PendingBan<string> {
       if (entry.subtree?.[prop] !== undefined) {
@@ -263,7 +371,7 @@ function makeBuilder(
     },
     // These extend the ban `when` opened; the typed facets only surface them
     // on a BanBuilder.
-    forbid(...elements): BanBuilder<string> {
+    forbid(...elements): AnyBuilder {
       const { prop, ban } = activeBan();
 
       return makeBuilder(
@@ -272,7 +380,7 @@ function makeBuilder(
         prop,
       );
     },
-    forbidProps(...props): BanBuilder<string> {
+    forbidProps(...props): AnyBuilder {
       const { prop, ban } = activeBan();
 
       return makeBuilder(
@@ -286,7 +394,7 @@ function makeBuilder(
     },
     // The prop-facet methods reference no slot keys, so they close any active
     // ban and stay available at every chain state.
-    requiresProp(prop): BanBuilder<string> {
+    requiresProp(prop): AnyBuilder {
       const props = currentProps();
 
       return makeBuilder(
@@ -294,7 +402,7 @@ function makeBuilder(
         withProps({ ...props, required: [...(props.required ?? []), prop] }),
       );
     },
-    requiresOneOf(...group): BanBuilder<string> {
+    requiresOneOf(...group): AnyBuilder {
       const props = currentProps();
 
       return makeBuilder(
@@ -302,7 +410,7 @@ function makeBuilder(
         withProps({ ...props, required: [...(props.required ?? []), group] }),
       );
     },
-    exclusiveProps(groupA, groupB): BanBuilder<string> {
+    exclusiveProps(groupA, groupB): AnyBuilder {
       const props = currentProps();
 
       return makeBuilder(
@@ -313,7 +421,7 @@ function makeBuilder(
         }),
       );
     },
-    deprecatesProp(prop, useInstead): BanBuilder<string> {
+    deprecatesProp(prop, useInstead): AnyBuilder {
       const props = currentProps();
 
       if (props.deprecated?.[prop] !== undefined) {
@@ -331,7 +439,7 @@ function makeBuilder(
         }),
       );
     },
-    deprecated(useInstead): BanBuilder<string> {
+    deprecated(useInstead): AnyBuilder {
       if (entry.deprecated !== undefined) {
         throw new Error(
           `contract: component "${component}" is already deprecated.`,
@@ -345,7 +453,7 @@ function makeBuilder(
     },
     // References no slot keys, so it closes any active ban and stays available
     // at every chain state, like the prop-facet methods.
-    notInside(...elements): BanBuilder<string> {
+    notInside(...elements): AnyBuilder {
       const existing = entry.notInside ?? [];
       const seen = new Set(
         existing.map((el) => (typeof el === "string" ? el : el.name)),

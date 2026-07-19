@@ -19,7 +19,7 @@ const rowsFor = <F extends ContractRow["facet"]>(
 
 describe("mergeContracts", () => {
   const widget = contract("Widget.Tray", "g")
-    .hasSlots({ ".Action": true })
+    .hasSlot(".Action")
     .when("open")
     .forbidProps("disabled");
 
@@ -73,10 +73,8 @@ describe("mergeContracts", () => {
   });
 
   it("rejects two contracts covering the same component", () => {
-    const trayTitle = contract("Widget.Tray", "g").hasSlots({ ".Title": true });
-    const trayAction = contract("Widget.Tray", "g").hasSlots({
-      ".Action": true,
-    });
+    const trayTitle = contract("Widget.Tray", "g").hasSlot(".Title");
+    const trayAction = contract("Widget.Tray", "g").hasSlot(".Action");
 
     // Merged, the two slot rows would intersect to nothing and neither slot
     // would be allowed — so the merge is refused instead.
@@ -86,7 +84,7 @@ describe("mergeContracts", () => {
   });
 
   it("rejects two contracts covering one component on different facets", () => {
-    const traySlots = contract("Widget.Tray", "g").hasSlots({ ".Title": true });
+    const traySlots = contract("Widget.Tray", "g").hasSlot(".Title");
     const trayAncestor = contract("Widget.Tray", "g").notInside("Button");
 
     expect(() => mergeContracts(traySlots, trayAncestor)).toThrow(
@@ -97,11 +95,9 @@ describe("mergeContracts", () => {
   it("rejects two contracts covering one component under different gates", () => {
     // Gates are globs, so both rows can match one element and both would be
     // combined — the identity is the component name alone.
-    const specific = contract("Widget.Tray", "@acme/ds").hasSlots({
-      ".Title": true,
-    });
+    const specific = contract("Widget.Tray", "@acme/ds").hasSlot(".Title");
 
-    const glob = contract("Widget.Tray", "*/ds").hasSlots({ ".Action": true });
+    const glob = contract("Widget.Tray", "*/ds").hasSlot(".Action");
 
     expect(() => mergeContracts(specific, glob)).toThrow(
       'component "Widget.Tray"',
@@ -109,10 +105,9 @@ describe("mergeContracts", () => {
   });
 
   it("allows one chain to declare several slots for one component", () => {
-    const tray = contract("Widget.Tray", "g").hasSlots({
-      ".Title": true,
-      ".Action": true,
-    });
+    const tray = contract("Widget.Tray", "g")
+      .hasSlot(".Title")
+      .hasSlot(".Action");
 
     const merged = mergeContracts(tray, menu);
     const [row] = rowsFor(merged, "slots").filter(
@@ -129,7 +124,7 @@ describe("mergeContracts", () => {
     // A base row plus a `when` row is the normal case: the guard is about
     // separate arguments, not about a component's own accumulating rows.
     const tray = contract("Widget.Tray", "g")
-      .hasSlots({ ".Title": true })
+      .hasSlot(".Title")
       .when("open")
       .forbidProps("disabled");
 
@@ -137,7 +132,7 @@ describe("mergeContracts", () => {
   });
 
   it("returns a contract that can itself be merged (nesting)", () => {
-    const layout = contract("Layout", "g").hasSlots({ ".Slot": true });
+    const layout = contract("Layout", "g").hasSlot(".Slot");
 
     const inner = mergeContracts(widget, menu);
     const nested = mergeContracts(inner, layout);

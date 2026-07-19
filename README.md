@@ -29,7 +29,9 @@ const { contract } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
 
 const contracts = mergeContracts(
   contract("Widget.Tray")
-    .hasSlots({ ".Title": { count: { min: 1 } }, ".Action": true })
+    .hasSlot(".Title")
+    .atLeast(1)
+    .hasSlot(".Action")
     .requires(".Action", ".Title"),
   contract("Widget").when("variant", ["compact"]).forbid("Widget.Footer"),
 );
@@ -141,7 +143,7 @@ const { contract: legacy } =
   contractsFor<typeof import("@acme/legacy")>("@acme/legacy");
 
 export const contracts = mergeContracts(
-  contract("Widget").hasSlots({ ".Tray": true }),
+  contract("Widget").hasSlot(".Tray"),
   legacy("Legacy.Thing").deprecated("Widget"),
 );
 ```
@@ -150,7 +152,8 @@ export const contracts = mergeContracts(
 
 `contract()` builds one component's contract as a sentence. The chain is
 type-stated: slots must be declared before `requires`/`exclusive` can reference
-them, and a `when` ban must forbid something before the chain continues.
+them, a slot's count bounds are offered only directly after the `hasSlot` that
+declares it, and a `when` ban must forbid something before the chain continues.
 Builders are `CompiledContracts`, so `mergeContracts` combines them with
 everything else:
 
@@ -160,11 +163,10 @@ import { mergeContracts } from "@jsx-contracts/helpers";
 import { contract } from "./ds-contract.js";
 
 const tray = contract("Widget.Tray")
-  .hasSlots({
-    ".Title": { count: { min: 1 } },
-    ".Action": true,
-    ".Overflow": true,
-  })
+  .hasSlot(".Title")
+  .atLeast(1)
+  .hasSlot(".Action")
+  .hasSlot(".Overflow")
   .requires(".Action", ".Title")
   .exclusive([".Overflow"], [".Action"]);
 
@@ -185,10 +187,10 @@ across files, still one `rules()` for ESLint:
 // widget/contract.ts — next to the component
 import { contract } from "../ds-contract.js";
 
-export const widgetContract = contract("Widget.Tray").hasSlots({
-  ".Title": { count: { min: 1 } },
-  ".Action": true,
-});
+export const widgetContract = contract("Widget.Tray")
+  .hasSlot(".Title")
+  .atLeast(1)
+  .hasSlot(".Action");
 ```
 
 ```ts
@@ -261,10 +263,10 @@ as co-rendering. See [CONTEXT.md](./CONTEXT.md) for the full vocabulary.
 
 ## Examples
 
-**Count bounds, branch-aware.** `.Footer: true` means at most one:
+**Count bounds, branch-aware.** A bare `.hasSlot(".Footer")` means at most one:
 
 ```js
-contract("Dialog").hasSlots({ ".Footer": true });
+contract("Dialog").hasSlot(".Footer");
 ```
 
 ```jsx
@@ -306,9 +308,7 @@ contract("Card").when("variant", ["compact"]).forbid("Card.Image");
 `Tabs.Root`, even nested in wrappers the slots facet wouldn't see:
 
 ```js
-contract("Tabs.Root").hasDescendants({
-  ".List": { count: { min: 1, max: 1 } },
-});
+contract("Tabs.Root").hasDescendant(".List").atLeast(1).atMost(1);
 ```
 
 ```jsx

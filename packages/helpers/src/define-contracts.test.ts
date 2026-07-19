@@ -61,7 +61,7 @@ describe("contractsFor", () => {
     // The documented spelling: the gate is stated once, on the binding, and
     // the destructured starter carries it — no second positional argument.
     const { contract } = contractsFor("*/ds/widget");
-    const built = contract("Widget.Tray").hasSlots({ ".A": true });
+    const built = contract("Widget.Tray").hasSlot(".A");
 
     expect(rowsFor(built, "slots")[0]?.importPath).toBe("*/ds/widget");
   });
@@ -71,7 +71,7 @@ describe("contractsFor", () => {
     const { contract: legacy } = contractsFor("@acme/legacy");
 
     const merged = mergeContracts(
-      contract("Widget").hasSlots({ ".Tray": true }),
+      contract("Widget").hasSlot(".Tray"),
       legacy("Legacy.Thing").deprecated(),
     );
 
@@ -83,7 +83,9 @@ describe("contractsFor", () => {
     const { contract } = contractsFor("*/ds/widget");
 
     const built = contract("Widget.Tray")
-      .hasSlots({ ".Title": { count: { min: 1 } }, ".Action": true })
+      .hasSlot(".Title")
+      .atLeast(1)
+      .hasSlot(".Action")
       .requires(".Action", ".Title");
 
     const mapped = defineContracts("*/ds/widget", {

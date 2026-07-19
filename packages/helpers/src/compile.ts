@@ -19,7 +19,7 @@ import { makeContracts } from "./rule-table.js";
 
 // -- runtime shapes (the loosest view, after the type-level layer is gone) -----
 
-interface RuntimeSlotSpec {
+export interface RuntimeSlotSpec {
   count?: { min?: number; max?: number };
   from?: Gate;
 }
