@@ -21,13 +21,13 @@ const tray = contract("Widget.Tray")
   .atMost(2)
   .hasSlot(".Overflow")
   // An <Action> only makes sense alongside a <Title>.
-  .requires(".Action", ".Title")
+  .slotRequires(".Action", ".Title")
   // An <Overflow> collapses the actions, so it cannot co-render with them.
-  .exclusive([".Overflow"], [".Action"]);
+  .exclusiveSlots([".Overflow"], [".Action"]);
 
 const widget = contract("Widget")
   .when("variant", ["compact"])
-  .forbid("Widget.Footer")
-  .forbidProps("data-analytics");
+  .forbidDescendants("Widget.Footer")
+  .forbidDescendantProps("data-analytics");
 
 export const contracts = mergeContracts(tray, widget);

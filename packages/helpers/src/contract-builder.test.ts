@@ -25,12 +25,12 @@ describe("contract builder", () => {
       .atLeast(1)
       .atMost(3)
       .hasSlot(".Label")
-      .requires(".Label", ".Action")
-      .exclusive([".Action"], [".Label"])
-      .strict()
+      .slotRequires(".Label", ".Action")
+      .exclusiveSlots([".Action"], [".Label"])
+      .strictSlots()
       .when("variant", ["compact"])
-      .forbid("Widget.Footer")
-      .forbidProps("data-analytics");
+      .forbidDescendants("Widget.Footer")
+      .forbidDescendantProps("data-analytics");
 
     const object = defineContracts("*/ds/widget", {
       "Widget.Tray": {
@@ -54,7 +54,7 @@ describe("contract builder", () => {
   it("compiles the same props payload as the object DSL", () => {
     const fluent = contract("Widget", "@acme/ds")
       .requiresProp("id")
-      .requiresOneOf("href", "onClick")
+      .requiresAnyProp("href", "onClick")
       .exclusiveProps(["href"], ["onClick"])
       .deprecatesProp("color", "tone")
       .deprecatesProp("legacy")
@@ -90,7 +90,7 @@ describe("contract builder", () => {
 
   it("is immutable: chaining does not change earlier builders", () => {
     const base = contract("Widget.Tray", "g").hasSlot(".A");
-    const strictVariant = base.strict();
+    const strictVariant = base.strictSlots();
 
     expect(rowsFor(base, "slots")[0]?.strict).toBeUndefined();
     expect(rowsFor(strictVariant, "slots")[0]?.strict).toBe(true);
@@ -98,7 +98,9 @@ describe("contract builder", () => {
 
   it("is a CompiledContracts, so mergeContracts combines builders", () => {
     const tray = contract("Widget.Tray", "g").hasSlot(".A");
-    const widget = contract("Widget", "g").when("open").forbidProps("disabled");
+    const widget = contract("Widget", "g")
+      .when("open")
+      .forbidDescendantProps("disabled");
 
     const merged = mergeContracts(tray, widget);
 
@@ -110,21 +112,27 @@ describe("contract builder", () => {
     // The cast defeats the type-state to reach the runtime guard.
     const loose = contract("W", "g").hasSlot(".A") as ContractBuilder<string>;
 
-    expect(() => loose.requires(".A", ".B")).toThrow('references slot ".B"');
+    expect(() => loose.slotRequires(".A", ".B")).toThrow(
+      'references slot ".B"',
+    );
   });
 
-  it("rejects a second requires for the same slot", () => {
+  it("rejects a second slotRequires for the same slot", () => {
     const built = contract("W", "g")
       .hasSlot(".A")
       .hasSlot(".B")
       .hasSlot(".C")
-      .requires(".A", ".B");
+      .slotRequires(".A", ".B");
 
-    expect(() => built.requires(".A", ".C")).toThrow("already has a requires");
+    expect(() => built.slotRequires(".A", ".C")).toThrow(
+      "already has a slotRequires",
+    );
   });
 
   it("rejects a second ban on the same prop", () => {
-    const built = contract("W", "g").when("variant", ["compact"]).forbid("X");
+    const built = contract("W", "g")
+      .when("variant", ["compact"])
+      .forbidDescendants("X");
 
     expect(() => built.when("variant")).toThrow("already has a subtree ban");
   });
@@ -272,27 +280,27 @@ describe("contract builder", () => {
 // Type-level enforcement. Never executed — tsc checks the @ts-expect-error
 // directives when it compiles this file.
 function typeLevelChecks(): void {
-  // `requiresOneOf` needs at least two props.
+  // `requiresAnyProp` needs at least two props.
   // @ts-expect-error a single prop is not an at-least-one-of group.
-  contract("Widget", "g").requiresOneOf("href");
+  contract("Widget", "g").requiresAnyProp("href");
 
   // The builder's `notInside` needs at least one ancestor.
   // @ts-expect-error a bare `notInside()` names no ancestor.
   contract("Button", "g").notInside();
 
-  // Builder: requires cannot reference an undeclared slot.
+  // Builder: slotRequires cannot reference an undeclared slot.
   contract("Widget.Tray", "g")
     .hasSlot(".Title")
     // @ts-expect-error ".Bogus" is not a declared slot key.
-    .requires(".Title", ".Bogus");
+    .slotRequires(".Title", ".Bogus");
 
   // Builder: nothing can be referenced before hasSlot declares it.
   // @ts-expect-error no slot keys exist yet.
-  contract("Widget.Tray", "g").requires(".Title", ".Title");
+  contract("Widget.Tray", "g").slotRequires(".Title", ".Title");
 
   // Builder: a when ban must forbid something before the chain continues.
-  // @ts-expect-error strict is not available on a pending ban.
-  void contract("Widget", "g").when("open").strict;
+  // @ts-expect-error strictSlots is not available on a pending ban.
+  void contract("Widget", "g").when("open").strictSlots;
 
   // Count bounds are offered only directly after a declaration.
   // @ts-expect-error nothing has been declared to bound.
@@ -300,8 +308,8 @@ function typeLevelChecks(): void {
 
   // …and vanish once anything else is chained, so a bound cannot silently
   // attach to the wrong part.
-  // @ts-expect-error strict() closed the declaration.
-  void contract("Widget.Tray", "g").hasSlot(".Title").strict().atLeast;
+  // @ts-expect-error strictSlots() closed the declaration.
+  void contract("Widget.Tray", "g").hasSlot(".Title").strictSlots().atLeast;
 
   // Each bound stays reachable after the other, so `.atLeast(1).atMost(1)`
   // reads as one range.
@@ -312,14 +320,14 @@ function typeLevelChecks(): void {
   contract("Widget.Tray", "g")
     .hasSlot(".Title")
     .hasSlot(".Action")
-    .requires(".Action", ".Title")
-    .exclusive([".Title"], [".Action"]);
+    .slotRequires(".Action", ".Title")
+    .exclusiveSlots([".Title"], [".Action"]);
 
   // A descendant is not a slot, so it is not referenceable.
   contract("Widget.Tray", "g")
     .hasDescendant(".List")
     // @ts-expect-error ".List" is a descendant, not a declared slot key.
-    .requires(".List", ".List");
+    .slotRequires(".List", ".List");
 }
 
 void typeLevelChecks;

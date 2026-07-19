@@ -86,7 +86,7 @@ describe("contractsFor", () => {
       .hasSlot(".Title")
       .atLeast(1)
       .hasSlot(".Action")
-      .requires(".Action", ".Title");
+      .slotRequires(".Action", ".Title");
 
     const mapped = defineContracts("*/ds/widget", {
       "Widget.Tray": {

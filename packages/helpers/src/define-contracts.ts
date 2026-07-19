@@ -77,7 +77,7 @@ export function defineContracts(
  * export const tray = contract("Widget.Tray")
  *   .hasSlot(".Title").atLeast(1)
  *   .hasSlot(".Action")
- *   .requires(".Action", ".Title");
+ *   .slotRequires(".Action", ".Title");
  * // eslint.config.js → rules: mergeContracts(tray, ...).rules()
  */
 export function contractsFor<Module>(from: Gate): BoundContracts<Module> {

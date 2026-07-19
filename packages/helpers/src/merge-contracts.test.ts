@@ -21,7 +21,7 @@ describe("mergeContracts", () => {
   const widget = contract("Widget.Tray", "g")
     .hasSlot(".Action")
     .when("open")
-    .forbidProps("disabled");
+    .forbidDescendantProps("disabled");
 
   const menu = defineContracts("g", {
     "Menu.List": { slots: { ".Item": true } },
@@ -126,7 +126,7 @@ describe("mergeContracts", () => {
     const tray = contract("Widget.Tray", "g")
       .hasSlot(".Title")
       .when("open")
-      .forbidProps("disabled");
+      .forbidDescendantProps("disabled");
 
     expect(() => mergeContracts(tray, menu)).not.toThrow();
   });

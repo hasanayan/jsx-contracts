@@ -20,9 +20,9 @@ import type { CompiledContracts } from "./rule-table.js";
  */
 export interface PendingBan<SlotKey extends string> {
   /** Elements barred anywhere below the activated component. */
-  forbid(...elements: [Forbid, ...Forbid[]]): BanBuilder<SlotKey>;
+  forbidDescendants(...elements: [Forbid, ...Forbid[]]): BanBuilder<SlotKey>;
   /** Props barred on every element below the activated component. */
-  forbidProps(...props: [string, ...string[]]): BanBuilder<SlotKey>;
+  forbidDescendantProps(...props: [string, ...string[]]): BanBuilder<SlotKey>;
 }
 
 /**
@@ -62,8 +62,8 @@ export type SlotBuilder<SlotKey extends string> = ContractBuilder<SlotKey> &
  * const tray = contract("Widget.Tray")
  *   .hasSlot(".Title").atLeast(1)
  *   .hasSlot(".Action")
- *   .requires(".Action", ".Title")
- *   .strict();
+ *   .slotRequires(".Action", ".Title")
+ *   .strictSlots();
  */
 export interface ContractBuilder<
   SlotKey extends string,
@@ -73,8 +73,8 @@ export interface ContractBuilder<
    * with `.` is shorthand for `<Component><name>`. `from` is the slot's own
    * import gate, for a part sourced from a different package than its
    * container; omitted, the slot inherits the container's gate. Later
-   * `requires`/`exclusive` references are type-checked against the names
-   * declared so far. Declaring a slot twice throws.
+   * `slotRequires`/`exclusiveSlots` references are type-checked against the
+   * names declared so far. Declaring a slot twice throws.
    *
    * The count bounds that follow apply to this slot alone and are offered by
    * the type-state only here: a bare declaration allows nought or one.
@@ -88,14 +88,14 @@ export interface ContractBuilder<
     from?: Gate,
   ): SlotBuilder<SlotKey | Name>;
   /** The `slot` may only render alongside `requiredSlot`. */
-  requires(slot: SlotKey, requiredSlot: SlotKey): ContractBuilder<SlotKey>;
+  slotRequires(slot: SlotKey, requiredSlot: SlotKey): ContractBuilder<SlotKey>;
   /** The two slot groups may not co-render. */
-  exclusive(
+  exclusiveSlots(
     groupA: [SlotKey, ...SlotKey[]],
     groupB: [SlotKey, ...SlotKey[]],
   ): ContractBuilder<SlotKey>;
   /** Report unresolvable children as violations; presence checks always run. */
-  strict(): ContractBuilder<SlotKey>;
+  strictSlots(): ContractBuilder<SlotKey>;
   /**
    * Require one descendant anywhere below the component — for a part that may
    * sit under wrapper elements the direct-child slots facet can't see. A name
@@ -114,13 +114,13 @@ export interface ContractBuilder<
    * value is one of `is`. At most one ban per prop.
    *
    * @example
-   * .when("variant", ["compact"]).forbid("Widget.Footer")
+   * .when("variant", ["compact"]).forbidDescendants("Widget.Footer")
    */
   when(prop: string, is?: [Literal, ...Literal[]]): PendingBan<SlotKey>;
   /** Require `prop` to be present on the component's element. */
   requiresProp(prop: string): ContractBuilder<SlotKey>;
   /** Require at least one of `props` to be present on the element. */
-  requiresOneOf(
+  requiresAnyProp(
     ...props: [string, string, ...string[]]
   ): ContractBuilder<SlotKey>;
   /** Forbid the two prop groups from co-occurring on the element. */
@@ -149,9 +149,9 @@ export interface ContractBuilder<
  * builder by destructuring `contract` off a `contractsFor` binding, which
  * supplies `from` — the gate is stated once for the whole design system rather
  * than repeated per component. The type-state enforces order: slots must be
- * declared before `requires`/`exclusive` can reference them, count bounds are
- * offered only directly after the declaration they bound, and a `when` ban must
- * forbid something before the chain continues.
+ * declared before `slotRequires`/`exclusiveSlots` can reference them, count
+ * bounds are offered only directly after the declaration they bound, and a
+ * `when` ban must forbid something before the chain continues.
  *
  * @example
  * const { contract } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
@@ -159,9 +159,9 @@ export interface ContractBuilder<
  *   .hasSlot(".Title").atLeast(1).atMost(1)
  *   .hasSlot(".Overflow")
  *   .hasSlot(".Action")
- *   .requires(".Action", ".Title")
- *   .exclusive([".Overflow"], [".Action"])
- *   .when("variant", ["compact"]).forbid("Widget.Footer");
+ *   .slotRequires(".Action", ".Title")
+ *   .exclusiveSlots([".Overflow"], [".Action"])
+ *   .when("variant", ["compact"]).forbidDescendants("Widget.Footer");
  * // eslint.config.js → rules: mergeContracts(tray, ...).rules()
  */
 export function contract(
@@ -312,13 +312,13 @@ function makeBuilder(
     atMost(count): AnyBuilder {
       return boundPart("max", count);
     },
-    requires(slot, requiredSlot): AnyBuilder {
+    slotRequires(slot, requiredSlot): AnyBuilder {
       requireDeclared(slot);
       requireDeclared(requiredSlot);
 
       if (entry.requires?.[slot] !== undefined) {
         throw new Error(
-          `contract: component "${component}" already has a requires for ` +
+          `contract: component "${component}" already has a slotRequires for ` +
             `slot "${slot}".`,
         );
       }
@@ -328,7 +328,7 @@ function makeBuilder(
         requires: { ...entry.requires, [slot]: requiredSlot },
       });
     },
-    exclusive(groupA, groupB): AnyBuilder {
+    exclusiveSlots(groupA, groupB): AnyBuilder {
       for (const member of [...groupA, ...groupB]) {
         requireDeclared(member);
       }
@@ -338,7 +338,7 @@ function makeBuilder(
         exclusive: [...(entry.exclusive ?? []), [groupA, groupB]],
       });
     },
-    strict(): AnyBuilder {
+    strictSlots(): AnyBuilder {
       return makeBuilder(component, { ...entry, strict: true });
     },
     hasDescendant(name, from): AnyBuilder {
@@ -355,13 +355,13 @@ function makeBuilder(
       const base: RuntimeBan = is === undefined ? {} : { is };
 
       return {
-        forbid: (...elements) =>
+        forbidDescendants: (...elements) =>
           makeBuilder(
             component,
             withBan(prop, { ...base, forbid: elements }),
             prop,
           ),
-        forbidProps: (...props) =>
+        forbidDescendantProps: (...props) =>
           makeBuilder(
             component,
             withBan(prop, { ...base, forbidProps: props }),
@@ -371,7 +371,7 @@ function makeBuilder(
     },
     // These extend the ban `when` opened; the typed facets only surface them
     // on a BanBuilder.
-    forbid(...elements): AnyBuilder {
+    forbidDescendants(...elements): AnyBuilder {
       const { prop, ban } = activeBan();
 
       return makeBuilder(
@@ -380,7 +380,7 @@ function makeBuilder(
         prop,
       );
     },
-    forbidProps(...props): AnyBuilder {
+    forbidDescendantProps(...props): AnyBuilder {
       const { prop, ban } = activeBan();
 
       return makeBuilder(
@@ -402,7 +402,7 @@ function makeBuilder(
         withProps({ ...props, required: [...(props.required ?? []), prop] }),
       );
     },
-    requiresOneOf(...group): AnyBuilder {
+    requiresAnyProp(...group): AnyBuilder {
       const props = currentProps();
 
       return makeBuilder(

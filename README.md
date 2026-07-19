@@ -32,8 +32,10 @@ const contracts = mergeContracts(
     .hasSlot(".Title")
     .atLeast(1)
     .hasSlot(".Action")
-    .requires(".Action", ".Title"),
-  contract("Widget").when("variant", ["compact"]).forbid("Widget.Footer"),
+    .slotRequires(".Action", ".Title"),
+  contract("Widget")
+    .when("variant", ["compact"])
+    .forbidDescendants("Widget.Footer"),
 );
 
 export default [
@@ -151,9 +153,10 @@ export const contracts = mergeContracts(
 ### Fluent authoring
 
 `contract()` builds one component's contract as a sentence. The chain is
-type-stated: slots must be declared before `requires`/`exclusive` can reference
-them, a slot's count bounds are offered only directly after the `hasSlot` that
-declares it, and a `when` ban must forbid something before the chain continues.
+type-stated: slots must be declared before `slotRequires`/`exclusiveSlots`
+can reference them, a slot's count bounds are offered only directly after the
+`hasSlot` that declares it, and a `when` ban must forbid something before the
+chain continues.
 Builders are `CompiledContracts`, so `mergeContracts` combines them with
 everything else:
 
@@ -167,12 +170,12 @@ const tray = contract("Widget.Tray")
   .atLeast(1)
   .hasSlot(".Action")
   .hasSlot(".Overflow")
-  .requires(".Action", ".Title")
-  .exclusive([".Overflow"], [".Action"]);
+  .slotRequires(".Action", ".Title")
+  .exclusiveSlots([".Overflow"], [".Action"]);
 
 const widget = contract("Widget")
   .when("variant", ["compact"])
-  .forbid("Widget.Footer");
+  .forbidDescendants("Widget.Footer");
 
 export const contracts = mergeContracts(tray, widget);
 ```
@@ -294,7 +297,7 @@ contract("Dialog").hasSlot(".Footer");
 **Subtree ban gated by a prop value.**
 
 ```js
-contract("Card").when("variant", ["compact"]).forbid("Card.Image");
+contract("Card").when("variant", ["compact"]).forbidDescendants("Card.Image");
 ```
 
 ```jsx
