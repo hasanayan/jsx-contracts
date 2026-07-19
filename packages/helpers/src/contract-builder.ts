@@ -11,6 +11,7 @@ import type {
   RuntimeSlotSpec,
 } from "./compile.js";
 import { compile } from "./compile.js";
+import type { Binding, PartName, PartNames } from "./component-names.js";
 import type { Forbid, Gate, Literal } from "./contract-entry.js";
 import type { CompiledContracts } from "./rule-table.js";
 
@@ -18,19 +19,28 @@ import type { CompiledContracts } from "./rule-table.js";
  * A subtree ban mid-authoring: it must forbid at least one element or prop
  * before the chain can continue with anything else.
  */
-export interface PendingBan<SlotKey extends string> {
+export interface PendingBan<
+  SlotKey extends string,
+  Bound extends Binding = Binding,
+> {
   /** Elements barred anywhere below the activated component. */
-  forbidDescendants(...elements: [Forbid, ...Forbid[]]): BanBuilder<SlotKey>;
+  forbidDescendants(
+    ...elements: [Forbid, ...Forbid[]]
+  ): BanBuilder<SlotKey, Bound>;
   /** Props barred on every element below the activated component. */
-  forbidDescendantProps(...props: [string, ...string[]]): BanBuilder<SlotKey>;
+  forbidDescendantProps(
+    ...props: [string, ...string[]]
+  ): BanBuilder<SlotKey, Bound>;
 }
 
 /**
  * A builder whose latest `when` ban can still take more forbids; any other
  * call closes the ban.
  */
-export type BanBuilder<SlotKey extends string> = ContractBuilder<SlotKey> &
-  PendingBan<SlotKey>;
+export type BanBuilder<
+  SlotKey extends string,
+  Bound extends Binding = Binding,
+> = ContractBuilder<SlotKey, Bound> & PendingBan<SlotKey, Bound>;
 
 /**
  * Count bounds for the slot or descendant just declared. Offered by the
@@ -38,19 +48,24 @@ export type BanBuilder<SlotKey extends string> = ContractBuilder<SlotKey> &
  * other, so `.atLeast(1).atMost(1)` reads — so a bound cannot silently attach
  * to the wrong part.
  */
-export interface PendingCount<SlotKey extends string> {
+export interface PendingCount<
+  SlotKey extends string,
+  Bound extends Binding = Binding,
+> {
   /** The part must appear at least `count` times; the upper bound goes unbounded. */
-  atLeast(count: number): SlotBuilder<SlotKey>;
+  atLeast(count: number): SlotBuilder<SlotKey, Bound>;
   /** The part may appear at most `count` times; the lower bound stays nought. */
-  atMost(count: number): SlotBuilder<SlotKey>;
+  atMost(count: number): SlotBuilder<SlotKey, Bound>;
 }
 
 /**
  * A builder whose latest slot or descendant declaration can still take count
  * bounds; any other call closes the declaration.
  */
-export type SlotBuilder<SlotKey extends string> = ContractBuilder<SlotKey> &
-  PendingCount<SlotKey>;
+export type SlotBuilder<
+  SlotKey extends string,
+  Bound extends Binding = Binding,
+> = ContractBuilder<SlotKey, Bound> & PendingCount<SlotKey, Bound>;
 
 /**
  * One component's contract, built fluently. A builder is already a
@@ -67,14 +82,18 @@ export type SlotBuilder<SlotKey extends string> = ContractBuilder<SlotKey> &
  */
 export interface ContractBuilder<
   SlotKey extends string,
+  Bound extends Binding = Binding,
 > extends CompiledContracts {
   /**
    * Declare one slot — a component allowed as a direct child. A name starting
-   * with `.` is shorthand for `<Component><name>`. `from` is the slot's own
-   * import gate, for a part sourced from a different package than its
-   * container; omitted, the slot inherits the container's gate. Later
-   * `slotRequires`/`exclusiveSlots` references are type-checked against the
-   * names declared so far. Declaring a slot twice throws.
+   * with `.` is shorthand for `<Component><name>`: the module's parts under the
+   * component are offered as completions, and the expansion is checked against
+   * its export paths — accepted unchecked where the module resolves nothing
+   * that deep. `from` is the slot's own import gate, for a part sourced
+   * from a different package than its container; omitted, the slot inherits the
+   * container's gate. Later `slotRequires`/`exclusiveSlots` references are
+   * type-checked against the names declared so far. Declaring a slot twice
+   * throws.
    *
    * The count bounds that follow apply to this slot alone and are offered by
    * the type-state only here: a bare declaration allows nought or one.
@@ -83,24 +102,28 @@ export interface ContractBuilder<
    * .hasSlot(".Title").atLeast(1).atMost(1)
    * .hasSlot("Other.Badge", "@other/pkg")
    */
-  hasSlot<const Name extends string>(
-    name: Name,
+  hasSlot<const Name extends PartNames<Bound>>(
+    name: Name & PartName<Name, Bound>,
     from?: Gate,
-  ): SlotBuilder<SlotKey | Name>;
+  ): SlotBuilder<SlotKey | Name, Bound>;
   /** The `slot` may only render alongside `requiredSlot`. */
-  slotRequires(slot: SlotKey, requiredSlot: SlotKey): ContractBuilder<SlotKey>;
+  slotRequires(
+    slot: SlotKey,
+    requiredSlot: SlotKey,
+  ): ContractBuilder<SlotKey, Bound>;
   /** The two slot groups may not co-render. */
   exclusiveSlots(
     groupA: [SlotKey, ...SlotKey[]],
     groupB: [SlotKey, ...SlotKey[]],
-  ): ContractBuilder<SlotKey>;
+  ): ContractBuilder<SlotKey, Bound>;
   /** Report unresolvable children as violations; presence checks always run. */
-  strictSlots(): ContractBuilder<SlotKey>;
+  strictSlots(): ContractBuilder<SlotKey, Bound>;
   /**
    * Require one descendant anywhere below the component — for a part that may
    * sit under wrapper elements the direct-child slots facet can't see. A name
-   * starting with `.` is shorthand for `<Component><name>`; `from` is the
-   * descendant's own import gate. Declaring a descendant twice throws.
+   * starting with `.` is shorthand for `<Component><name>`, checked against the
+   * bound module like a slot's; `from` is the descendant's own import gate.
+   * Declaring a descendant twice throws.
    *
    * The count bounds that follow apply to this descendant alone, with the same
    * defaults as a slot's.
@@ -108,7 +131,10 @@ export interface ContractBuilder<
    * @example
    * .hasDescendant(".List").atLeast(1)
    */
-  hasDescendant(name: string, from?: Gate): SlotBuilder<SlotKey>;
+  hasDescendant<const Name extends PartNames<Bound>>(
+    name: Name & PartName<Name, Bound>,
+    from?: Gate,
+  ): SlotBuilder<SlotKey, Bound>;
   /**
    * Start a subtree ban activated by `prop` — on presence, or only when its
    * value is one of `is`. At most one ban per prop.
@@ -116,22 +142,25 @@ export interface ContractBuilder<
    * @example
    * .when("variant", ["compact"]).forbidDescendants("Widget.Footer")
    */
-  when(prop: string, is?: [Literal, ...Literal[]]): PendingBan<SlotKey>;
+  when(prop: string, is?: [Literal, ...Literal[]]): PendingBan<SlotKey, Bound>;
   /** Require `prop` to be present on the component's element. */
-  requiresProp(prop: string): ContractBuilder<SlotKey>;
+  requiresProp(prop: string): ContractBuilder<SlotKey, Bound>;
   /** Require at least one of `props` to be present on the element. */
   requiresAnyProp(
     ...props: [string, string, ...string[]]
-  ): ContractBuilder<SlotKey>;
+  ): ContractBuilder<SlotKey, Bound>;
   /** Forbid the two prop groups from co-occurring on the element. */
   exclusiveProps(
     groupA: [string, ...string[]],
     groupB: [string, ...string[]],
-  ): ContractBuilder<SlotKey>;
+  ): ContractBuilder<SlotKey, Bound>;
   /** Deprecate `prop`, optionally hinting the prop to use instead. */
-  deprecatesProp(prop: string, useInstead?: string): ContractBuilder<SlotKey>;
+  deprecatesProp(
+    prop: string,
+    useInstead?: string,
+  ): ContractBuilder<SlotKey, Bound>;
   /** Deprecate the component itself, optionally hinting a replacement. */
-  deprecated(useInstead?: string): ContractBuilder<SlotKey>;
+  deprecated(useInstead?: string): ContractBuilder<SlotKey, Bound>;
   /**
    * Forbid this component from rendering anywhere below the given ancestors —
    * no `<Button>` inside a `<Button>`. A bare string matches by name only; an
@@ -141,7 +170,9 @@ export interface ContractBuilder<
    * @example
    * .notInside("Button", { name: "Link", from: "@acme/ds" })
    */
-  notInside(...elements: [Forbid, ...Forbid[]]): ContractBuilder<SlotKey>;
+  notInside(
+    ...elements: [Forbid, ...Forbid[]]
+  ): ContractBuilder<SlotKey, Bound>;
 }
 
 /**
@@ -151,7 +182,10 @@ export interface ContractBuilder<
  * than repeated per component. The type-state enforces order: slots must be
  * declared before `slotRequires`/`exclusiveSlots` can reference them, count
  * bounds are offered only directly after the declaration they bound, and a
- * `when` ban must forbid something before the chain continues.
+ * `when` ban must forbid something before the chain continues. The binding
+ * travels with the builder — the design-system module, and the component's own
+ * name captured as a literal — so shorthand part names can be checked against
+ * the module's export paths.
  *
  * @example
  * const { contract } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
@@ -164,10 +198,10 @@ export interface ContractBuilder<
  *   .when("variant", ["compact"]).forbidDescendants("Widget.Footer");
  * // eslint.config.js → rules: mergeContracts(tray, ...).rules()
  */
-export function contract(
-  component: string,
+export function contract<Bound extends Binding = Binding>(
+  component: Bound["component"],
   from: Gate,
-): ContractBuilder<never> {
+): ContractBuilder<never, Bound> {
   // The impl works with plain string slot keys; the generic facets narrow it.
   return makeBuilder(component, { from });
 }

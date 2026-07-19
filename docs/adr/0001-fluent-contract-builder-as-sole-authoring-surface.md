@@ -428,9 +428,13 @@ Behaviour to document:
   before evaluating, so a violation is reported once and its message describes
   what the combined state actually allows.
 
-Slot names using the `.` shorthand are checked against the module's export paths.
-`ComponentPaths` resolves three levels deep, so a slot under an already-three-deep
-component degrades to being accepted unchecked rather than erroring.
+Slot and descendant names using the `.` shorthand are checked against the module's
+export paths — the expansion is what has to be one. The check runs only where the
+module resolves export paths as deep as the expansion reaches; where it resolves
+nothing that deep, the name is accepted unchecked rather than erroring. That
+covers both ends of the same condition: `ComponentPaths` resolves three levels
+deep, so a shorthand under an already-three-deep component degrades, and so does
+one under a component the module types as a leaf.
 
 Rejected: `otherwise()` as an else-branch over sibling `when`s. It would compile
 to `not(anyOf(…))` over the contract's other conditions, so a row's meaning would

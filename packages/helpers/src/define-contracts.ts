@@ -102,8 +102,10 @@ export function contractsFor<Module>(from: Gate): BoundContracts<Module> {
   // closes over `from` rather than reading it off `this`, so destructuring it
   // — the documented spelling — keeps the gate.
   return Object.assign(define, {
-    contract: (component: string): ContractBuilder<never> =>
-      contract(component, from),
+    contract: <const Component extends ComponentNames<Module> & string>(
+      component: Component,
+    ): ContractBuilder<never, { module: Module; component: Component }> =>
+      contract<{ module: Module; component: Component }>(component, from),
   });
 }
 
@@ -116,7 +118,11 @@ export interface BoundContracts<Module> {
   /**
    * Start one component's contract builder, gated by the binding. Declared as
    * a property rather than a method because it is meant to be destructured off
-   * the binding — that is the only way to reach a builder.
+   * the binding — that is the only way to reach a builder. The component's name
+   * is captured as a literal, and the module travels with it, so the builder
+   * can check shorthand part names against the module's export paths.
    */
-  contract: (component: ComponentNames<Module>) => ContractBuilder<never>;
+  contract: <const Component extends ComponentNames<Module> & string>(
+    component: Component,
+  ) => ContractBuilder<never, { module: Module; component: Component }>;
 }

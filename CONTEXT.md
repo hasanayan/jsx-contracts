@@ -35,6 +35,14 @@ and commits.
   `max` only = optional up to max) and optional own gate. Must render as a direct
   child (directly, or hoisted into a variable whose every read lands in one) —
   elsewhere it's **misplaced**.
+- **Part** — a slot or a descendant: what one `hasSlot`/`hasDescendant` call
+  declares under its container. The two differ in facet and in reach, but are
+  declared, gated and bounded alike, so what holds of both is said of a part.
+- **Shorthand** — a part name starting with `.`, standing for the container's
+  name followed by the given segments (`.Title` under `Widget.Tray` →
+  `Widget.Tray.Title`). Expanded when the contract compiles, so the row carries
+  the full name; checked at authoring time against the bound module's export
+  paths, and accepted unchecked where the module resolves nothing that deep.
 - **Requires / exclusive** — cross-slot, within one container: a slot that must
   co-render with another; slot groups that may not co-render.
 - **Strict** — children-facet modifier: unresolvable children are violations,

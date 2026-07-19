@@ -4,7 +4,7 @@ import type { ContractRow } from "@jsx-contracts/eslint-plugin";
 
 import type { ContractBuilder } from "./contract-builder.js";
 import { contract } from "./contract-builder.js";
-import { defineContracts } from "./define-contracts.js";
+import { contractsFor, defineContracts } from "./define-contracts.js";
 import { mergeContracts } from "./merge-contracts.js";
 import type { CompiledContracts } from "./rule-table.js";
 
@@ -206,6 +206,14 @@ describe("contract builder", () => {
       expect(rowsFor(fluent, "subtree")).toEqual(rowsFor(object, "subtree"));
     });
 
+    it("expands a leading-dot name to the container's name plus the segment", () => {
+      const fluent = contract("Tabs.Root", "@acme/tabs").hasDescendant(".List");
+
+      expect(rowsFor(fluent, "subtree")[0]?.require).toEqual([
+        { name: "Tabs.Root.List" },
+      ]);
+    });
+
     it("carries a part's own import gate to the emitted row", () => {
       const fluent = contract("Tabs.Root", "@acme/tabs").hasDescendant(
         "Other.List",
@@ -277,9 +285,65 @@ describe("contract builder", () => {
   });
 });
 
+// A fake design-system module type, so the shorthand checks below have export
+// paths to resolve against. `Widget.Tray` has parts under it; `Widget.Footer`
+// is a leaf, and `Widget.Tray.Title` sits at the deepest level the module's
+// types resolve.
+interface WidgetModule {
+  Widget: ((props: unknown) => unknown) & {
+    Tray: ((props: unknown) => unknown) & {
+      Title: (props: unknown) => unknown;
+      Action: (props: unknown) => unknown;
+    };
+    Footer: (props: unknown) => unknown;
+  };
+}
+
 // Type-level enforcement. Never executed — tsc checks the @ts-expect-error
 // directives when it compiles this file.
 function typeLevelChecks(): void {
+  const { contract: widget } = contractsFor<WidgetModule>("g");
+
+  // A shorthand naming a part the bound module exports compiles, and still
+  // accumulates into the referenceable slot keys.
+  widget("Widget.Tray")
+    .hasSlot(".Title")
+    .hasSlot(".Action")
+    .slotRequires(".Action", ".Title")
+    .hasDescendant(".Action");
+
+  // @ts-expect-error "Widget.Tray.Bogus" is not an export path of the module.
+  widget("Widget.Tray").hasSlot(".Bogus");
+
+  // @ts-expect-error "Widget.Tray.Bogus" is not an export path of the module.
+  widget("Widget.Tray").hasDescendant(".Bogus");
+
+  // A multi-segment shorthand is checked whole, against the path it expands to.
+  widget("Widget").hasSlot(".Tray.Title");
+
+  // @ts-expect-error "Widget.Tray.Bogus" is not an export path of the module.
+  widget("Widget").hasSlot(".Tray.Bogus");
+
+  // A container at the deepest resolvable level degrades to accepting the
+  // shorthand unchecked rather than erroring — whether it is a leaf, or as deep
+  // as the module's export paths reach.
+  widget("Widget.Footer").hasSlot(".Anything");
+  widget("Widget.Tray.Title").hasDescendant(".Anything");
+
+  // …and so does a shorthand reaching past that depth from a shallower
+  // container: the module's types cannot confirm it either way.
+  widget("Widget.Tray").hasSlot(".Title.Anything");
+
+  // A name that is not shorthand is not checked against the module: narrowing
+  // full component names is a later additive change.
+  widget("Widget.Tray").hasSlot("Other.Badge", "@other/pkg");
+
+  // Without a module type the shorthand widens, so an author with no module
+  // type to hand can still use it.
+  const { contract: untyped } = contractsFor("g");
+
+  untyped("Widget.Tray").hasSlot(".Anything");
+
   // `requiresAnyProp` needs at least two props.
   // @ts-expect-error a single prop is not an at-least-one-of group.
   contract("Widget", "g").requiresAnyProp("href");
@@ -294,9 +358,23 @@ function typeLevelChecks(): void {
     // @ts-expect-error ".Bogus" is not a declared slot key.
     .slotRequires(".Title", ".Bogus");
 
+  // Builder: an exclusivity group cannot name an undeclared slot either.
+  contract("Widget.Tray", "g")
+    .hasSlot(".Title")
+    // @ts-expect-error ".Bogus" is not a declared slot key.
+    .exclusiveSlots([".Title"], [".Bogus"]);
+
   // Builder: nothing can be referenced before hasSlot declares it.
   // @ts-expect-error no slot keys exist yet.
   contract("Widget.Tray", "g").slotRequires(".Title", ".Title");
+
+  // Builder: only slots declared *earlier* in the chain are referenceable — a
+  // slot declared further down is not yet a key.
+  contract("Widget.Tray", "g")
+    .hasSlot(".Title")
+    // @ts-expect-error ".Action" is declared after this reference.
+    .slotRequires(".Title", ".Action")
+    .hasSlot(".Action");
 
   // Builder: a when ban must forbid something before the chain continues.
   // @ts-expect-error strictSlots is not available on a pending ban.
