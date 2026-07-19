@@ -3,17 +3,18 @@
 //
 // Usage: pnpm release <major|minor|patch>
 //
-// Bumps packages/eslint-plugin, commits, and tags the commit vX.Y.Z. It does
-// not push — pushing the tag is what triggers the publish workflow, so that
-// stays a deliberate manual step (the command is printed at the end).
+// Bumps the published packages in lockstep, commits, and tags the commit
+// vX.Y.Z. It does not push — pushing the tag is what triggers the publish
+// workflow, so that stays a deliberate manual step (the command is printed at
+// the end).
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
-const manifestPaths = ["packages/eslint-plugin"].map((dir) =>
-  resolve(root, dir, "package.json"),
+const manifestPaths = ["packages/eslint-plugin", "packages/helpers"].map(
+  (dir) => resolve(root, dir, "package.json"),
 );
 
 const bump = process.argv[2];

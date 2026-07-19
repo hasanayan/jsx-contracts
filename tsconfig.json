@@ -12,6 +12,7 @@
   ],
   "references": [
     { "path": "packages/eslint-plugin" },
+    { "path": "packages/helpers" },
     { "path": "packages/playground" }
   ]
 }

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const tag = process.argv[2];
 
-for (const dir of ["packages/eslint-plugin"]) {
+for (const dir of ["packages/eslint-plugin", "packages/helpers"]) {
   const { name, version } = JSON.parse(
     readFileSync(resolve(root, dir, "package.json"), "utf8"),
   ) as { name: string; version: string };
