@@ -2,6 +2,8 @@
 
 Status: accepted — 2026-07-19
 
+Specified in full in issues #2 (enforcement) and #3 (authoring).
+
 ## Decision
 
 `defineContracts` (the component-keyed map) is removed. `contractsFor` is the only
@@ -97,17 +99,37 @@ and mutually exclusive with `not`, so exactly one is ever active.
 
 Because every active row applies at once, a component's rows are **combined
 before evaluation** rather than checked one at a time: allowed slots are what
-every active row allows, count bounds are the tightest, `strict` is on if any row
-sets it, and forbids, requires and exclusions are unioned. One check then runs
-against the combined result. This is what "every active row applies" means
-operationally, and it is also what keeps the diagnostics honest — checking row by
-row would report one message per row, each true only of its own row:
+every active row allows, `strict` is on if any row sets it, and forbids, requires
+and exclusions are unioned. One check then runs against the combined result. This
+is what "every active row applies" means operationally, and it is also what keeps
+the diagnostics honest — checking row by row would report one message per row,
+each true only of its own row:
 
     <Widget.Tray variant="compact"><div /></Widget.Tray>
 
     row by row    "…only accepts <Title> and <Action>"   ← false here
                   "…only accepts <Title>"
     combined      "…only accepts <Title>"
+
+Three rules make the combination total — it never yields a contract no file could
+satisfy:
+
+- **An absent facet is the identity, not an empty value.** Only a row that
+  actually declares slots takes part in the slot intersection; a row carrying
+  only prop contracts leaves the slot list alone.
+- **Count bounds survive only for slot names that survive the intersection.** A
+  slot required by the base row but excluded by an active conditional row is
+  neither allowed nor required — not both required and forbidden. Bounds are the
+  tightest _among the rows that still allow the slot_.
+- **No active rows means the facet is unchecked.** Combining over the identity
+  with an empty set is the identity.
+
+Detecting a contract that is unsatisfiable _as written_ — a conditional row
+excluding a slot the base row requires — is not the plugin's job: it cannot tell
+a reachable combination of conditions from an unreachable one without solving
+over the condition trees, and reporting a config error for an unreachable
+combination is worse than narrowing quietly. Such a check belongs here, on the
+authoring side, at build time, where the trees are visible.
 
 ### Output
 
@@ -193,7 +215,7 @@ export const widget = contract("Widget")
   .deprecated("Widget.Toolbar");
 ```
 
-Conditional prop contracts — the polymorphic case, previously inexpressible:
+Conditional prop contracts — the polymorphic case:
 
 ```ts
 export const button = contract("Button")
@@ -308,13 +330,64 @@ a `not` is therefore inactive on an element with a spread, matching how
 (`evaluate-props.ts:90`). Absent a spread, a missing prop satisfies a negated
 test.
 
-Payload: `WhenCondition` gains recursive `{ all }` / `{ any }` / `{ not }` arms, and a `when`
-key is added to `ContainerConfig`, `PropsConfig` and `AncestorConfig` —
-`NoDescendantsConfig` already has one. Each evaluator gains an activation gate and
-a step that combines a component's active rows into one effective config before
-evaluating, and each facet's messages gain condition text. Count bounds need no
-payload change — `.atLeast(1)` compiles to today's `minCount: 1`, whose meaning is
-already 1–∞.
+Together with "no active rows means the facet is unchecked", this has a sharper
+consequence than it first appears: **a spread on a component whose rows are _all_
+conditional disables that component's facet entirely.** In the widening
+idiom above, `<Widget.Tray {...rest}>` deactivates the `not(...)` row for
+carrying a `not`, and the `expanded` row for the prop not being written — leaving
+no active row and no check. This is a real soundness limitation, not a bug: under
+a spread we genuinely cannot tell which branch we are in, and reporting either
+would risk a false positive. It is why the docs should steer towards the
+narrowing idiom — keep an unconditional base row — over the widening one.
+
+Payload: the four per-facet arrays collapse into **one rule table**, a flat list
+of rows discriminated by facet. A row is one statement about one
+component in one facet — the match key (`component`, `importPath`), an optional
+`when`, and that facet's existing config keys as its body. Every one of the
+thirteen facet-feature rules takes the identical table. The per-facet config
+shapes survive as row bodies rather than as top-level payloads.
+
+Row grain is facet, not feature: features within a facet are interdependent — a
+count bound is meaningless without the slot name it attaches to, and combining
+intersects names and tightens bounds in one operation. The thirteen rules stay a
+message-id filter over a facet's violations.
+
+`WhenCondition` gains recursive `{ all }` / `{ any }` / `{ not }` arms. Conditions
+are stored inline in the row and interned by content at prepare time, so a
+condition shared by several rows — which is what a single `when` produces, and
+what hoisting to a constant produces across components — is evaluated once per
+element.
+
+The engine becomes generic over rows: **group by (component, facet) → activation
+mask → combine → evaluate → filter by message id**. Grouping, activation and
+dispatch are facet-independent; the only facet-specific code is a registry entry
+per facet holding its combine function, its evaluator and its message ids. A
+fifth facet is a registry entry plus a row arm.
+
+Messages carry **no** condition text. The combining step already delivers the
+diagnostic honesty it would serve, and the condition's props are written on the
+reported element, visible in the source. It stays additive later through message
+data, with no message-id change.
+
+The payload types move to the eslint-plugin, which is the package that consumes
+them and already owns the JSON schema and the runtime validators; helpers imports
+them type-only. Type safety at that boundary stays deliberately loose — a row's
+`component` is a plain `string` — because helpers owns consumer type safety and
+the plugin's guarantee is the runtime one.
+
+Count bounds need no payload change — `.atLeast(1)` compiles to today's
+`minCount: 1`, whose meaning is already 1–∞.
+
+Activation is **gate ∧ condition**. A row applies only if the element's import
+provenance also passes that row's gate, so gate matching belongs in the mask,
+computed once per element and shared by all thirteen rules rather than repeated
+per facet. Gates are globs, so two rows naming one component with different gates
+may both
+match one element; when they do, **both are active and both are combined**.
+Grouping is therefore by component name alone. This is the accumulation rule
+applied consistently, and it is the case most likely to surprise: a glob-gated row
+is not a fallback for components a more specific row misses, it is an addition to
+them.
 
 Because the constructors are bound to `Module`, prop-name checking stays reachable
 as a **later additive change**: `prop(name)` ships as `(name: string)` and can
@@ -323,24 +396,18 @@ condition meets the builder in `when`. `forbidDescendants` can likewise gain
 `ComponentNames<Module> | (string & {})` for autocomplete without rejecting
 intrinsics. Neither needs an API change.
 
-Behaviour changes to document:
+Behaviour to document:
 
-- Rows accumulate on every facet, so the duplicate-row checks in
-  `validateSlotsOptions`, `validatePropsOptions` and `validateAncestorOptions` are
-  removed, as is the subtree facet's one-ban-per-activating-prop check. A
+- Rows accumulate on every facet, so no facet validates against duplicate rows. A
   component legitimately emits one base row plus one row per `when`.
-- `mergeContracts` throws when two arguments cover the same component. This is now
-  the only duplicate guard, and it matters more than before: two separate slot
-  contracts for one component would intersect their slot lists to nothing, whereas
-  declaring both slots in one chain yields a single row allowing both.
+- `mergeContracts` throws when two arguments cover the same component. It is the
+  only duplicate guard anywhere, and it carries weight: two separate slot
+  contracts for one component intersect their slot lists to nothing, whereas
+  declaring both slots in one chain yields a single row allowing both. A
+  hand-written table bypasses it and is unguarded.
 - A component's active rows are combined into one effective config per facet
   before evaluating, so a violation is reported once and its message describes
-  what the combined state actually allows. Checking row by row would emit one
-  message per row, each true only of its own row. This supersedes the separate
-  identical-diagnostic filter considered earlier — with one combined config per
-  element there is nothing left to deduplicate.
-- Hand-written payloads lose the duplicate-row validation that previously caught
-  copy-paste errors. The trade is what makes conditional rows expressible at all.
+  what the combined state actually allows.
 
 Slot names using the `.` shorthand are checked against the module's export paths.
 `ComponentPaths` resolves three levels deep, so a slot under an already-three-deep
