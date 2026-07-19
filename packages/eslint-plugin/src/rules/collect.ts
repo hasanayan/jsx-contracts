@@ -6,6 +6,7 @@ import { posix } from "node:path";
 import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 
+import type { AncestorFact } from "../contracts/evaluate-ancestor.js";
 import type { ParentFact, Placement } from "../contracts/evaluate-slots.js";
 import type {
   SubtreeElement,
@@ -209,7 +210,12 @@ function propFact(
   attribute: TSESTree.JSXAttribute,
   name: string,
 ): PropFact {
-  const fact: PropFact = { name, present: isAttributePresent(attribute.value) };
+  const fact: PropFact = {
+    name,
+    present: isAttributePresent(attribute.value),
+    ref: attribute,
+  };
+
   const { value } = attribute;
 
   if (value === null) {
@@ -283,6 +289,16 @@ export function collectProps(
   }
 
   return props;
+}
+
+// Whether the element carries a `{...spread}`, which may supply any prop and so
+// makes an absence unprovable.
+export function hasSpreadAttribute(
+  openingElement: TSESTree.JSXOpeningElement,
+): boolean {
+  return openingElement.attributes.some(
+    (attribute) => attribute.type === AST_NODE_TYPES.JSXSpreadAttribute,
+  );
 }
 
 // -- transparent descent -------------------------------------------------------
@@ -465,7 +481,12 @@ export function collectSubtreeRoot(
     return id;
   }
 
-  function buildNode(current: TSESTree.JSXElement): SubtreeElement {
+  // `branches` are the tags on the transparent path from this element's parent
+  // down to it; its own children start a fresh branch context.
+  function buildNode(
+    current: TSESTree.JSXElement,
+    branches: Branch[],
+  ): SubtreeElement {
     const propChildren: SubtreeNode[] = [];
 
     for (const attribute of current.openingElement.attributes) {
@@ -494,6 +515,7 @@ export function collectSubtreeRoot(
       kind: "element",
       name: tagName(current.openingElement.name) ?? "",
       ref: current,
+      branches,
       importSource: resolveImportSource(
         sourceCode,
         filename,
@@ -509,43 +531,105 @@ export function collectSubtreeRoot(
     node: TSESTree.JSXChild | TSESTree.Expression,
     target: SubtreeNode[],
   ): void {
-    descendTransparent(node, [], (leaf) => {
-      if (leaf.type === AST_NODE_TYPES.JSXElement) {
-        target.push(buildNode(leaf));
+    descendTransparent(node, [], (leaf, branches) => {
+      switch (leaf.type) {
+        case AST_NODE_TYPES.JSXElement:
+          target.push(buildNode(leaf, branches));
 
-        return;
+          return;
+
+        case AST_NODE_TYPES.Identifier: {
+          if (leaf.name === "undefined") {
+            return;
+          }
+
+          const init = resolveConstantInit(sourceCode, leaf);
+
+          // An unresolvable identifier (a param, a reassigned or imported
+          // binding) may render anything, so it counts as unknown content.
+          if (init === null) {
+            target.push({ kind: "unknown" });
+
+            return;
+          }
+
+          // Resolve descends one level, so nested constants become further
+          // refs; the branch tags at this reference site ride along.
+          target.push({
+            kind: "ref",
+            initId: initIdOf(init),
+            branches,
+            resolve: (): SubtreeNode[] => {
+              const produced: SubtreeNode[] = [];
+
+              descend(init, produced);
+
+              return produced;
+            },
+          });
+
+          return;
+        }
+
+        // Text and literals render no element; anything else (a call, a spread
+        // child, a member expression) is unresolvable content.
+        case AST_NODE_TYPES.JSXText:
+        case AST_NODE_TYPES.Literal:
+          return;
+
+        default:
+          target.push({ kind: "unknown" });
       }
-
-      if (
-        leaf.type !== AST_NODE_TYPES.Identifier ||
-        leaf.name === "undefined"
-      ) {
-        return;
-      }
-
-      const init = resolveConstantInit(sourceCode, leaf);
-
-      // An unresolvable init is a silent skip.
-      if (init === null) {
-        return;
-      }
-
-      // Resolve descends one level, so nested constants become further refs.
-      target.push({
-        kind: "ref",
-        initId: initIdOf(init),
-        resolve: (): SubtreeNode[] => {
-          const produced: SubtreeNode[] = [];
-
-          descend(init, produced);
-
-          return produced;
-        },
-      });
     });
   }
 
-  return buildNode(element);
+  return buildNode(element, []);
+}
+
+// -- ancestor facts ------------------------------------------------------------
+
+// The chain of JSX-element ancestors enclosing an element, innermost-first.
+// Containment is syntactic, matching the subtree facet's philosophy: an element
+// inside another's body children OR inside a JSX-valued prop is contained, since
+// both put the enclosing element on the parent chain. Namespaced ancestors (no
+// dotted name) can name no forbidden entry, so they are dropped. Hoisting is not
+// followed — a portal or a variable read into a forbidden ancestor is a
+// documented limitation of the whole plugin.
+export function collectAncestors(
+  sourceCode: SourceCode,
+  filename: string,
+  element: TSESTree.JSXElement,
+): AncestorFact[] {
+  const ancestors: AncestorFact[] = [];
+
+  // `.parent` is typed non-nullable, so the walk terminates at the Program node
+  // (an ancestor of every JSX element) rather than on a nullish parent.
+  for (
+    let current: TSESTree.Node = element.parent;
+    ;
+    current = current.parent
+  ) {
+    if (current.type === AST_NODE_TYPES.JSXElement) {
+      const name = tagName(current.openingElement.name);
+
+      if (name !== null) {
+        ancestors.push({
+          name,
+          importSource: resolveImportSource(
+            sourceCode,
+            filename,
+            current.openingElement.name,
+          ),
+        });
+      }
+    }
+
+    if (current.type === AST_NODE_TYPES.Program) {
+      break;
+    }
+  }
+
+  return ancestors;
 }
 
 // -- slot placement facts ------------------------------------------------------

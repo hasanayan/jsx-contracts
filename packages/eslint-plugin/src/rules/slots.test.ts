@@ -1,9 +1,11 @@
 import { RuleTester } from "@typescript-eslint/rule-tester";
 import { afterAll, describe, expect, it } from "vitest";
 
+import type { ContainerConfig } from "@jsx-contracts/helpers";
+
 import { validateSlotsOptions } from "../contracts/validate.js";
 
-import type { ContainerConfig, SlotsOptions } from "./slots.js";
+import type { SlotsOptions } from "./slots.js";
 import { slots } from "./slots.js";
 
 RuleTester.afterAll = afterAll;

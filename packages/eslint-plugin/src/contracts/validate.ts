@@ -1,35 +1,19 @@
-// Payload types and their runtime validators, authoritative for hand-written
-// payloads. See CONTEXT.md for the terms.
+// The runtime validators for the rule payloads, authoritative for hand-written
+// payloads. The payload types themselves live in @jsx-contracts/helpers (the
+// authoring package that also compiles to them); they are imported type-only,
+// so the plugin gains no runtime dependency on it. See CONTEXT.md for the terms.
+
+import type {
+  AncestorConfig,
+  ContainerConfig,
+  ForbiddenElement,
+  NoDescendantsConfig,
+  PropsConfig,
+  SlotConfig,
+  WhenCondition,
+} from "@jsx-contracts/helpers";
 
 // -- slots (children facet) payload --------------------------------------------
-
-/** A slot a container accepts, with optional count bounds and import gate. */
-export interface SlotConfig {
-  /** The slot's full dotted tag, e.g. `"Widget.Tray.Action"`. */
-  name: string;
-  /** Fewest occurrences required. Default `0`. */
-  minCount?: number;
-  /** Most occurrences allowed. Default `1`, or unbounded when `minCount` is set. */
-  maxCount?: number;
-  /** Import gate for this slot; defaults to the container's. */
-  importPath?: string;
-}
-
-/** A container component and the slots it accepts as direct children. */
-export interface ContainerConfig {
-  /** Import gate the container must come from: a literal or a `*`-glob. */
-  importPath: string;
-  /** The container's full dotted tag, e.g. `"Widget.Tray"`. */
-  container: string;
-  /** Accepted slots; a bare string is shorthand for `{ name }`. */
-  slots: (string | SlotConfig)[];
-  /** Slot → a slot that must co-render with it. */
-  requires?: Record<string, string>;
-  /** Pairs of slot groups that may not co-render. */
-  exclusive?: [string[], string[]][];
-  /** Treat statically unresolvable children as errors. */
-  strict?: boolean;
-}
 
 /** Hand-writable payload for `@jsx-contracts/slots`. */
 export type SlotsOptions = ContainerConfig[];
@@ -107,34 +91,6 @@ export function validateSlotsOptions(options: SlotsOptions): void {
 
 // -- subtree payload -----------------------------------------------------------
 
-/** Activates a ban: a prop name, or a prop with allowed values. */
-export type WhenCondition =
-  | string
-  | {
-      prop: string;
-      values?: (string | number | boolean)[];
-    };
-
-/** An element a subtree may not contain, optionally gated by import. */
-export interface ForbiddenElement {
-  name: string;
-  importPath?: string;
-}
-
-/** A component whose subtree is constrained while `when` holds. */
-export interface NoDescendantsConfig {
-  /** Import gate the component must come from: a literal or a `*`-glob. */
-  importPath: string;
-  /** The component's full dotted tag, e.g. `"Widget"`. */
-  component: string;
-  /** The prop (and optional values) that activate the ban. */
-  when: WhenCondition;
-  /** Elements forbidden anywhere below; a bare string is shorthand for `{ name }`. */
-  forbid?: (string | ForbiddenElement)[];
-  /** Props no descendant may carry. */
-  forbidProps?: string[];
-}
-
 /** Hand-writable payload for `@jsx-contracts/subtree`. */
 export type SubtreeOptions = NoDescendantsConfig[];
 
@@ -143,7 +99,15 @@ export interface NormalizedWhen {
   values?: (string | number | boolean)[];
 }
 
-export function normalizeWhen(when: WhenCondition): NormalizedWhen {
+// An absent `when` normalizes to `undefined`: the row is always active for the
+// matched component.
+export function normalizeWhen(
+  when: WhenCondition | undefined,
+): NormalizedWhen | undefined {
+  if (when === undefined) {
+    return undefined;
+  }
+
   return typeof when === "string" ? { prop: when } : when;
 }
 
@@ -155,24 +119,29 @@ export function normalizeForbid(
 
 export function validateSubtreeOptions(options: SubtreeOptions): void {
   // At most one condition per component per when-prop; two would be ambiguous.
+  // A when-less row has no prop to key on, so it is exempt (a full-stop ban or a
+  // descendant-count row may sit beside any conditional rows).
   const pairs = new Set<string>();
 
   for (const config of options) {
     const when = normalizeWhen(config.when);
-    const pair = `${config.component}\n${when.prop}`;
 
-    if (pairs.has(pair)) {
-      throw new Error(
-        `subtree: duplicate condition on <${config.component}>'s "${when.prop}" prop.`,
-      );
-    }
+    if (when !== undefined) {
+      const pair = `${config.component}\n${when.prop}`;
 
-    pairs.add(pair);
+      if (pairs.has(pair)) {
+        throw new Error(
+          `subtree: duplicate condition on <${config.component}>'s "${when.prop}" prop.`,
+        );
+      }
 
-    if (when.values?.length === 0) {
-      throw new Error(
-        `subtree: <${config.component}> "${when.prop}" values must not be empty.`,
-      );
+      pairs.add(pair);
+
+      if (when.values?.length === 0) {
+        throw new Error(
+          `subtree: <${config.component}> "${when.prop}" values must not be empty.`,
+        );
+      }
     }
 
     if (config.forbid?.length === 0) {
@@ -187,13 +156,141 @@ export function validateSubtreeOptions(options: SubtreeOptions): void {
       );
     }
 
+    if (config.require?.length === 0) {
+      throw new Error(
+        `subtree: <${config.component}> require must not be empty.`,
+      );
+    }
+
     if (
       (config.forbid?.length ?? 0) === 0 &&
-      (config.forbidProps?.length ?? 0) === 0
+      (config.forbidProps?.length ?? 0) === 0 &&
+      (config.require?.length ?? 0) === 0
     ) {
       throw new Error(
-        `subtree: <${config.component}> must forbid at least one element or prop.`,
+        `subtree: <${config.component}> must forbid an element or prop, or require a descendant.`,
       );
+    }
+
+    for (const entry of config.require ?? []) {
+      if (entry.name.length === 0) {
+        throw new Error(
+          `subtree: <${config.component}> require entry must name an element.`,
+        );
+      }
+
+      if (
+        entry.min !== undefined &&
+        (!Number.isInteger(entry.min) || entry.min < 0)
+      ) {
+        throw new Error(
+          `subtree: <${config.component}> require "${entry.name}" min must be a non-negative integer.`,
+        );
+      }
+
+      if (
+        entry.max !== undefined &&
+        (!Number.isInteger(entry.max) || entry.max < 1)
+      ) {
+        throw new Error(
+          `subtree: <${config.component}> require "${entry.name}" max must be a positive integer.`,
+        );
+      }
+
+      if (
+        entry.min !== undefined &&
+        entry.max !== undefined &&
+        entry.min > entry.max
+      ) {
+        throw new Error(
+          `subtree: <${config.component}> require "${entry.name}" min exceeds max.`,
+        );
+      }
+    }
+  }
+}
+
+// -- props payload -------------------------------------------------------------
+
+/** Hand-writable payload for `@jsx-contracts/props`. */
+export type PropsOptions = PropsConfig[];
+
+export function validatePropsOptions(options: PropsOptions): void {
+  const componentTags = new Set<string>();
+
+  for (const config of options) {
+    if (componentTags.has(config.component)) {
+      throw new Error(`props: duplicate component "${config.component}".`);
+    }
+
+    componentTags.add(config.component);
+
+    const hasRequired = (config.required?.length ?? 0) > 0;
+    const hasExclusive = (config.exclusive?.length ?? 0) > 0;
+    const hasDeprecated =
+      config.deprecated !== undefined &&
+      Object.keys(config.deprecated).length > 0;
+
+    const hasDeprecatedComponent = config.deprecatedComponent !== undefined;
+
+    if (
+      !hasRequired &&
+      !hasExclusive &&
+      !hasDeprecated &&
+      !hasDeprecatedComponent
+    ) {
+      throw new Error(
+        `props: <${config.component}> must declare at least one prop contract.`,
+      );
+    }
+
+    for (const entry of config.required ?? []) {
+      if (Array.isArray(entry) && entry.length === 0) {
+        throw new Error(
+          `props: <${config.component}> has an empty required group.`,
+        );
+      }
+    }
+
+    for (const [groupA, groupB] of config.exclusive ?? []) {
+      if (groupA.length === 0 || groupB.length === 0) {
+        throw new Error(
+          `props: <${config.component}> has an empty exclusive group.`,
+        );
+      }
+    }
+  }
+}
+
+// -- ancestor payload ----------------------------------------------------------
+
+/** Hand-writable payload for `@jsx-contracts/ancestor`. */
+export type AncestorOptions = AncestorConfig[];
+
+export function validateAncestorOptions(options: AncestorOptions): void {
+  const componentTags = new Set<string>();
+
+  for (const config of options) {
+    if (componentTags.has(config.component)) {
+      throw new Error(`ancestor: duplicate component "${config.component}".`);
+    }
+
+    componentTags.add(config.component);
+
+    if (config.notInside.length === 0) {
+      throw new Error(
+        `ancestor: <${config.component}> notInside must not be empty.`,
+      );
+    }
+
+    for (const rawEntry of config.notInside) {
+      const entry = normalizeForbid(rawEntry);
+
+      if (entry.name.length === 0) {
+        throw new Error(
+          `ancestor: <${config.component}> notInside entry must name an element.`,
+        );
+      }
     }
   }
 }

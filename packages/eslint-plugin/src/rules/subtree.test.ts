@@ -66,6 +66,24 @@ const twoConfigOptions: SubtreeOptions = [
   },
 ];
 
+// A when-less ban: never nest <Dialog> under <Widget>, full stop.
+const banOptions: SubtreeOptions = [
+  {
+    importPath: "*/acme-ds/components/widget",
+    component: "Widget",
+    forbid: ["Dialog"],
+  },
+];
+
+// A when-less descendant-count row: exactly one <Tabs.List> below <Tabs.Root>.
+const countOptions: SubtreeOptions = [
+  {
+    importPath: "*/acme-ds/components/tabs",
+    component: "Tabs.Root",
+    require: [{ name: "Tabs.List", min: 1, max: 1 }],
+  },
+];
+
 describe("validateSubtreeOptions", () => {
   it("throws on a duplicate (component, when-prop) pair", () => {
     expect(() => {
@@ -86,7 +104,7 @@ describe("validateSubtreeOptions", () => {
     }).toThrow('duplicate condition on <Widget>\'s "to" prop');
   });
 
-  it("throws when neither forbid nor forbidProps is provided", () => {
+  it("throws when neither forbid, forbidProps, nor require is provided", () => {
     expect(() => {
       validateSubtreeOptions([
         {
@@ -95,7 +113,9 @@ describe("validateSubtreeOptions", () => {
           when: "to",
         },
       ]);
-    }).toThrow("<Widget> must forbid at least one element or prop");
+    }).toThrow(
+      "<Widget> must forbid an element or prop, or require a descendant",
+    );
   });
 
   it("throws on an empty values array", () => {
@@ -246,6 +266,79 @@ ruleTester.run("subtree", subtree, {
         );
       `,
     },
+    {
+      name: "when-less ban: the forbidden element is absent",
+      options: [banOptions],
+      code: `
+        const widget = (
+          <Widget>
+            <span>Text</span>
+          </Widget>
+        );
+      `,
+    },
+    {
+      name: "required descendant present as a direct child",
+      options: [countOptions],
+      code: `
+        const tabs = (
+          <Tabs.Root>
+            <Tabs.List />
+          </Tabs.Root>
+        );
+      `,
+    },
+    {
+      name: "required descendant present through a wrapper element",
+      options: [countOptions],
+      code: `
+        const tabs = (
+          <Tabs.Root>
+            <div>
+              <Tabs.List />
+            </div>
+          </Tabs.Root>
+        );
+      `,
+    },
+    {
+      name: "required descendant guaranteed across both ternary branches",
+      options: [countOptions],
+      code: `
+        const tabs = (
+          <Tabs.Root>
+            {wide ? <Tabs.List variant="wide" /> : <Tabs.List />}
+          </Tabs.Root>
+        );
+      `,
+    },
+    {
+      name: "two required descendants in opposite branches do not exceed the max",
+      options: [countOptions],
+      code: `
+        const tabs = (
+          <Tabs.Root>
+            {wide ? <Tabs.List variant="wide" /> : <Tabs.List />}
+          </Tabs.Root>
+        );
+      `,
+    },
+    {
+      name: "an unresolvable child skips the min check",
+      options: [countOptions],
+      code: `
+        const tabs = <Tabs.Root>{renderTabs()}</Tabs.Root>;
+      `,
+    },
+    {
+      name: "an unresolvable param child skips the min check",
+      options: [countOptions],
+      code: `
+        function Tabs2({ body }) {
+          return <Tabs.Root>{body}</Tabs.Root>;
+        }
+      `,
+    },
   ],
   invalid: [
     {
@@ -268,7 +361,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "button",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
       ],
@@ -293,7 +386,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "button",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
         {
@@ -301,7 +394,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "Panel",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
       ],
@@ -327,7 +420,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "button",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
       ],
@@ -348,7 +441,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "button",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
       ],
@@ -370,7 +463,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "Chip",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
       ],
@@ -392,7 +485,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "Panel",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
       ],
@@ -414,7 +507,7 @@ ruleTester.run("subtree", subtree, {
             name: "button",
             component: "Widget",
             condition:
-              'with `variant` set to one of "primary", 3 and "Size.large"',
+              ' with `variant` set to one of "primary", 3 and "Size.large"',
           },
         },
       ],
@@ -436,7 +529,7 @@ ruleTester.run("subtree", subtree, {
             name: "button",
             component: "Widget",
             condition:
-              'with `variant` set to one of "primary", 3 and "Size.large"',
+              ' with `variant` set to one of "primary", 3 and "Size.large"',
           },
         },
       ],
@@ -458,7 +551,7 @@ ruleTester.run("subtree", subtree, {
             name: "button",
             component: "Widget",
             condition:
-              'with `variant` set to one of "primary", 3 and "Size.large"',
+              ' with `variant` set to one of "primary", 3 and "Size.large"',
           },
         },
       ],
@@ -479,7 +572,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "button",
             component: "Widget",
-            condition: 'with `variant` set to "primary"',
+            condition: ' with `variant` set to "primary"',
           },
         },
       ],
@@ -500,7 +593,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             prop: "onClick",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
       ],
@@ -521,7 +614,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "button",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
       ],
@@ -542,7 +635,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "button",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
         {
@@ -550,7 +643,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "button",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
       ],
@@ -570,7 +663,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "button",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
       ],
@@ -591,7 +684,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "button",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
       ],
@@ -614,7 +707,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "button",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
       ],
@@ -636,7 +729,7 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "button",
             component: "Widget",
-            condition: "with a `to` prop",
+            condition: " with a `to` prop",
           },
         },
         {
@@ -644,7 +737,79 @@ ruleTester.run("subtree", subtree, {
           data: {
             name: "input",
             component: "Widget",
-            condition: "with a `onClick` prop",
+            condition: " with a `onClick` prop",
+          },
+        },
+      ],
+    },
+    {
+      name: "when-less ban reports without any condition text",
+      options: [banOptions],
+      code: `
+        const widget = (
+          <Widget>
+            <section>
+              <Dialog>Body</Dialog>
+            </section>
+          </Widget>
+        );
+      `,
+      errors: [
+        {
+          messageId: "forbiddenDescendant",
+          data: {
+            name: "Dialog",
+            component: "Widget",
+            condition: "",
+          },
+        },
+      ],
+    },
+    {
+      name: "a missing required descendant is reported through a wrapper",
+      options: [countOptions],
+      code: `
+        const tabs = (
+          <Tabs.Root>
+            <div>
+              <span>No list here</span>
+            </div>
+          </Tabs.Root>
+        );
+      `,
+      errors: [
+        {
+          messageId: "tooFewDescendants",
+          data: {
+            component: "Tabs.Root",
+            condition: "",
+            name: "Tabs.List",
+            min: "one",
+          },
+        },
+      ],
+    },
+    {
+      name: "two coexisting required descendants exceed the max",
+      options: [countOptions],
+      code: `
+        const tabs = (
+          <Tabs.Root>
+            <Tabs.List />
+            <div>
+              <Tabs.List />
+            </div>
+          </Tabs.Root>
+        );
+      `,
+      errors: [
+        {
+          messageId: "tooManyDescendants",
+          data: {
+            component: "Tabs.Root",
+            condition: "",
+            name: "Tabs.List",
+            max: "one",
           },
         },
       ],

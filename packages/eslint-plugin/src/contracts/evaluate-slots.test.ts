@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { ContainerConfig } from "@jsx-contracts/helpers";
+
 import type {
   ParentFact,
   PreparedContainer,
@@ -13,7 +15,6 @@ import {
 } from "./evaluate-slots.js";
 import { createImportMatcher } from "./import-matcher.js";
 import type { Branch, RenderedNode } from "./model.js";
-import type { ContainerConfig } from "./validate.js";
 
 function element(name: string, branches: Branch[] = []): RenderedNode {
   return {

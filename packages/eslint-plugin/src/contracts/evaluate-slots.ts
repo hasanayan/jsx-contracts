@@ -1,12 +1,19 @@
 // Pure evaluation of a container's children facet. Check order is significant:
 // it fixes which violation is reported first.
 
+import type { ContainerConfig } from "@jsx-contracts/helpers";
+
 import { formatList } from "./format.js";
 import type { ImportMatcher } from "./import-matcher.js";
 import { createImportMatcher, matchesGate } from "./import-matcher.js";
-import type { Branch, Ref, RenderedNode, Violation } from "./model.js";
+import type {
+  Branch,
+  Branched,
+  Ref,
+  RenderedNode,
+  Violation,
+} from "./model.js";
 import { canCoexist } from "./model.js";
-import type { ContainerConfig } from "./validate.js";
 import { normalizeSlot } from "./validate.js";
 
 /** Message ids reported by `@jsx-contracts/slots`. */
@@ -94,8 +101,9 @@ function countWord(count: number): string {
   return count === 1 ? "one" : String(count);
 }
 
-// Exponential, but occurrence counts are tiny.
-function subsetsOfSize<T>(items: T[], size: number): T[][] {
+// Exponential, but occurrence counts are tiny. Shared with the subtree facet's
+// descendant-count check.
+export function subsetsOfSize<T>(items: T[], size: number): T[][] {
   const result: T[][] = [];
 
   function choose(start: number, chosen: T[]): void {
@@ -115,7 +123,7 @@ function subsetsOfSize<T>(items: T[], size: number): T[][] {
   return result;
 }
 
-function allPairwiseCoexist(elements: RenderedNode[]): boolean {
+export function allPairwiseCoexist(elements: Branched[]): boolean {
   return elements.every((element, index) =>
     elements.slice(index + 1).every((other) => canCoexist(element, other)),
   );
@@ -132,7 +140,7 @@ function sideOf(branch: Branch): "consequent" | "alternate" {
 // The count guaranteed on every render path: each referenced conditional is a
 // binary branch point, so enumerate every assignment and take the smallest
 // surviving count.
-export function minimumGuaranteedCount(occurrences: RenderedNode[]): number {
+export function minimumGuaranteedCount(occurrences: Branched[]): number {
   const branchPoints = [
     ...new Set(
       occurrences.flatMap((occurrence) =>

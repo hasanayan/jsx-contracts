@@ -1,28 +1,43 @@
-// Pure evaluation of a subtree ban: activate on the root's props, then walk,
-// reporting the first forbidden match per path and stopping descent there.
+// Pure evaluation of a subtree row: activate on the root's props (or always,
+// when the row is when-less), then walk. Forbid matches report the first per
+// path and stop descent there; descendant-count bounds tally every matching
+// occurrence, branch-aware, across the whole subtree.
 
+import type { NoDescendantsConfig } from "@jsx-contracts/helpers";
+
+import {
+  allPairwiseCoexist,
+  minimumGuaranteedCount,
+  subsetsOfSize,
+} from "./evaluate-slots.js";
 import { formatList } from "./format.js";
 import type { ImportMatcher } from "./import-matcher.js";
 import { createImportMatcher, matchesGate } from "./import-matcher.js";
-import type { PropFact, Ref, Violation } from "./model.js";
-import type { NoDescendantsConfig, NormalizedWhen } from "./validate.js";
+import type { Branch, PropFact, Ref, Violation } from "./model.js";
+import type { NormalizedWhen } from "./validate.js";
 import { normalizeForbid, normalizeWhen } from "./validate.js";
 
 /** Message ids reported by `@jsx-contracts/subtree`. */
 export type SubtreeMessageId =
-  "forbiddenDescendant" | "forbiddenPropDescendant";
+  | "forbiddenDescendant"
+  | "forbiddenPropDescendant"
+  | "tooFewDescendants"
+  | "tooManyDescendants";
 
 type SubtreeViolation = Violation<SubtreeMessageId>;
 
 // -- the subtree facet model ---------------------------------------------------
 
-// The subtree is a lazy tree of element and reference nodes. `resolve` reads
-// the AST, so keeping it behind a callback is what lets this directory import
-// nothing from eslint.
+// The subtree is a lazy tree of element, reference, and unknown nodes.
+// `resolve` reads the AST, so keeping it behind a callback is what lets this
+// directory import nothing from eslint. `branches` are the branch tags on the
+// transparent path from the parent element (or the activated root) down to this
+// node, so descendant counts stay branch-aware.
 export interface SubtreeElement {
   kind: "element";
   name: string;
   ref: Ref;
+  branches: Branch[];
   importSource: string | null;
   props: PropFact[];
   propChildren: SubtreeNode[];
@@ -34,13 +49,27 @@ export interface SubtreeElement {
 export interface SubtreeRef {
   kind: "ref";
   initId: number;
+  branches: Branch[];
   resolve: () => SubtreeNode[];
 }
 
-export type SubtreeNode = SubtreeElement | SubtreeRef;
+// Statically unresolvable content (a call, a param, a spread): it may render
+// anything, so its mere presence makes a `min` claim unprovable.
+interface SubtreeUnknown {
+  kind: "unknown";
+}
+
+export type SubtreeNode = SubtreeElement | SubtreeRef | SubtreeUnknown;
 
 interface PreparedForbid {
   name: string;
+  matcher?: ImportMatcher;
+}
+
+interface PreparedRequire {
+  name: string;
+  minCount: number;
+  maxCount: number;
   matcher?: ImportMatcher;
 }
 
@@ -49,9 +78,18 @@ export interface PreparedSubtree {
   // The component's own import gate. Consumed by the adapter to decide whether
   // a rendered <component> is in scope; the evaluator does not read it.
   matcher: ImportMatcher;
-  when: NormalizedWhen;
+  // Absent when the row is when-less: always active for the matched component.
+  when: NormalizedWhen | undefined;
   forbid: PreparedForbid[];
   forbidProps: Set<string>;
+  require: PreparedRequire[];
+}
+
+// A found descendant that counts toward a `require` bound, with the branch tags
+// that decide whether it coexists with the others.
+interface Occurrence {
+  ref: Ref;
+  branches: Branch[];
 }
 
 export function prepareSubtree(config: NoDescendantsConfig): PreparedSubtree {
@@ -66,27 +104,55 @@ export function prepareSubtree(config: NoDescendantsConfig): PreparedSubtree {
     return prepared;
   });
 
+  // Count-bound defaults mirror the slots facet exactly: neither bound means at
+  // most one; only min lifts the upper bound; only max keeps a lower bound of
+  // zero.
+  const require: PreparedRequire[] = (config.require ?? []).map((entry) => {
+    const prepared: PreparedRequire = {
+      name: entry.name,
+      minCount: entry.min ?? 0,
+      maxCount: entry.max ?? (entry.min !== undefined ? Infinity : 1),
+    };
+
+    if (entry.importPath !== undefined) {
+      prepared.matcher = createImportMatcher(entry.importPath);
+    }
+
+    return prepared;
+  });
+
   return {
     component: config.component,
     matcher: createImportMatcher(config.importPath),
     when: normalizeWhen(config.when),
     forbid,
     forbidProps: new Set(config.forbidProps ?? []),
+    require,
   };
 }
 
-function conditionText(when: NormalizedWhen): string {
+// A when-less row carries no condition text; a conditional one carries its own
+// leading space, so the message templates read cleanly either way.
+function conditionText(when: NormalizedWhen | undefined): string {
+  if (when === undefined) {
+    return "";
+  }
+
   if (when.values === undefined) {
-    return `with a \`${when.prop}\` prop`;
+    return ` with a \`${when.prop}\` prop`;
   }
 
   const quoted = when.values.map((value) => JSON.stringify(value));
 
   if (quoted.length === 1) {
-    return `with \`${when.prop}\` set to ${quoted[0]}`;
+    return ` with \`${when.prop}\` set to ${quoted[0]}`;
   }
 
-  return `with \`${when.prop}\` set to one of ${formatList(quoted)}`;
+  return ` with \`${when.prop}\` set to one of ${formatList(quoted)}`;
+}
+
+function countWord(count: number): string {
+  return count === 1 ? "one" : String(count);
 }
 
 // A resolved literal matches by equality; a member expression or identifier
@@ -107,7 +173,14 @@ function propMatchesValues(
   );
 }
 
-function isActive(props: PropFact[], when: NormalizedWhen): boolean {
+function isActive(
+  props: PropFact[],
+  when: NormalizedWhen | undefined,
+): boolean {
+  if (when === undefined) {
+    return true;
+  }
+
   const prop = props.find((fact) => fact.name === when.prop);
 
   if (prop === undefined) {
@@ -119,7 +192,7 @@ function isActive(props: PropFact[], when: NormalizedWhen): boolean {
     : propMatchesValues(prop, when.values);
 }
 
-// Whether the ban applies to a component with these props. Lets the adapter
+// Whether the row applies to a component with these props. Lets the adapter
 // skip building the subtree of an inactive component.
 export function isActivated(
   prepared: PreparedSubtree,
@@ -157,6 +230,15 @@ function matchesForbidProps(
   return undefined;
 }
 
+function matchesRequire(node: SubtreeElement, entry: PreparedRequire): boolean {
+  return (
+    node.name !== "" &&
+    node.name === entry.name &&
+    (entry.matcher === undefined ||
+      matchesGate(entry.matcher, node.importSource))
+  );
+}
+
 export function evaluateSubtree(
   prepared: PreparedSubtree,
   root: SubtreeElement,
@@ -175,7 +257,21 @@ export function evaluateSubtree(
   // terminates self-referential constants.
   const visitedInits = new Set<number>();
 
-  function visit(node: SubtreeNode): void {
+  // One occurrence bucket per require entry, filled during the walk.
+  const occurrences: Occurrence[][] = prepared.require.map(() => []);
+
+  // A statically unresolvable node anywhere in the activated subtree makes a
+  // `min` claim unprovable (the missing element may be produced dynamically);
+  // `max` is still checked on what is visible.
+  let sawUnknown = false;
+
+  function visit(node: SubtreeNode, inherited: Branch[]): void {
+    if (node.kind === "unknown") {
+      sawUnknown = true;
+
+      return;
+    }
+
     if (node.kind === "ref") {
       if (visitedInits.has(node.initId)) {
         return;
@@ -183,12 +279,16 @@ export function evaluateSubtree(
 
       visitedInits.add(node.initId);
 
+      const branches = [...inherited, ...node.branches];
+
       for (const produced of node.resolve()) {
-        visit(produced);
+        visit(produced, branches);
       }
 
       return;
     }
+
+    const branches = [...inherited, ...node.branches];
 
     if (matchesForbid(node, prepared)) {
       violations.push({
@@ -212,24 +312,77 @@ export function evaluateSubtree(
       return;
     }
 
+    prepared.require.forEach((entry, index) => {
+      if (matchesRequire(node, entry)) {
+        occurrences[index]?.push({ ref: node.ref, branches });
+      }
+    });
+
     // Attribute-value JSX is walked before body children.
     for (const child of node.propChildren) {
-      visit(child);
+      visit(child, branches);
     }
 
     for (const child of node.children) {
-      visit(child);
+      visit(child, branches);
     }
   }
 
-  // The ban applies below the activated element, not to it.
+  // The row applies below the activated element, not to it.
   for (const child of root.propChildren) {
-    visit(child);
+    visit(child, []);
   }
 
   for (const child of root.children) {
-    visit(child);
+    visit(child, []);
   }
+
+  prepared.require.forEach((entry, index) => {
+    const found = occurrences[index] ?? [];
+
+    // Exceeds max N when some N coexisting earlier occurrences can all render
+    // alongside this one (opposite ternary branches never do).
+    if (entry.maxCount !== Infinity) {
+      for (const [position, occurrence] of found.entries()) {
+        const earlier = found.slice(0, position);
+
+        const exceeds = subsetsOfSize(earlier, entry.maxCount).some((subset) =>
+          allPairwiseCoexist([...subset, occurrence]),
+        );
+
+        if (exceeds) {
+          violations.push({
+            ref: occurrence.ref,
+            messageId: "tooManyDescendants",
+            data: {
+              component: prepared.component,
+              condition,
+              name: entry.name,
+              max: countWord(entry.maxCount),
+            },
+          });
+        }
+      }
+    }
+
+    // min is a presence claim on every render path, so unknown content skips it.
+    if (
+      entry.minCount > 0 &&
+      !sawUnknown &&
+      minimumGuaranteedCount(found) < entry.minCount
+    ) {
+      violations.push({
+        ref: root.ref,
+        messageId: "tooFewDescendants",
+        data: {
+          component: prepared.component,
+          condition,
+          name: entry.name,
+          min: countWord(entry.minCount),
+        },
+      });
+    }
+  });
 
   return violations;
 }

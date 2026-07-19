@@ -39,6 +39,7 @@
     "eslint": ">=9"
   },
   "dependencies": {
+    "@jsx-contracts/helpers": "workspace:*",
     "@typescript-eslint/utils": "8.62.1"
   },
   "devDependencies": {
