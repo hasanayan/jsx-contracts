@@ -2,22 +2,26 @@
 
 ESLint plugin that enforces JSX **composition contracts** — the structural rules
 governing how a component's children may be nested and slotted. Declare each
-component's contract once with `defineContracts`; the plugin reports violations
-where the components are used.
+component's contract once with `defineContracts` (from the companion
+`@jsx-contracts/helpers` package); the plugin reports violations where the
+components are used.
 
 ## Install
 
 ```sh
-npm i -D @jsx-contracts/eslint-plugin
+npm i -D @jsx-contracts/eslint-plugin @jsx-contracts/helpers
 ```
 
-Requires ESLint 9+ (flat config).
+`@jsx-contracts/eslint-plugin` enforces the contracts; `@jsx-contracts/helpers`
+is the type-safe authoring layer (`defineContracts`, `contractsFor`, the fluent
+`contract()` builder). Requires ESLint 9+ (flat config).
 
 ## Usage
 
 ```js
 // eslint.config.js
-import jsxContracts, { defineContracts } from "@jsx-contracts/eslint-plugin";
+import jsxContracts from "@jsx-contracts/eslint-plugin";
+import { defineContracts } from "@jsx-contracts/helpers";
 
 const contracts = defineContracts("@acme/ds", {
   "Widget.Tray": {
@@ -37,35 +41,114 @@ export default [
 ];
 ```
 
-`defineContracts(sharedGate, contracts)` and `defineContract(name, slots, config)`
-compile to the two rules' JSON payloads (also hand-writable). The shared **import
-gate** is the module a component must be imported from for its contract to apply
-(a literal or a `*` glob); any component may override it with its own `from`.
+`defineContracts(sharedGate, contracts)` compiles to the two facets' JSON
+payloads (also hand-writable). The shared **import gate** is the module a
+component must be imported from for its contract to apply (a literal or a `*`
+glob); any component may override it with its own `from`.
+
+`contracts.rules()` spreads one entry per facet _feature_ — `slots.children`,
+`slots.count`, `slots.placement`, `slots.requires`, `slots.exclusive`,
+`slots.strict`, `subtree.forbid`, `subtree.forbidProps`, `subtree.count`,
+`props.required`, `props.exclusive`, `props.deprecated`, and `ancestor.forbid` —
+so you can switch off or `eslint-disable` a single feature without dropping the
+rest:
+
+```js
+export default [
+  {
+    plugins: { "@jsx-contracts": jsxContracts },
+    rules: {
+      ...contracts.rules(), // or contracts.rules({ subtree: "warn" })
+      "@jsx-contracts/slots.exclusive": "off", // opt out of one feature
+    },
+  },
+];
+```
+
+```jsx
+{
+  /* eslint-disable-next-line @jsx-contracts/slots.count */
+}
+<Widget.Tray></Widget.Tray>;
+```
+
+Enabling all thirteen costs one analysis per file, not thirteen: the rules
+intern their payloads by content (ESLint clones rule options, so identity alone
+wouldn't do) and share the per-file work across every variant.
 
 ### Colocating contracts with components
 
-Compile a component's contract next to it, then `mergeContracts` them in your
-config — split across files, still one `rules()` for ESLint:
+Author a component's contract next to it with the fluent `contract()` builder,
+then `mergeContracts` them in your config — split across files, still one
+`rules()` for ESLint:
 
 ```js
 // widget/contract.js — next to the component
-import { defineContract } from "@jsx-contracts/eslint-plugin";
+import { contract } from "@jsx-contracts/helpers";
 
-export const widgetContract = defineContract(
-  "Widget.Tray",
-  { ".Title": { count: { min: 1 } }, ".Action": true },
-  { from: "@acme/ds" },
-);
+export const widgetContract = contract("Widget.Tray", "@acme/ds").hasSlots({
+  ".Title": { count: { min: 1 } },
+  ".Action": true,
+});
 ```
 
 ```js
 // eslint.config.js
-import jsxContracts, { mergeContracts } from "@jsx-contracts/eslint-plugin";
+import jsxContracts from "@jsx-contracts/eslint-plugin";
+import { mergeContracts } from "@jsx-contracts/helpers";
+
 import { widgetContract } from "./src/widget/contract.js";
 import { tabsContract } from "./src/tabs/contract.js";
 
 const contracts = mergeContracts(widgetContract, tabsContract);
 // plugins/rules as above → rules: contracts.rules()
+```
+
+### Typed component names
+
+Bind the contracts to your design system's types with `contractsFor`, and the
+component names are autocompleted and checked against the module's exports — a
+typo, or a component later renamed away, fails to compile. The type import is
+erased at build time; ESLint never loads the design system:
+
+```ts
+import { contractsFor } from "@jsx-contracts/helpers";
+
+import type * as ds from "@acme/ds";
+
+const define = contractsFor<typeof ds>("@acme/ds");
+
+export const contracts = define({
+  "Widget.Tray": { slots: { ".Title": { count: { min: 1 } } } },
+  // "Widget.Trya" → compile error: not an export path of @acme/ds
+});
+```
+
+### Fluent authoring
+
+`contract()` (or the bound `define.contract()`) builds one component's contract
+as a sentence. The chain is type-stated: slots must be declared before
+`requires`/`exclusive` can reference them, and a `when` ban must forbid
+something before the chain continues. Builders are `CompiledContracts`, so
+`mergeContracts` combines them with everything else:
+
+```ts
+import { contract, mergeContracts } from "@jsx-contracts/helpers";
+
+const tray = contract("Widget.Tray", "@acme/ds")
+  .hasSlots({
+    ".Title": { count: { min: 1 } },
+    ".Action": true,
+    ".Overflow": true,
+  })
+  .requires(".Action", ".Title")
+  .exclusive([".Overflow"], [".Action"]);
+
+const widget = contract("Widget", "@acme/ds")
+  .when("variant", ["compact"])
+  .forbid("Widget.Footer");
+
+export const contracts = mergeContracts(tray, widget);
 ```
 
 ## What you can enforce
@@ -83,9 +166,28 @@ const contracts = mergeContracts(widgetContract, tabsContract);
   `exclusive` (slot groups that may not co-render together).
 - **Strict mode** — statically unresolvable children become violations instead
   of being skipped.
+- **Descendant counts** — real design systems tolerate wrapper elements between
+  a root and its parts (`<Tabs.Root><div><Tabs.List /></div></Tabs.Root>`),
+  which the direct-child slots facet can't see. Require an element within count
+  bounds _anywhere below_ a component: exactly one `Tabs.List`, at most one
+  `Toast.Provider`, at least two of something. Branch-aware, and lenient —
+  unresolvable content skips the lower bound but not the upper.
 - **Subtree bans** — under a given component (optionally gated by a prop's
-  presence or value), forbid named elements or any element carrying named props
-  from appearing anywhere below.
+  presence or value, or unconditionally — "never nest X under Y, full stop"),
+  forbid named elements or any element carrying named props from appearing
+  anywhere below.
+- **Prop contracts** — element-local rules on a component's own props: required
+  props (or at-least-one-of groups), mutually exclusive prop groups, and
+  deprecations of a prop or of the component itself. A spread on the element
+  skips the required checks (it may supply the prop); exclusive and deprecated
+  still report what's written.
+- **Forbidden ancestors** — no `<Button>` inside a `<Button>`, no `<Link>` inside
+  a `<Link>`, `<Card.Action>` never below `<Modal.Footer>`: a component may not
+  render anywhere beneath a listed ancestor (`notInside`), gated by name or by
+  import. Only this forbidden direction ships — an illegal nesting visible in a
+  file is definitely wrong. _Requiring_ an ancestor is deliberately not enforced,
+  because a wrapper may legitimately render the part standalone for composition
+  elsewhere, which no single file can rule out.
 
 Analysis is branch-aware: elements in opposite ternary/`&&` branches don't count
 as co-rendering. See [CONTEXT.md](./CONTEXT.md) for the full vocabulary.
@@ -95,7 +197,7 @@ as co-rendering. See [CONTEXT.md](./CONTEXT.md) for the full vocabulary.
 **Count bounds, branch-aware.** `.Footer: true` means at most one:
 
 ```js
-defineContract("Dialog", { ".Footer": true }, { from: "@acme/ds" });
+contract("Dialog", "@acme/ds").hasSlots({ ".Footer": true });
 ```
 
 ```jsx
@@ -123,14 +225,7 @@ defineContract("Dialog", { ".Footer": true }, { from: "@acme/ds" });
 **Subtree ban gated by a prop value.**
 
 ```js
-defineContract(
-  "Card",
-  {},
-  {
-    from: "@acme/ds",
-    subtree: { variant: { is: ["compact"], forbid: ["Card.Image"] } },
-  },
-);
+contract("Card", "@acme/ds").when("variant", ["compact"]).forbid("Card.Image");
 ```
 
 ```jsx
@@ -138,6 +233,53 @@ defineContract(
   <Card.Body>{expanded && <Card.Image src={src} />}</Card.Body>
 </Card>
 // ✕ <Card.Image> cannot appear inside a <Card> with `variant` set to "compact".
+```
+
+**Required descendant, through a wrapper.** `.List` must appear somewhere below
+`Tabs.Root`, even nested in wrappers the slots facet wouldn't see:
+
+```js
+contract("Tabs.Root", "@acme/ds").hasDescendants({
+  ".List": { count: { min: 1, max: 1 } },
+});
+```
+
+```jsx
+<Tabs.Root>
+  <div className="scroll">
+    <Tabs.List>{tabs}</Tabs.List>
+  </div>
+</Tabs.Root>
+// ✓ exactly one <Tabs.List> below <Tabs.Root>, wrapper notwithstanding.
+
+<Tabs.Root>
+  <div className="scroll" />
+</Tabs.Root>
+// ✕ A <Tabs.Root> must contain at least one <Tabs.List>.
+```
+
+**Deprecated prop with a replacement hint.**
+
+```js
+contract("Button", "@acme/ds").deprecatesProp("color", "tone");
+```
+
+```jsx
+<Button color="brand">Save</Button>
+// ✕ `color` on <Button> is deprecated — use `tone` instead.
+```
+
+**No nested buttons (forbidden ancestor).**
+
+```js
+contract("Button", "@acme/ds").notInside("Button");
+```
+
+```jsx
+<Button>
+  <Button>Nested</Button>
+</Button>
+// ✕ <Button> cannot appear inside <Button>.
 ```
 
 ## Known limitations
@@ -153,11 +295,18 @@ defineContract(
 - **Per file.** A slot threaded through a wrapper component defined in another
   module isn't followed across the file boundary.
 - **Spreads are opaque.** `{...children}` and `{...props}` can't be resolved.
+- **Forbidden ancestors follow direct syntactic nesting only.** An element
+  hoisted into a variable whose read lands inside a forbidden ancestor isn't
+  traced back to it.
 
 ## Repo layout
 
-pnpm workspace. The plugin is `packages/eslint-plugin` — a framework-agnostic
-core (`src/contracts/`) that evaluates contracts over a pure rendered-tree
-model, plus ESLint adapters (`src/rules/`) that collect that model from the AST.
-`packages/playground` is a manual smoke-check only; behaviour is verified by
-tests.
+pnpm workspace with two published packages. `packages/eslint-plugin` enforces:
+a framework-agnostic core (`src/contracts/`) that evaluates contracts over a
+pure rendered-tree model, plus ESLint adapters (`src/rules/`) that collect that
+model from the AST. `packages/helpers` is the authoring layer
+(`@jsx-contracts/helpers`) — `defineContracts`, `contractsFor`, and the fluent
+`contract()` builder — and the single source of truth for the payload schema
+the plugin's rules consume (imported type-only, so it stays a zero-runtime-cost
+dependency). `packages/playground` is a manual smoke-check only; behaviour is
+verified by tests.
