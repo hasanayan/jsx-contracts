@@ -6,7 +6,13 @@ and commits.
 ## Contract language (authoring)
 
 - **Contract** — all jsx-contracts enforces about one component: import gate +
-  facets. One per component, via `defineContracts`.
+  facets. Authored as a `contract()` chain, one per component; compiles to one
+  **row** per facet per condition.
+- **Row** — the payload's unit: one statement about one component in one facet,
+  optionally gated by a when-condition. A component's rows **accumulate** — every
+  active row applies at once, so they are combined into one effective config per
+  facet before evaluating, and a violation is reported once against the combined
+  result.
 - **Facet** — one enforceable aspect. Four of them, each a rule: **children**
   (`@jsx-contracts/slots`, direct children), **subtree**
   (`@jsx-contracts/subtree`, anywhere below), **props**
@@ -27,10 +33,16 @@ and commits.
   co-render with another; slot groups that may not co-render.
 - **Strict** — children-facet modifier: unresolvable children are violations,
   presence checks always run.
-- **When-condition** — activates a subtree row: prop presence, or prop value
-  among listed literals (strings also match dotted member text like `Size.large`).
-  Optional — a when-less row is always active for the matched component. At most
-  one _conditional_ row per activating prop per component.
+- **When-condition** — activates a row on any facet: prop presence, prop value
+  among listed literals (strings also match dotted member text like `Size.large`),
+  or `all`/`any`/`not` over those, nested freely. Read against the props of the
+  element the row names. Optional — a when-less row is always active for the
+  matched component. A component carries as many conditional rows as it needs.
+  A tree containing a `not` is inactive on an element with a spread, which may
+  carry the very prop being negated.
+- **Activation** — whether a row applies to an element: its import gate matches
+  **and** its when-condition holds. No active row for a facet leaves that facet
+  unchecked.
 - **Subtree ban** — subtree facet's unit: under an activated component, listed
   elements (`forbid`) and elements carrying listed props (`forbidProps`) barred
   anywhere below. When-less, it bans full stop ("never nest X under Y").
@@ -74,16 +86,20 @@ and commits.
 Two published packages, split by side of the contract:
 
 - **Authoring** (`packages/helpers`, `@jsx-contracts/helpers`) — the type-safe
-  DSL (`defineContracts`, `contractsFor`, the fluent `contract()` builder,
-  `mergeContracts`) that compiles to the payloads, and the single source of
-  truth for the payload schema (the payload types live here). Zero runtime
-  dependencies; Vitest-tested.
+  DSL (`contractsFor`, the fluent `contract()` builder, `mergeContracts`) that
+  compiles to the rule table, and the owner of consumer-facing type safety.
+  Imports the payload types type-only. Zero runtime dependencies;
+  Vitest-tested.
 - **Core** (`packages/eslint-plugin/src/contracts/`) — pure: rendered-tree
-  model, evaluation, gate matching, and the runtime payload validators. No
-  ESLint imports; imports the payload types from `@jsx-contracts/helpers`
-  type-only. Vitest-tested.
+  model, activation, combination, evaluation, gate matching, and the payload
+  types, JSON schema and runtime validators — the single source of truth for
+  what the plugin accepts. No ESLint imports. Vitest-tested.
 - **Adapter** (`packages/eslint-plugin/src/rules/`) — ESLint side: collects the
-  tree via scope analysis, feeds evaluators, reports. RuleTester-tested.
-- **Payload** — frozen JSON each rule takes as its option (`ContainerConfig[]` /
-  `NoDescendantsConfig[]` / `PropsConfig[]` / `AncestorConfig[]`), emitted by
-  `defineContracts`, also hand-writable.
+  tree via scope analysis, feeds the core, reports. RuleTester-tested.
+- **Rule table** — frozen JSON every rule takes as its option: a flat list of
+  facet-discriminated rows, emitted by the builder, also hand-writable. Type
+  safety at this boundary is deliberately loose (a row's component is a plain
+  string); the guarantee here is the runtime one.
+- **Facet registry** — the core's one facet-specific seam: per facet, its
+  combine function, evaluator and message ids. Everything above it — grouping,
+  activation, dispatch — is generic over rows.

@@ -364,6 +364,17 @@ dispatch are facet-independent; the only facet-specific code is a registry entry
 per facet holding its combine function, its evaluator and its message ids. A
 fifth facet is a registry entry plus a row arm.
 
+A condition is evaluated against **the props of the element the row names** — the
+container for the children facet, the activated root for the subtree facet, the
+constrained element for the props and ancestor facets. This is what makes a
+conditional row mean the same thing on every facet, and it is the reading to hold
+onto where a facet reasons about two elements: a conditional `notInside` row keys
+off the constrained component's props, never the ancestor's.
+
+Combined configs are **immutable and shareable**. One combination serves every
+element whose active rows are the same, so combining must never mutate a row's
+prepared structures in place.
+
 Messages carry **no** condition text. The combining step already delivers the
 diagnostic honesty it would serve, and the condition's props are written on the
 reported element, visible in the source. It stays additive later through message
