@@ -237,7 +237,10 @@ export default defineConfig(
   },
 
   // The @jsx-contracts rules, scoped to the playground's JSX, driven by the
-  // payloads compiled in packages/playground/src/contracts.ts.
+  // payloads compiled in packages/playground/src/contracts.ts. rules() emits
+  // one entry per facet feature (slots.requires, subtree.forbid, …), so a
+  // single feature could be switched off here — or eslint-disabled inline —
+  // without dropping the rest.
   {
     files: ["packages/playground/src/**/*.tsx"],
     plugins: { "@jsx-contracts": jsxContracts },
