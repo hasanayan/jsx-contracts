@@ -269,7 +269,10 @@ export function evaluateSubtree(
   const inFlight = new Set<number>();
 
   // One occurrence bucket per require entry, filled during the walk.
-  const occurrences: Occurrence[][] = prepared.require.map(() => []);
+  const buckets = prepared.require.map((entry) => ({
+    entry,
+    found: [] as Occurrence[],
+  }));
 
   // A statically unresolvable node anywhere in the activated subtree makes a
   // `min` claim unprovable (the missing element may be produced dynamically);
@@ -357,11 +360,11 @@ export function evaluateSubtree(
     // Require counting is independent of `report`: every reference site counts,
     // so a shared JSX constant referenced from several places is tallied once
     // per site rather than deduped by init.
-    prepared.require.forEach((entry, index) => {
-      if (matchesRequire(node, entry)) {
-        occurrences[index]?.push({ ref: node.ref, branches });
+    for (const bucket of buckets) {
+      if (matchesRequire(node, bucket.entry)) {
+        bucket.found.push({ ref: node.ref, branches });
       }
-    });
+    }
 
     // Attribute-value JSX is walked before body children.
     for (const child of node.propChildren) {
@@ -382,9 +385,9 @@ export function evaluateSubtree(
     visit(child, [], true);
   }
 
-  prepared.require.forEach((entry, index) => {
-    const found = occurrences[index] ?? [];
-
+  // A callback, not a `for…of`: `sawUnknown` is only ever set inside `visit`,
+  // which control-flow analysis does not follow through to the loop body.
+  buckets.forEach(({ entry, found }) => {
     // Exceeds max N when some N coexisting earlier occurrences can all render
     // alongside this one (opposite ternary branches never do).
     if (entry.maxCount !== Infinity) {

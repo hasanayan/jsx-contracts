@@ -70,12 +70,9 @@ export function evaluateProps(
   const violations: PropsViolation[] = [];
 
   const present = new Set<string>();
-  const written = new Set<string>();
   const factByName = new Map<string, PropFact>();
 
   for (const fact of facts) {
-    written.add(fact.name);
-
     if (fact.present) {
       present.add(fact.name);
     }
@@ -134,7 +131,7 @@ export function evaluateProps(
   // A deprecated prop fires when the attribute is written at all, whatever its
   // value — writing it is the deprecated usage.
   for (const [prop, replacement] of prepared.deprecated) {
-    if (written.has(prop)) {
+    if (factByName.has(prop)) {
       violations.push({
         ref: refOf(prop),
         messageId: "deprecatedProp",

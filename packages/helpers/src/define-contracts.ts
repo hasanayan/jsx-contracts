@@ -389,6 +389,24 @@ export interface BoundContracts<Module> {
   contract(component: ComponentNames<Module>): ContractBuilder<never>;
 }
 
+// A `forbid`/`notInside` entry as the payload wants it: a bare name stays a
+// string, an object keeps its gate under the payload's key.
+function forbiddenElement(
+  entry: string | RuntimeForbidObject,
+): string | ForbiddenElement {
+  if (typeof entry === "string") {
+    return entry;
+  }
+
+  const forbidden: ForbiddenElement = { name: entry.name };
+
+  if (entry.from !== undefined) {
+    forbidden.importPath = entry.from;
+  }
+
+  return forbidden;
+}
+
 function compile(
   contracts: Record<string, RuntimeEntry>,
   sharedGate: Gate | undefined,
@@ -538,19 +556,7 @@ function compile(
         };
 
         if (ban.forbid !== undefined) {
-          row.forbid = ban.forbid.map((entry_) => {
-            if (typeof entry_ === "string") {
-              return entry_;
-            }
-
-            const forbidden: ForbiddenElement = { name: entry_.name };
-
-            if (entry_.from !== undefined) {
-              forbidden.importPath = entry_.from;
-            }
-
-            return forbidden;
-          });
+          row.forbid = ban.forbid.map(forbiddenElement);
         }
 
         if (ban.forbidProps !== undefined) {
@@ -646,19 +652,7 @@ function compile(
     // with the gate. An empty list emits no row (the tuple type forbids it, but
     // untyped callers may still reach here).
     if (entry.notInside !== undefined) {
-      const notInside = entry.notInside.map((entry_) => {
-        if (typeof entry_ === "string") {
-          return entry_;
-        }
-
-        const forbidden: ForbiddenElement = { name: entry_.name };
-
-        if (entry_.from !== undefined) {
-          forbidden.importPath = entry_.from;
-        }
-
-        return forbidden;
-      });
+      const notInside = entry.notInside.map(forbiddenElement);
 
       if (notInside.length > 0) {
         ancestor.push({ importPath: gate, component, notInside });
@@ -669,21 +663,26 @@ function compile(
   return makeContracts(slots, subtree, props, ancestor);
 }
 
-function facetSeverities(severity: SeverityChoice): {
-  slotsSeverity: Severity;
-  subtreeSeverity: Severity;
-  propsSeverity: Severity;
-  ancestorSeverity: Severity;
-} {
+type FacetSeverities = Record<
+  "slots" | "subtree" | "props" | "ancestor",
+  Severity
+>;
+
+function facetSeverities(severity: SeverityChoice): FacetSeverities {
+  if (typeof severity === "string") {
+    return {
+      slots: severity,
+      subtree: severity,
+      props: severity,
+      ancestor: severity,
+    };
+  }
+
   return {
-    slotsSeverity:
-      typeof severity === "string" ? severity : (severity.slots ?? "error"),
-    subtreeSeverity:
-      typeof severity === "string" ? severity : (severity.subtree ?? "error"),
-    propsSeverity:
-      typeof severity === "string" ? severity : (severity.props ?? "error"),
-    ancestorSeverity:
-      typeof severity === "string" ? severity : (severity.ancestor ?? "error"),
+    slots: severity.slots ?? "error",
+    subtree: severity.subtree ?? "error",
+    props: severity.props ?? "error",
+    ancestor: severity.ancestor ?? "error",
   };
 }
 
@@ -701,29 +700,24 @@ function makeContracts(
     rules(
       severity: SeverityChoice = "error",
     ): ReturnType<CompiledContracts["rules"]> {
-      const {
-        slotsSeverity,
-        subtreeSeverity,
-        propsSeverity,
-        ancestorSeverity,
-      } = facetSeverities(severity);
+      const facet = facetSeverities(severity);
 
       // The variants of a facet all take the full payload; the rules intern
       // it by content, so the per-file analysis runs once across them.
       return {
-        "@jsx-contracts/slots.children": [slotsSeverity, slots],
-        "@jsx-contracts/slots.count": [slotsSeverity, slots],
-        "@jsx-contracts/slots.placement": [slotsSeverity, slots],
-        "@jsx-contracts/slots.requires": [slotsSeverity, slots],
-        "@jsx-contracts/slots.exclusive": [slotsSeverity, slots],
-        "@jsx-contracts/slots.strict": [slotsSeverity, slots],
-        "@jsx-contracts/subtree.forbid": [subtreeSeverity, subtree],
-        "@jsx-contracts/subtree.forbidProps": [subtreeSeverity, subtree],
-        "@jsx-contracts/subtree.count": [subtreeSeverity, subtree],
-        "@jsx-contracts/props.required": [propsSeverity, props],
-        "@jsx-contracts/props.exclusive": [propsSeverity, props],
-        "@jsx-contracts/props.deprecated": [propsSeverity, props],
-        "@jsx-contracts/ancestor.forbid": [ancestorSeverity, ancestor],
+        "@jsx-contracts/slots.children": [facet.slots, slots],
+        "@jsx-contracts/slots.count": [facet.slots, slots],
+        "@jsx-contracts/slots.placement": [facet.slots, slots],
+        "@jsx-contracts/slots.requires": [facet.slots, slots],
+        "@jsx-contracts/slots.exclusive": [facet.slots, slots],
+        "@jsx-contracts/slots.strict": [facet.slots, slots],
+        "@jsx-contracts/subtree.forbid": [facet.subtree, subtree],
+        "@jsx-contracts/subtree.forbidProps": [facet.subtree, subtree],
+        "@jsx-contracts/subtree.count": [facet.subtree, subtree],
+        "@jsx-contracts/props.required": [facet.props, props],
+        "@jsx-contracts/props.exclusive": [facet.props, props],
+        "@jsx-contracts/props.deprecated": [facet.props, props],
+        "@jsx-contracts/ancestor.forbid": [facet.ancestor, ancestor],
       };
     },
   };

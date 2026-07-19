@@ -33,13 +33,18 @@ export function createInterner<Options extends object>(): (
 // second-level key and the per-element work runs once. Both levels are weakly
 // held: entries die with the AST and the canonical payload.
 
-export type NodeMemo<Result> = (
+// `Result` excludes `undefined` so the cache hit can be a plain `!== undefined`
+// check: a memo whose value could be `undefined` would recompute on every hit
+// instead of returning the cached value.
+export type NodeMemo<Result extends NonNullable<unknown>> = (
   node: object,
   options: object,
   compute: () => Result,
 ) => Result;
 
-export function createNodeMemo<Result>(): NodeMemo<Result> {
+export function createNodeMemo<
+  Result extends NonNullable<unknown>,
+>(): NodeMemo<Result> {
   const cache = new WeakMap<object, WeakMap<object, Result>>();
 
   return (node, options, compute) => {
@@ -52,8 +57,8 @@ export function createNodeMemo<Result>(): NodeMemo<Result> {
 
     const cached = byOptions.get(options);
 
-    if (cached !== undefined || byOptions.has(options)) {
-      return cached as Result;
+    if (cached !== undefined) {
+      return cached;
     }
 
     const result = compute();

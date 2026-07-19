@@ -194,10 +194,7 @@ export function isPlacedInContainer(
     return isContainer(placement.parent);
   }
 
-  return (
-    placement.parents.length > 0 &&
-    placement.parents.every((p) => isContainer(p))
-  );
+  return placement.parents.length > 0 && placement.parents.every(isContainer);
 }
 
 // `containerRef` is the node a tooFew violation reports on.
@@ -206,24 +203,19 @@ export function evaluateSlots(
   root: RenderedNode,
   containerRef: Ref,
 ): SlotsViolation[] {
-  const { container, slotNames, slots, containerMatcher, slotList } = prepared;
+  const { container, slots, slotList } = prepared;
   const violations: SlotsViolation[] = [];
 
   const hasUnknownContent = root.unknownRefs.length > 0;
 
-  const found: { name: string; element: RenderedNode }[] = [];
+  const found: { name: string; maxCount: number; element: RenderedNode }[] = [];
 
   for (const child of root.children) {
     // A name match is only a slot if the tag also passes the slot's gate;
     // otherwise it is foreign and reported like any invalid child.
-    const matches =
-      slotNames.has(child.name) &&
-      matchesGate(
-        slots.get(child.name)?.matcher ?? containerMatcher,
-        child.importSource,
-      );
+    const slot = slots.get(child.name);
 
-    if (!matches) {
+    if (slot === undefined || !matchesGate(slot.matcher, child.importSource)) {
       violations.push({
         ref: child.ref,
         messageId: "invalidChild",
@@ -233,7 +225,11 @@ export function evaluateSlots(
       continue;
     }
 
-    found.push({ name: child.name, element: child });
+    found.push({
+      name: child.name,
+      maxCount: slot.maxCount,
+      element: child,
+    });
   }
 
   for (const textRef of root.textRefs) {
@@ -247,7 +243,7 @@ export function evaluateSlots(
   // Exceeds maxCount N when N earlier same-name occurrences can all render
   // alongside it and one another (opposite ternary branches never do).
   for (const [index, slot] of found.entries()) {
-    const bound = slots.get(slot.name)?.maxCount ?? Infinity;
+    const bound = slot.maxCount;
 
     if (bound === Infinity) {
       continue;
