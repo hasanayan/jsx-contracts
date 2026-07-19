@@ -3,7 +3,7 @@
 Status: accepted — 2026-07-19
 
 Specified in full in issues #2 (the rule table and the engine), #3 (the
-authoring surface) and #4 (conditions), in that order.
+authoring surface) and #4 (conditions, on both sides), in that order.
 
 ## Decision
 
