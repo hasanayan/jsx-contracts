@@ -271,6 +271,22 @@ describe("evaluateSubtree constant dedup", () => {
 
     expect(evaluateSubtree(forbidButton(), root)).toHaveLength(0);
   });
+
+  it("reports a self-referential constant's forbidden element exactly once", () => {
+    // The init renders a <button> and, alongside it, references itself. The
+    // in-flight guard stops the recursion at the second reach of init 0, and
+    // the forbidden <button> is reported once for the one ref chain.
+    const selfResolve = (): SubtreeNode[] => [
+      node("button"),
+      node("A", { children: [ref(0, selfResolve)] }),
+    ];
+
+    const root = active([ref(0, selfResolve)]);
+
+    expect(
+      evaluateSubtree(forbidButton(), root).map((v) => v.data["name"]),
+    ).toEqual(["button"]);
+  });
 });
 
 describe("evaluateSubtree descendant counts", () => {
@@ -418,6 +434,54 @@ describe("evaluateSubtree descendant counts", () => {
     });
 
     const root = node("Widget", { children: [] });
+
+    expect(evaluateSubtree(prepared, root)).toHaveLength(0);
+  });
+
+  it("counts a shared JSX const referenced by two siblings toward the max", () => {
+    // The same init is referenced from two sibling wrappers. Each reference site
+    // must count, so the two occurrences exceed `max: 1` even though the init is
+    // deduped for forbid purposes.
+    const prepared = requireList({
+      require: [{ name: "Tabs.List", minCount: 0, maxCount: 1 }],
+    });
+
+    const root = tabsRoot([
+      node("div", { children: [ref(0, () => [node("Tabs.List")])] }),
+      node("span", { children: [ref(0, () => [node("Tabs.List")])] }),
+    ]);
+
+    expect(evaluateSubtree(prepared, root).map((v) => v.messageId)).toEqual([
+      "tooManyDescendants",
+    ]);
+  });
+
+  it("counts a shared JSX const at every reference site toward the min", () => {
+    // Two references to the same init satisfy `min: 2`; counting the init once
+    // would spuriously report too few.
+    const prepared = requireList({
+      require: [{ name: "Tabs.List", minCount: 2, maxCount: Infinity }],
+    });
+
+    const root = tabsRoot([
+      node("div", { children: [ref(0, () => [node("Tabs.List")])] }),
+      node("span", { children: [ref(0, () => [node("Tabs.List")])] }),
+    ]);
+
+    expect(evaluateSubtree(prepared, root)).toHaveLength(0);
+  });
+
+  it("guarantees the min when a shared JSX const fills both ternary branches", () => {
+    // `{cond ? shared : shared}` renders the shared const on either path, so the
+    // guaranteed count is one and `min: 1` is satisfied.
+    const prepared = requireList({
+      require: [{ name: "Tabs.List", minCount: 1, maxCount: Infinity }],
+    });
+
+    const root = tabsRoot([
+      ref(0, () => [node("Tabs.List")], ["1:consequent"]),
+      ref(0, () => [node("Tabs.List")], ["1:alternate"]),
+    ]);
 
     expect(evaluateSubtree(prepared, root)).toHaveLength(0);
   });

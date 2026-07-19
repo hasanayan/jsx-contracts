@@ -251,11 +251,22 @@ export function evaluateSubtree(
 
   const condition = conditionText(prepared.when);
 
-  // A ref's init joins the set only when the walk reaches and resolves it, so a
-  // ref blocked behind a forbidden element never claims its init and a later
-  // reference to the same constant is still reported. Never cleared, so it also
-  // terminates self-referential constants.
+  // Gates the forbid side only. A ref's init joins the set the first time the
+  // walk reaches and resolves it, so a ref blocked behind a forbidden element
+  // never claims its init and a later sibling reference is still free to
+  // report. Once an init is here, every later reference to the same constant
+  // re-walks with forbid reporting suppressed, so a single source element is
+  // reported once per ref chain. Never cleared.
   const visitedInits = new Set<number>();
+
+  // Gates the require side's recursion only. Require counting must tally an
+  // occurrence at every reference site, so an already-visited init is re-walked
+  // rather than skipped. That re-walk would not terminate for a self- or
+  // mutually-recursive constant, so an init is added on entry to its resolution
+  // and removed on exit; reaching an in-flight init stops. This counts a
+  // self-referential constant's occurrences once per outer reference site,
+  // which is the desired behavior.
+  const inFlight = new Set<number>();
 
   // One occurrence bucket per require entry, filled during the walk.
   const occurrences: Occurrence[][] = prepared.require.map(() => []);
@@ -265,7 +276,15 @@ export function evaluateSubtree(
   // `max` is still checked on what is visible.
   let sawUnknown = false;
 
-  function visit(node: SubtreeNode, inherited: Branch[]): void {
+  // `report` is false while re-walking an already-visited init: the walk still
+  // descends (so require counting sees this reference site) and still prunes
+  // below forbidden elements, but suppresses the forbid/forbidProps reports the
+  // first walk of that init already emitted.
+  function visit(
+    node: SubtreeNode,
+    inherited: Branch[],
+    report: boolean,
+  ): void {
     if (node.kind === "unknown") {
       sawUnknown = true;
 
@@ -273,29 +292,50 @@ export function evaluateSubtree(
     }
 
     if (node.kind === "ref") {
-      if (visitedInits.has(node.initId)) {
+      // The first reference to reach this init reports its forbid violations;
+      // every later reference re-walks it for require counting with reporting
+      // suppressed.
+      const firstVisit = !visitedInits.has(node.initId);
+
+      visitedInits.add(node.initId);
+
+      // With nothing to count, a re-walk has no effect — skip it so a
+      // forbid-only contract keeps the walk linear in distinct constants.
+      if (!firstVisit && prepared.require.length === 0) {
         return;
       }
 
-      visitedInits.add(node.initId);
+      // Terminate self- or mutually-recursive constants: an init already being
+      // resolved higher on the stack is not re-entered.
+      if (inFlight.has(node.initId)) {
+        return;
+      }
+
+      inFlight.add(node.initId);
 
       const branches = [...inherited, ...node.branches];
 
       for (const produced of node.resolve()) {
-        visit(produced, branches);
+        visit(produced, branches, report && firstVisit);
       }
+
+      inFlight.delete(node.initId);
 
       return;
     }
 
     const branches = [...inherited, ...node.branches];
 
+    // A forbidden element prunes the walk below it on every pass; only the
+    // first (reporting) pass records the violation.
     if (matchesForbid(node, prepared)) {
-      violations.push({
-        ref: node.ref,
-        messageId: "forbiddenDescendant",
-        data: { name: node.name, component: prepared.component, condition },
-      });
+      if (report) {
+        violations.push({
+          ref: node.ref,
+          messageId: "forbiddenDescendant",
+          data: { name: node.name, component: prepared.component, condition },
+        });
+      }
 
       return;
     }
@@ -303,15 +343,20 @@ export function evaluateSubtree(
     const prop = matchesForbidProps(node, prepared);
 
     if (prop !== undefined) {
-      violations.push({
-        ref: node.ref,
-        messageId: "forbiddenPropDescendant",
-        data: { prop, component: prepared.component, condition },
-      });
+      if (report) {
+        violations.push({
+          ref: node.ref,
+          messageId: "forbiddenPropDescendant",
+          data: { prop, component: prepared.component, condition },
+        });
+      }
 
       return;
     }
 
+    // Require counting is independent of `report`: every reference site counts,
+    // so a shared JSX constant referenced from several places is tallied once
+    // per site rather than deduped by init.
     prepared.require.forEach((entry, index) => {
       if (matchesRequire(node, entry)) {
         occurrences[index]?.push({ ref: node.ref, branches });
@@ -320,21 +365,21 @@ export function evaluateSubtree(
 
     // Attribute-value JSX is walked before body children.
     for (const child of node.propChildren) {
-      visit(child, branches);
+      visit(child, branches, report);
     }
 
     for (const child of node.children) {
-      visit(child, branches);
+      visit(child, branches, report);
     }
   }
 
   // The row applies below the activated element, not to it.
   for (const child of root.propChildren) {
-    visit(child, []);
+    visit(child, [], true);
   }
 
   for (const child of root.children) {
-    visit(child, []);
+    visit(child, [], true);
   }
 
   prepared.require.forEach((entry, index) => {
