@@ -8,6 +8,12 @@ and commits.
 - **Contract** — all jsx-contracts enforces about one component: import gate +
   facets. Authored as a `contract()` chain, one per component; compiles to one
   **row** per facet per condition.
+- **Binding** — `contractsFor(gate)`, optionally given the design system's
+  module type: it states the import gate once for a whole design system and
+  hands back the `contract` starter, the only way to reach a builder. The
+  module is referenced type-only, so component names are checked against its
+  capitalized export paths without the design system ever being loaded. A
+  component from another package needs its own binding.
 - **Row** — the payload's unit: one statement about one component in one facet,
   optionally gated by a when-condition. A component's rows **accumulate** — every
   active row applies at once, so they are combined into one effective config per
@@ -86,7 +92,8 @@ and commits.
 Two published packages, split by side of the contract:
 
 - **Authoring** (`packages/helpers`, `@jsx-contracts/helpers`) — the type-safe
-  DSL (`contractsFor`, the fluent `contract()` builder, `mergeContracts`) that
+  DSL (the `contractsFor` binding, the fluent `contract()` builder it hands
+  back, `mergeContracts`) that
   compiles to the rule table, and the owner of consumer-facing type safety.
   Imports the payload types type-only. Zero runtime dependencies;
   Vitest-tested.

@@ -2,9 +2,9 @@
 
 ESLint plugin that enforces JSX **composition contracts** — the structural rules
 governing how a component's children may be nested and slotted. Declare each
-component's contract once with `defineContracts` (from the companion
-`@jsx-contracts/helpers` package); the plugin reports violations where the
-components are used.
+component's contract once with the fluent `contract()` builder (from the
+companion `@jsx-contracts/helpers` package); the plugin reports violations
+where the components are used.
 
 ## Install
 
@@ -13,25 +13,26 @@ npm i -D @jsx-contracts/eslint-plugin @jsx-contracts/helpers
 ```
 
 `@jsx-contracts/eslint-plugin` enforces the contracts; `@jsx-contracts/helpers`
-is the type-safe authoring layer (`defineContracts`, `contractsFor`, the fluent
-`contract()` builder). Requires ESLint 9+ (flat config).
+is the type-safe authoring layer (`contractsFor`, the fluent `contract()`
+builder, `mergeContracts`). Requires ESLint 9+ (flat config).
 
 ## Usage
 
-```js
-// eslint.config.js
+```ts
+// eslint.config.ts
 import jsxContracts from "@jsx-contracts/eslint-plugin";
-import { defineContracts } from "@jsx-contracts/helpers";
+import { contractsFor, mergeContracts } from "@jsx-contracts/helpers";
 
-const contracts = defineContracts("@acme/ds", {
-  "Widget.Tray": {
-    slots: { ".Title": { count: { min: 1 } }, ".Action": true },
-    requires: { ".Action": ".Title" },
-  },
-  Widget: {
-    subtree: { variant: { is: ["compact"], forbid: ["Widget.Footer"] } },
-  },
-});
+// The import gate — and, optionally, the design system's module type — stated
+// once for the whole design system.
+const { contract } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
+
+const contracts = mergeContracts(
+  contract("Widget.Tray")
+    .hasSlots({ ".Title": { count: { min: 1 } }, ".Action": true })
+    .requires(".Action", ".Title"),
+  contract("Widget").when("variant", ["compact"]).forbid("Widget.Footer"),
+);
 
 export default [
   {
@@ -41,12 +42,12 @@ export default [
 ];
 ```
 
-`defineContracts(sharedGate, contracts)` compiles to the **rule table** — a flat
-list of rows, each one statement about one component in one facet, and the
-identical payload every rule takes. It is also hand-writable, and reachable as
-`contracts.rows`. The shared **import gate** is the module a component must be
-imported from for its contract to apply (a literal or a `*` glob); any component
-may override it with its own `from`.
+A contract compiles to the **rule table** — a flat list of rows, each one
+statement about one component in one facet, and the identical payload every
+rule takes. It is also hand-writable, and reachable as `contracts.rows`. The
+**import gate** the binding carries is the module a component must be imported
+from for its contract to apply (a literal or a `*` glob); a component from
+another package gets its own binding.
 
 Rows **accumulate**: many rows may name one component in one facet, and every
 row active on an element applies at once. They are combined into one effective
@@ -111,66 +112,54 @@ Enabling all thirteen costs one analysis per file, not thirteen: the rules
 intern their payloads by content (ESLint clones rule options, so identity alone
 wouldn't do) and share the per-file work across every variant.
 
-### Colocating contracts with components
+### The binding
 
-Author a component's contract next to it with the fluent `contract()` builder,
-then `mergeContracts` them in your config — split across files, still one
-`rules()` for ESLint:
-
-```js
-// widget/contract.js — next to the component
-import { contract } from "@jsx-contracts/helpers";
-
-export const widgetContract = contract("Widget.Tray", "@acme/ds").hasSlots({
-  ".Title": { count: { min: 1 } },
-  ".Action": true,
-});
-```
-
-```js
-// eslint.config.js
-import jsxContracts from "@jsx-contracts/eslint-plugin";
-import { mergeContracts } from "@jsx-contracts/helpers";
-
-import { widgetContract } from "./src/widget/contract.js";
-import { tabsContract } from "./src/tabs/contract.js";
-
-const contracts = mergeContracts(widgetContract, tabsContract);
-// plugins/rules as above → rules: contracts.rules()
-```
-
-### Typed component names
-
-Bind the contracts to your design system's types with `contractsFor`, and the
-component names are autocompleted and checked against the module's exports — a
-typo, or a component later renamed away, fails to compile. The type import is
-erased at build time; ESLint never loads the design system:
+`contractsFor` states the import gate once for a whole design system, and
+destructuring `contract` off it is how you reach a builder — no contract
+repeats the gate. Give it your design system's module type and component names
+are autocompleted and checked against its capitalized export paths, so a typo,
+or a component later renamed away, fails to compile. The type import is erased
+at build time; ESLint never loads the design system. Without a type argument
+the names widen to plain `string`:
 
 ```ts
+// ds-contract.ts — one binding, shared by every contract
 import { contractsFor } from "@jsx-contracts/helpers";
 
-import type * as ds from "@acme/ds";
+export const { contract } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
 
-const define = contractsFor<typeof ds>("@acme/ds");
+// contract("Widget.Trya") → compile error: not an export path of @acme/ds
+```
 
-export const contracts = define({
-  "Widget.Tray": { slots: { ".Title": { count: { min: 1 } } } },
-  // "Widget.Trya" → compile error: not an export path of @acme/ds
-});
+A component from another package gets its own binding. Only the component's own
+gate lives there — per-slot, per-descendant, per-forbid and per-ancestor gates
+are unaffected:
+
+```ts
+const { contract } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
+const { contract: legacy } =
+  contractsFor<typeof import("@acme/legacy")>("@acme/legacy");
+
+export const contracts = mergeContracts(
+  contract("Widget").hasSlots({ ".Tray": true }),
+  legacy("Legacy.Thing").deprecated("Widget"),
+);
 ```
 
 ### Fluent authoring
 
-`contract()` (or the bound `define.contract()`) builds one component's contract
-as a sentence. The chain is type-stated: slots must be declared before
-`requires`/`exclusive` can reference them, and a `when` ban must forbid
-something before the chain continues. Builders are `CompiledContracts`, so
-`mergeContracts` combines them with everything else:
+`contract()` builds one component's contract as a sentence. The chain is
+type-stated: slots must be declared before `requires`/`exclusive` can reference
+them, and a `when` ban must forbid something before the chain continues.
+Builders are `CompiledContracts`, so `mergeContracts` combines them with
+everything else:
 
 ```ts
-import { contract, mergeContracts } from "@jsx-contracts/helpers";
+import { mergeContracts } from "@jsx-contracts/helpers";
 
-const tray = contract("Widget.Tray", "@acme/ds")
+import { contract } from "./ds-contract.js";
+
+const tray = contract("Widget.Tray")
   .hasSlots({
     ".Title": { count: { min: 1 } },
     ".Action": true,
@@ -179,12 +168,55 @@ const tray = contract("Widget.Tray", "@acme/ds")
   .requires(".Action", ".Title")
   .exclusive([".Overflow"], [".Action"]);
 
-const widget = contract("Widget", "@acme/ds")
+const widget = contract("Widget")
   .when("variant", ["compact"])
   .forbid("Widget.Footer");
 
 export const contracts = mergeContracts(tray, widget);
 ```
+
+### Colocating contracts with components
+
+Because a builder is already a compiled contract, a component's contract can
+live next to the component and be `mergeContracts`ed in your config — split
+across files, still one `rules()` for ESLint:
+
+```ts
+// widget/contract.ts — next to the component
+import { contract } from "../ds-contract.js";
+
+export const widgetContract = contract("Widget.Tray").hasSlots({
+  ".Title": { count: { min: 1 } },
+  ".Action": true,
+});
+```
+
+```ts
+// eslint.config.ts
+import jsxContracts from "@jsx-contracts/eslint-plugin";
+import { mergeContracts } from "@jsx-contracts/helpers";
+
+import { tabsContract } from "./src/tabs/contract.js";
+import { widgetContract } from "./src/widget/contract.js";
+
+const contracts = mergeContracts(widgetContract, tabsContract);
+// plugins/rules as above → rules: contracts.rules()
+```
+
+### The map form
+
+The component-keyed map — `defineContracts`, or the binding called directly —
+still compiles to the same rows and is still exported:
+
+```ts
+export const contracts = defineContracts("@acme/ds", {
+  "Widget.Tray": { slots: { ".Title": { count: { min: 1 } } } },
+});
+```
+
+It is on its way out: the builder is the spelling every example here uses, and
+the map form will be removed once this repo's own consumers have moved off it.
+Prefer the builder for anything new.
 
 ## What you can enforce
 
@@ -232,7 +264,7 @@ as co-rendering. See [CONTEXT.md](./CONTEXT.md) for the full vocabulary.
 **Count bounds, branch-aware.** `.Footer: true` means at most one:
 
 ```js
-contract("Dialog", "@acme/ds").hasSlots({ ".Footer": true });
+contract("Dialog").hasSlots({ ".Footer": true });
 ```
 
 ```jsx
@@ -260,7 +292,7 @@ contract("Dialog", "@acme/ds").hasSlots({ ".Footer": true });
 **Subtree ban gated by a prop value.**
 
 ```js
-contract("Card", "@acme/ds").when("variant", ["compact"]).forbid("Card.Image");
+contract("Card").when("variant", ["compact"]).forbid("Card.Image");
 ```
 
 ```jsx
@@ -274,7 +306,7 @@ contract("Card", "@acme/ds").when("variant", ["compact"]).forbid("Card.Image");
 `Tabs.Root`, even nested in wrappers the slots facet wouldn't see:
 
 ```js
-contract("Tabs.Root", "@acme/ds").hasDescendants({
+contract("Tabs.Root").hasDescendants({
   ".List": { count: { min: 1, max: 1 } },
 });
 ```
@@ -296,7 +328,7 @@ contract("Tabs.Root", "@acme/ds").hasDescendants({
 **Deprecated prop with a replacement hint.**
 
 ```js
-contract("Button", "@acme/ds").deprecatesProp("color", "tone");
+contract("Button").deprecatesProp("color", "tone");
 ```
 
 ```jsx
@@ -307,7 +339,7 @@ contract("Button", "@acme/ds").deprecatesProp("color", "tone");
 **No nested buttons (forbidden ancestor).**
 
 ```js
-contract("Button", "@acme/ds").notInside("Button");
+contract("Button").notInside("Button");
 ```
 
 ```jsx
@@ -342,7 +374,7 @@ pure rendered-tree model, plus ESLint adapters (`src/rules/`) that collect that
 model from the AST. The plugin owns both halves of its own input contract: the
 rule table's TypeScript shapes, and the JSON schema plus runtime validators
 beside them. `packages/helpers` is the authoring layer
-(`@jsx-contracts/helpers`) — `defineContracts`, `contractsFor`, and the fluent
-`contract()` builder — which imports those types type-only and compiles to
-them, so it keeps zero runtime dependencies. `packages/playground` is a manual
+(`@jsx-contracts/helpers`) — `contractsFor`, which binds the import gate and
+the design system's types, and the fluent `contract()` builder it hands back —
+which imports those types type-only and compiles to them, so it keeps zero runtime dependencies. `packages/playground` is a manual
 smoke-check only; behaviour is verified by tests.

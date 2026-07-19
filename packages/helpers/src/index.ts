@@ -1,4 +1,6 @@
-export { contract } from "./contract-builder.js";
+// The builder itself is not exported: `contractsFor` binds the gate and the
+// module's types, and the `contract` destructured off it is the only way to
+// reach one. Its types stay exported so a consumer can name what it hands back.
 export type {
   BanBuilder,
   ContractBuilder,

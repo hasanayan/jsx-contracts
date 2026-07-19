@@ -34,7 +34,7 @@ export type BanBuilder<SlotKey extends string> = ContractBuilder<SlotKey> &
  * stay unchanged.
  *
  * @example
- * const tray = contract("Widget.Tray", "@acme/ds")
+ * const tray = contract("Widget.Tray")
  *   .hasSlots({ ".Title": { count: { min: 1 } }, ".Action": true })
  *   .requires(".Action", ".Title")
  *   .strict();
@@ -107,12 +107,16 @@ export interface ContractBuilder<
 }
 
 /**
- * Start a fluent contract for one component. The type-state enforces order:
- * slots must be declared before `requires`/`exclusive` can reference them,
- * and a `when` ban must forbid something before the chain continues.
+ * Start a fluent contract for one component. Internal: consumers reach a
+ * builder by destructuring `contract` off a `contractsFor` binding, which
+ * supplies `from` — the gate is stated once for the whole design system rather
+ * than repeated per component. The type-state enforces order: slots must be
+ * declared before `requires`/`exclusive` can reference them, and a `when` ban
+ * must forbid something before the chain continues.
  *
  * @example
- * export const tray = contract("Widget.Tray", "@acme/ds")
+ * const { contract } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
+ * export const tray = contract("Widget.Tray")
  *   .hasSlots({ ".Title": { count: { min: 1, max: 1 } }, ".Overflow": true, ".Action": true })
  *   .requires(".Action", ".Title")
  *   .exclusive([".Overflow"], [".Action"])

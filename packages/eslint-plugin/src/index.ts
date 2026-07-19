@@ -5,7 +5,8 @@ import { propsGranular } from "./rules/props.js";
 import { slotsGranular } from "./rules/slots.js";
 import { subtreeGranular } from "./rules/subtree.js";
 
-// The authoring API (defineContracts, contractsFor, contract, mergeContracts)
+// The authoring API (contractsFor, the contract() builder it binds,
+// mergeContracts)
 // lives in @jsx-contracts/helpers; this plugin only enforces. But the plugin
 // owns its own input contract: these are the payload types every rule accepts,
 // published so a generated or hand-written table can be type-checked against

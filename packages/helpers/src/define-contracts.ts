@@ -1,6 +1,8 @@
 // The binding: the entry points that take the import gate — and, for
 // `contractsFor`, the design system's module type — and hand a component-keyed
-// map or a fluent builder to the compiler.
+// map or a fluent builder to the compiler. `contractsFor` is the only way to
+// reach a builder; the package exports no unbound `contract`, so a gate is
+// never written twice.
 
 import type { RuntimeEntry } from "./compile.js";
 import { compile } from "./compile.js";
@@ -58,22 +60,24 @@ export function defineContracts(
 }
 
 /**
- * Bind `defineContracts` to a gate and a module's types: component names are
- * completed and checked against the module's capitalized export paths, so a
- * typo — or a component renamed away in the design system — fails to compile.
+ * Bind a gate and a module's types once, and destructure `contract` off the
+ * result: the import gate is stated for the whole design system rather than
+ * repeated per component, and component names are completed and checked
+ * against the module's capitalized export paths, so a typo — or a component
+ * renamed away in the design system — fails to compile.
  * `typeof import("...")` is type-only; the module is never loaded at runtime,
  * so the ESLint config stays free of the design system's runtime dependencies.
  *
- * @param from - Shared import gate; a component may override it with its own `from`.
+ * A component from another package needs its own binding; per-slot,
+ * per-descendant, per-forbid and per-ancestor gates are unaffected.
+ *
+ * @param from - The import gate every component of this binding is gated by.
  * @example
- * const define = contractsFor<typeof import("@acme/ds")>("@acme/ds");
- * export const contracts = define({
- *   "Widget.Tray": {
- *     slots: { ".Title": { count: { min: 1 } }, ".Action": true },
- *     requires: { ".Action": ".Title" },
- *   },
- * });
- * // eslint.config.js → rules: contracts.rules()
+ * const { contract } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
+ * export const tray = contract("Widget.Tray")
+ *   .hasSlots({ ".Title": { count: { min: 1 } }, ".Action": true })
+ *   .requires(".Action", ".Title");
+ * // eslint.config.js → rules: mergeContracts(tray, ...).rules()
  */
 export function contractsFor<Module>(from: Gate): BoundContracts<Module> {
   const define = (
@@ -93,19 +97,25 @@ export function contractsFor<Module>(from: Gate): BoundContracts<Module> {
   };
 
   // The generic call signature only exists at the type level; the runtime
-  // shape is the plain function plus the bound `contract` starter.
+  // shape is the plain function plus the bound `contract` starter. The starter
+  // closes over `from` rather than reading it off `this`, so destructuring it
+  // — the documented spelling — keeps the gate.
   return Object.assign(define, {
     contract: (component: string): ContractBuilder<never> =>
       contract(component, from),
   });
 }
 
-/** What `contractsFor` returns: `defineContracts` and `contract`, gate- and module-bound. */
+/** What `contractsFor` returns: the bound `contract` starter, and the map form it will replace. */
 export interface BoundContracts<Module> {
   /** The contracts map, exactly as `defineContracts` takes it. */
   <const T extends Partial<Record<ComponentNames<Module>, AnyComponentEntry>>>(
     contracts: T & ContractsInput<T, ComponentNames<Module>>,
   ): CompiledContracts;
-  /** Fluent alternative: start one component's contract builder. */
-  contract(component: ComponentNames<Module>): ContractBuilder<never>;
+  /**
+   * Start one component's contract builder, gated by the binding. Declared as
+   * a property rather than a method because it is meant to be destructured off
+   * the binding — that is the only way to reach a builder.
+   */
+  contract: (component: ComponentNames<Module>) => ContractBuilder<never>;
 }
