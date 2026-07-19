@@ -24,8 +24,9 @@ import jsxContracts from "@jsx-contracts/eslint-plugin";
 import { contractsFor, mergeContracts } from "@jsx-contracts/helpers";
 
 // The import gate — and, optionally, the design system's module type — stated
-// once for the whole design system.
-const { contract } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
+// once for the whole design system. The condition constructors come off the
+// same binding.
+const { contract, prop } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
 
 const contracts = mergeContracts(
   contract("Widget.Tray")
@@ -33,9 +34,10 @@ const contracts = mergeContracts(
     .atLeast(1)
     .hasSlot(".Action")
     .slotRequires(".Action", ".Title"),
-  contract("Widget")
-    .when("variant", ["compact"])
-    .forbidDescendants("Widget.Footer"),
+  contract("Widget").when(
+    prop("variant").is("compact"),
+    contract().forbidDescendants("Widget.Footer"),
+  ),
 );
 
 export default [
@@ -120,9 +122,11 @@ wouldn't do) and share the per-file work across every variant.
 
 `contractsFor` states the import gate once for a whole design system, and
 destructuring `contract` off it is how you reach a builder — no contract
-repeats the gate. Give it your design system's module type and component names
-are autocompleted and checked against its capitalized export paths, so a typo,
-or a component later renamed away, fails to compile. The type import is erased
+repeats the gate. The condition constructors — `prop`, `allOf`, `anyOf`, `not` —
+come off the same binding, so they never occupy package-level names. Give it
+your design system's module type and component names are autocompleted and
+checked against its capitalized export paths, so a typo, or a component later
+renamed away, fails to compile. The type import is erased
 at build time; ESLint never loads the design system. Without a type argument
 the names widen to plain `string`:
 
@@ -130,7 +134,8 @@ the names widen to plain `string`:
 // ds-contract.ts — one binding, shared by every contract
 import { contractsFor } from "@jsx-contracts/helpers";
 
-export const { contract } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
+export const { contract, prop, allOf, anyOf, not } =
+  contractsFor<typeof import("@acme/ds")>("@acme/ds");
 
 // contract("Widget.Trya") → compile error: not an export path of @acme/ds
 ```
@@ -154,16 +159,15 @@ export const contracts = mergeContracts(
 
 `contract()` builds one component's contract as a sentence. The chain is
 type-stated: slots must be declared before `slotRequires`/`exclusiveSlots`
-can reference them, a slot's count bounds are offered only directly after the
-`hasSlot` that declares it, and a `when` ban must forbid something before the
-chain continues.
+can reference them, and a slot's count bounds are offered only directly after
+the `hasSlot` that declares it.
 Builders are `CompiledContracts`, so `mergeContracts` combines them with
 everything else:
 
 ```ts
 import { mergeContracts } from "@jsx-contracts/helpers";
 
-import { contract } from "./ds-contract.js";
+import { contract, prop } from "./ds-contract.js";
 
 const tray = contract("Widget.Tray")
   .hasSlot(".Title")
@@ -173,12 +177,97 @@ const tray = contract("Widget.Tray")
   .slotRequires(".Action", ".Title")
   .exclusiveSlots([".Overflow"], [".Action"]);
 
-const widget = contract("Widget")
-  .when("variant", ["compact"])
-  .forbidDescendants("Widget.Footer");
+const widget = contract("Widget").when(
+  prop("variant").is("compact"),
+  contract().forbidDescendants("Widget.Footer"),
+);
 
 export const contracts = mergeContracts(tray, widget);
 ```
+
+### Conditional rules
+
+A design system's contracts are rarely uniform across a component's whole
+surface: `Button` needs `href` only when it renders as an anchor, `Widget.Tray`
+accepts fewer slots in its compact variant. `.when(condition, rules)` gates any
+rule on any facet on a **condition** over the element's own props.
+
+Both arguments are values. A condition is `prop(name).is(...values)` or
+`prop(name).isPresent()`, composed with `allOf`, `anyOf` and `not` and nested
+freely; the rules are a **nameless contract** — `contract()` with no component,
+carrying every builder method. Because both are values, a recurring one is
+written once and shared:
+
+```ts
+const compact = prop("variant").is("compact");
+const noImage = contract().forbidDescendants("Card.Image");
+
+const card = contract("Card")
+  .when(compact, noImage)
+  .when(prop("inline").isPresent(), noImage);
+
+const button = contract("Button")
+  .requiresProp("label")
+  .when(prop("as").is("a"), contract().requiresProp("href"))
+  .when(prop("as").is("button"), contract().requiresProp("onClick"));
+
+const panel = contract("Panel").when(
+  anyOf(allOf(compact, prop("dense").isPresent()), prop("tight").isPresent()),
+  contract().forbidDescendants("Panel.Footer"),
+);
+```
+
+A string condition value matches dotted member text as well as a literal, so
+`prop("size").is("Size.large")` matches `size={Size.large}`. A nameless
+contract's `.`-shorthand names expand against whichever component `when`
+attaches them to, so one value can gate several components. A `when` nested
+inside a nameless contract conjoins its condition with the outer one.
+
+#### Narrowing, and how to widen
+
+Conditional rules **accumulate**; they do not replace. A conditional slot list
+intersects with the base one, narrowing what is allowed while the condition
+holds:
+
+```ts
+const tray = contract("Widget.Tray")
+  .hasSlot(".Title")
+  .hasSlot(".Action")
+  .when(compact, contract().hasSlot(".Title"));
+
+// compact → <Widget.Tray.Action> is reported
+// default → both allowed
+```
+
+To widen instead, drop the unconditional row so exactly one conditional row is
+ever active:
+
+```ts
+const detailTray = contract("Widget.Tray")
+  .when(not(prop("expanded").isPresent()), contract().hasSlot(".Title"))
+  .when(
+    prop("expanded").isPresent(),
+    contract().hasSlot(".Title").hasSlot(".Detail"),
+  );
+```
+
+**Prefer narrowing.** Negation fires on _absent_ evidence rather than visible
+evidence, so a condition tree containing a `not` is inactive on an element
+carrying a spread — the spread may carry the very prop being negated. Combined
+with "no active row leaves the facet unchecked", that has a sharp consequence:
+
+```jsx
+<Widget.Tray {...rest}>...</Widget.Tray>
+// the not(...) row is off for carrying a `not`;
+// the `expanded` row is off for the prop not being written;
+// no row is active, so the children facet is not checked at all.
+```
+
+This is a soundness limitation, not a bug: under a spread we genuinely cannot
+tell which branch we are in, and reporting either would risk a false positive.
+Keeping an unconditional base row avoids it entirely — that row stays active
+whatever the spread carries. Absent a spread, a missing prop satisfies a negated
+test as you would expect.
 
 ### Colocating contracts with components
 
@@ -229,10 +318,12 @@ const contracts = mergeContracts(widgetContract, tabsContract);
   bounds _anywhere below_ a component: exactly one `Tabs.List`, at most one
   `Toast.Provider`, at least two of something. Branch-aware, and lenient —
   unresolvable content skips the lower bound but not the upper.
-- **Subtree bans** — under a given component (optionally gated by a prop's
-  presence or value, or unconditionally — "never nest X under Y, full stop"),
-  forbid named elements or any element carrying named props from appearing
-  anywhere below.
+- **Subtree bans** — under a given component, forbid named elements or any
+  element carrying named props from appearing anywhere below ("never nest X
+  under Y, full stop"). Gate the ban on a condition to narrow it to one variant.
+- **Conditional rules** — any rule on any facet can be gated by a condition over
+  the element's own props, so a polymorphic component's contract matches what it
+  actually requires. See [Conditional rules](#conditional-rules).
 - **Prop contracts** — element-local rules on a component's own props: required
   props (or at-least-one-of groups), mutually exclusive prop groups, and
   deprecations of a prop or of the component itself. A spread on the element
@@ -282,7 +373,10 @@ contract("Dialog").hasSlot(".Footer");
 **Subtree ban gated by a prop value.**
 
 ```js
-contract("Card").when("variant", ["compact"]).forbidDescendants("Card.Image");
+contract("Card").when(
+  prop("variant").is("compact"),
+  contract().forbidDescendants("Card.Image"),
+);
 ```
 
 ```jsx

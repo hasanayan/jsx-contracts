@@ -10,7 +10,9 @@ import type * as widgets from "./widget.js";
 
 // The gate is stated once, on the binding; destructuring `contract` off it is
 // how a builder is reached, so no component repeats the gate.
-const { contract } = contractsFor<typeof widgets>("*/playground/src/widget.js");
+const { contract, prop } = contractsFor<typeof widgets>(
+  "*/playground/src/widget.js",
+);
 
 const tray = contract("Widget.Tray")
   .hasSlot(".Title")
@@ -25,9 +27,13 @@ const tray = contract("Widget.Tray")
   // An <Overflow> collapses the actions, so it cannot co-render with them.
   .exclusiveSlots([".Overflow"], [".Action"]);
 
-const widget = contract("Widget")
-  .when("variant", ["compact"])
-  .forbidDescendants("Widget.Footer")
-  .forbidDescendantProps("data-analytics");
+// A conditional rule: a compact widget narrows what may appear below it. The
+// nameless contract is a value, so this pair could be hoisted and shared.
+const widget = contract("Widget").when(
+  prop("variant").is("compact"),
+  contract()
+    .forbidDescendants("Widget.Footer")
+    .forbidDescendantProps("data-analytics"),
+);
 
 export const contracts = mergeContracts(tray, widget);

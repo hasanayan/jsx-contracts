@@ -1,10 +1,11 @@
 // The builder itself is not exported: `contractsFor` binds the gate and the
 // module's types, and the `contract` destructured off it is the only way to
 // reach one. Its types stay exported so a consumer can name what it hands back.
+export type { Condition, PropCondition } from "./condition.js";
 export type {
-  BanBuilder,
   ContractBuilder,
-  PendingBan,
+  ContractMethods,
+  Fragment,
   PendingCount,
   SlotBuilder,
 } from "./contract-builder.js";

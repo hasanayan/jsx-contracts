@@ -312,9 +312,14 @@ Package exports: `contractsFor` and `mergeContracts`. The constructors come from
 the binding rather than the package, so `prop`, `allOf` and `anyOf` never occupy
 package-level names.
 
-Public types: `BoundContracts`, `ContractBuilder`, `SlotBuilder`, `Condition`,
-and `Fragment` — the type `contract()` returns when given no name. The term
-appears only in the types; the API has no separate constructor for it.
+Public types: `BoundContracts`, `ContractBuilder`, `ContractMethods`,
+`SlotBuilder`, `PendingCount`, `Condition`, `PropCondition`, and `Fragment` —
+the type `contract()` returns when given no name. The term appears only in the
+types; the API has no separate constructor for it. `ContractMethods` is the
+method surface both kinds of contract share, and is what `Fragment` aliases;
+`ContractBuilder` is it plus the payload accessors. Nothing at the type level
+tells a named contract from a nameless one — they are structurally alike — so
+`when` rejects a named one at runtime instead.
 
 A component from a different package than the binding needs its own
 `contractsFor`, where the map form allowed a per-component `from` override:

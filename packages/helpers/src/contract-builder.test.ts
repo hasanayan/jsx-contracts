@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { ContractRow, ContractRows } from "@jsx-contracts/eslint-plugin";
 
 import type { PartName } from "./component-names.js";
-import type { ContractBuilder } from "./contract-builder.js";
+import type { Condition } from "./condition.js";
+import { allOf, anyOf, not, prop } from "./condition.js";
+import type { ContractBuilder, Fragment } from "./contract-builder.js";
 import { contract } from "./contract-builder.js";
 import { contractsFor } from "./contracts-for.js";
 import { mergeContracts } from "./merge-contracts.js";
@@ -29,9 +31,12 @@ describe("contract builder", () => {
       .slotRequires(".Label", ".Action")
       .exclusiveSlots([".Action"], [".Label"])
       .strictSlots()
-      .when("variant", ["compact"])
-      .forbidDescendants("Widget.Footer")
-      .forbidDescendantProps("data-analytics");
+      .when(
+        prop("variant").is("compact"),
+        contract()
+          .forbidDescendants("Widget.Footer")
+          .forbidDescendantProps("data-analytics"),
+      );
 
     const expected: ContractRows = [
       {
@@ -109,9 +114,10 @@ describe("contract builder", () => {
 
   it("is a CompiledContracts, so mergeContracts combines builders", () => {
     const tray = contract("Widget.Tray", "g").hasSlot(".A");
-    const widget = contract("Widget", "g")
-      .when("open")
-      .forbidDescendantProps("disabled");
+    const widget = contract("Widget", "g").when(
+      prop("open").isPresent(),
+      contract().forbidDescendantProps("disabled"),
+    );
 
     const merged = mergeContracts(tray, widget);
 
@@ -167,21 +173,6 @@ describe("contract builder", () => {
     );
   });
 
-  it("rejects a forbid with no ban open, naming the method that opens one", () => {
-    // The type-state offers `forbidDescendants` only on a ban builder, so this
-    // is what an untyped caller meets.
-    const loose = contract("W", "g") as ContractBuilder<string> & {
-      forbidDescendants: (...elements: string[]) => unknown;
-    };
-
-    expect(() => loose.forbidDescendants("X")).toThrow(
-      new Error(
-        'contract: component "W" has no active subtree ban — start one ' +
-          "with when().",
-      ),
-    );
-  });
-
   it("rejects a count bound with nothing to bound, naming the declarations", () => {
     const loose = contract("W", "g") as ContractBuilder<string> & {
       atLeast: (count: number) => unknown;
@@ -191,19 +182,6 @@ describe("contract builder", () => {
       new Error(
         'contract: component "W" has no slot or descendant to bound — ' +
           "declare one with hasSlot() or hasDescendant().",
-      ),
-    );
-  });
-
-  it("rejects a second ban on the same prop", () => {
-    const built = contract("W", "g")
-      .when("variant", ["compact"])
-      .forbidDescendants("X");
-
-    expect(() => built.when("variant")).toThrow(
-      new Error(
-        'contract: component "W" already has a subtree ban from ' +
-          'when("variant").',
       ),
     );
   });
@@ -370,6 +348,278 @@ describe("contract builder", () => {
   });
 });
 
+describe("conditions", () => {
+  it("compiles a prop-presence condition to a bare prop test", () => {
+    const built = contract("Widget", "g").when(
+      prop("dense").isPresent(),
+      contract().forbidDescendants("Widget.Spacer"),
+    );
+
+    expect(rowsFor(built, "subtree")[0]?.when).toEqual({ prop: "dense" });
+  });
+
+  it("compiles a prop-value condition to the listed literals", () => {
+    const built = contract("Widget", "g").when(
+      prop("size").is("large", "Size.huge", 2, true),
+      contract().forbidDescendants("Widget.Spacer"),
+    );
+
+    expect(rowsFor(built, "subtree")[0]?.when).toEqual({
+      prop: "size",
+      values: ["large", "Size.huge", 2, true],
+    });
+  });
+
+  it("nests all, any and not freely", () => {
+    const built = contract("Panel", "g").when(
+      anyOf(
+        allOf(prop("variant").is("compact"), prop("dense").isPresent()),
+        not(prop("tight").isPresent()),
+      ),
+      contract().forbidDescendants("Panel.Footer"),
+    );
+
+    expect(rowsFor(built, "subtree")[0]?.when).toEqual({
+      any: [
+        { all: [{ prop: "variant", values: ["compact"] }, { prop: "dense" }] },
+        { not: { prop: "tight" } },
+      ],
+    });
+  });
+
+  it("shares one condition value across the components that use it", () => {
+    const compact = prop("variant").is("compact");
+    const merged = mergeContracts(
+      contract("Card", "g").when(compact, contract().forbidDescendants("X")),
+      contract("Panel", "g").when(compact, contract().forbidDescendants("Y")),
+    );
+
+    const [card, panel] = rowsFor(merged, "subtree");
+
+    expect(card?.when).toEqual(panel?.when);
+  });
+
+  it("rejects an is() with no values", () => {
+    expect(() => prop("size").is(...([] as unknown as [string]))).toThrow(
+      new Error('prop: is() on "size" needs at least one value.'),
+    );
+  });
+
+  it("rejects an allOf with fewer than two conditions", () => {
+    const one = prop("a").isPresent();
+
+    expect(() => allOf(...([one] as unknown as [never, never]))).toThrow(
+      new Error("allOf: needs at least two conditions."),
+    );
+  });
+
+  it("rejects an anyOf with fewer than two conditions", () => {
+    const one = prop("a").isPresent();
+
+    expect(() => anyOf(...([one] as unknown as [never, never]))).toThrow(
+      new Error("anyOf: needs at least two conditions."),
+    );
+  });
+});
+
+describe("nameless contracts", () => {
+  const compact = prop("variant").is("compact");
+
+  it("emits one row per facet the nameless contract touches", () => {
+    const built = contract("Widget.Tray", "@acme/ds")
+      .hasSlot(".Title")
+      .when(
+        compact,
+        contract()
+          .hasSlot(".Title")
+          .forbidDescendants("Widget.Footer")
+          .requiresProp("label")
+          .notInside("Widget.Modal"),
+      );
+
+    const conditional = built.rows.filter((row) => row.when !== undefined);
+
+    expect(conditional.map((row) => row.facet)).toEqual([
+      "slots",
+      "subtree",
+      "props",
+      "ancestor",
+    ]);
+
+    // Every one of them carries the condition the `when` call named.
+    expect(conditional.map((row) => row.when)).toEqual([
+      { prop: "variant", values: ["compact"] },
+      { prop: "variant", values: ["compact"] },
+      { prop: "variant", values: ["compact"] },
+      { prop: "variant", values: ["compact"] },
+    ]);
+  });
+
+  it("expands shorthand names against the component it is attached to", () => {
+    // One value, two components: the same `.Title` lands under each of them.
+    const titleOnly = contract().hasSlot(".Title");
+    const merged = mergeContracts(
+      contract("Widget.Tray", "g").when(compact, titleOnly),
+      contract("Widget.Bar", "g").when(compact, titleOnly),
+    );
+
+    expect(rowsFor(merged, "slots").map((row) => row.slots)).toEqual([
+      [{ name: "Widget.Tray.Title" }],
+      [{ name: "Widget.Bar.Title" }],
+    ]);
+  });
+
+  it("carries the component's gate to the conditional rows", () => {
+    const built = contract("Widget", "*/ds/widget").when(
+      compact,
+      contract().forbidDescendants("Widget.Footer"),
+    );
+
+    expect(rowsFor(built, "subtree")[0]?.importPath).toBe("*/ds/widget");
+  });
+
+  it("keeps the base rows unconditional beside the conditional ones", () => {
+    const built = contract("Widget.Tray", "g")
+      .hasSlot(".Title")
+      .hasSlot(".Action")
+      .when(compact, contract().hasSlot(".Title"));
+
+    expect(rowsFor(built, "slots")).toEqual([
+      {
+        facet: "slots",
+        importPath: "g",
+        component: "Widget.Tray",
+        slots: [{ name: "Widget.Tray.Title" }, { name: "Widget.Tray.Action" }],
+      },
+      {
+        facet: "slots",
+        importPath: "g",
+        component: "Widget.Tray",
+        when: { prop: "variant", values: ["compact"] },
+        slots: [{ name: "Widget.Tray.Title" }],
+      },
+    ]);
+  });
+
+  it("conjoins a nested when's condition with the outer one", () => {
+    const built = contract("Widget", "g").when(
+      compact,
+      contract().when(
+        prop("dense").isPresent(),
+        contract().forbidDescendants("Widget.Spacer"),
+      ),
+    );
+
+    expect(rowsFor(built, "subtree")[0]?.when).toEqual({
+      all: [{ prop: "variant", values: ["compact"] }, { prop: "dense" }],
+    });
+  });
+
+  it("flattens a conjunction rather than nesting all inside all", () => {
+    const built = contract("Widget", "g").when(
+      allOf(compact, prop("dense").isPresent()),
+      contract().when(
+        prop("tight").isPresent(),
+        contract().forbidDescendants("Widget.Spacer"),
+      ),
+    );
+
+    expect(rowsFor(built, "subtree")[0]?.when).toEqual({
+      all: [
+        { prop: "variant", values: ["compact"] },
+        { prop: "dense" },
+        { prop: "tight" },
+      ],
+    });
+  });
+
+  it("reuses one nameless contract across two conditions on one component", () => {
+    const noImage = contract().forbidDescendants("Card.Image");
+    const built = contract("Card", "g")
+      .when(compact, noImage)
+      .when(prop("inline").isPresent(), noImage);
+
+    expect(rowsFor(built, "subtree")).toEqual([
+      {
+        facet: "subtree",
+        importPath: "g",
+        component: "Card",
+        when: { prop: "variant", values: ["compact"] },
+        forbid: ["Card.Image"],
+      },
+      {
+        facet: "subtree",
+        importPath: "g",
+        component: "Card",
+        when: { prop: "inline" },
+        forbid: ["Card.Image"],
+      },
+    ]);
+  });
+
+  it("is immutable: gating one component does not change the value", () => {
+    const shared = contract().forbidDescendants("Card.Image");
+
+    contract("Card", "g").when(compact, shared.forbidDescendants("Card.Video"));
+
+    expect(
+      rowsFor(contract("Panel", "g").when(compact, shared), "subtree")[0]
+        ?.forbid,
+    ).toEqual(["Card.Image"]);
+  });
+
+  it("rejects reaching for a nameless contract's rule table", () => {
+    // The type-state hides `rows`; this is what an untyped caller meets.
+    const loose = contract() as unknown as CompiledContracts;
+
+    expect(() => loose.rows).toThrow(
+      new Error(
+        "contract: a nameless contract has no rule table of its own — " +
+          "attach it to a component with when().",
+      ),
+    );
+  });
+
+  // A named builder is structurally alike, so nothing at the type level tells
+  // the two apart — the runtime does, by which of them the entry was recorded
+  // for.
+  it("rejects a when() handed a named contract rather than a nameless one", () => {
+    expect(() =>
+      contract("W", "g").when(
+        compact,
+        contract("X", "g") as unknown as Fragment<string>,
+      ),
+    ).toThrow(
+      new Error(
+        'contract: component "W" calls when() with something other than a ' +
+          "nameless contract from contract().",
+      ),
+    );
+  });
+
+  // Left unguarded this would emit the gated rows unconditionally, so the
+  // rules would fire everywhere rather than nowhere.
+  it("rejects a when() handed something other than a condition", () => {
+    expect(() =>
+      contract("W", "g").when(
+        undefined as unknown as Condition,
+        contract().requiresProp("href"),
+      ),
+    ).toThrow(
+      new Error(
+        'contract: component "W" calls when() with something other than a ' +
+          "condition from prop()/allOf()/anyOf()/not().",
+      ),
+    );
+  });
+
+  it("names the nameless contract in its own guards", () => {
+    expect(() => contract().hasSlot(".A").hasSlot(".A")).toThrow(
+      new Error('contract: nameless contract declares slot ".A" twice.'),
+    );
+  });
+});
+
 // A fake design-system module type, so the shorthand checks below have export
 // paths to resolve against. `Widget.Tray` has parts under it; `Widget.Footer`
 // is a leaf, and `Widget.Tray.Title` sits at the deepest level the module's
@@ -489,9 +739,43 @@ function typeLevelChecks(): void {
     .slotRequires(".Title", ".Action")
     .hasSlot(".Action");
 
-  // Builder: a when ban must forbid something before the chain continues.
-  // @ts-expect-error strictSlots is not available on a pending ban.
-  void contract("Widget", "g").when("open").strictSlots;
+  // Conditions are values, and `when` takes one plus a nameless contract.
+  contract("Widget", "g").when(
+    allOf(prop("variant").is("compact"), not(prop("dense").isPresent())),
+    contract().forbidDescendants("Widget.Footer"),
+  );
+
+  // @ts-expect-error the old prop-gated ban spelling is gone.
+  contract("Widget", "g").when("variant", ["compact"]);
+
+  // A nameless contract has no rule table of its own.
+  // @ts-expect-error `rows` is not on a nameless contract.
+  void contract().rows;
+
+  // @ts-expect-error `rules()` is not on a nameless contract either.
+  void contract().rules;
+
+  // A nameless contract's cross-slot references resolve against its own slots.
+  contract()
+    .hasSlot(".Title")
+    .hasSlot(".Action")
+    .slotRequires(".Action", ".Title");
+
+  // @ts-expect-error ".Bogus" is not a slot the nameless contract declares.
+  contract().hasSlot(".Title").slotRequires(".Title", ".Bogus");
+
+  // Count bounds are offered on a nameless contract's declarations too.
+  contract().hasSlot(".Title").atLeast(1).atMost(2);
+
+  // @ts-expect-error nothing has been declared to bound.
+  void contract().atLeast;
+
+  // allOf/anyOf need two operands.
+  // @ts-expect-error one condition is not a composition.
+  anyOf(prop("a").isPresent());
+
+  // @ts-expect-error `is()` needs at least one value.
+  prop("a").is();
 
   // Count bounds are offered only directly after a declaration.
   // @ts-expect-error nothing has been declared to bound.

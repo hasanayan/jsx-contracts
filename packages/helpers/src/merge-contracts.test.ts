@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ContractRow } from "@jsx-contracts/eslint-plugin";
 
+import { prop } from "./condition.js";
 import { contract } from "./contract-builder.js";
 import { mergeContracts } from "./merge-contracts.js";
 import type { CompiledContracts } from "./rule-table.js";
@@ -27,12 +28,17 @@ describe("mergeContracts", () => {
 
   const widget = contract("Widget.Tray", "g")
     .hasSlot(".Action")
-    .when("open")
-    .forbidDescendantProps("disabled");
+    .when(
+      prop("open").isPresent(),
+      contract().forbidDescendantProps("disabled"),
+    );
 
   const menu = mergeContracts(
     contract("Menu.List", "g").hasSlot(".Item"),
-    contract("Menu", "g").when("dense").forbidDescendants("Menu.Footer"),
+    contract("Menu", "g").when(
+      prop("dense").isPresent(),
+      contract().forbidDescendants("Menu.Footer"),
+    ),
   );
 
   it("concatenates the rows of every contract", () => {
@@ -126,8 +132,10 @@ describe("mergeContracts", () => {
     // separate arguments, not about a component's own accumulating rows.
     const tray = contract("Widget.Tray", "g")
       .hasSlot(".Title")
-      .when("open")
-      .forbidDescendantProps("disabled");
+      .when(
+        prop("open").isPresent(),
+        contract().forbidDescendantProps("disabled"),
+      );
 
     expect(() => mergeContracts(tray, menu)).not.toThrow();
   });

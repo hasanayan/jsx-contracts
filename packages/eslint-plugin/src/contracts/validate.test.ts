@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { ContractRow, ContractRows } from "./payload.js";
+import type { ContractRow, ContractRows, WhenCondition } from "./payload.js";
 import { validateContractRows } from "./validate.js";
 
 type RowOf<F extends ContractRow["facet"]> = Extract<ContractRow, { facet: F }>;
@@ -52,6 +52,81 @@ describe("validateContractRows", () => {
         },
       ]);
     }).toThrow('when "as" values must not be empty');
+  });
+
+  // The condition tree is the one recursive shape in the payload, so its rules
+  // have to hold at every depth rather than only at the root.
+  describe("when-condition trees", () => {
+    const row = (when: WhenCondition): ContractRows => [
+      {
+        facet: "props",
+        importPath: "@acme/ds",
+        component: "Button",
+        when,
+        required: ["href"],
+      },
+    ];
+
+    it("accepts a tree combining all, any and not", () => {
+      expect(() => {
+        validateContractRows(
+          row({
+            all: [
+              { any: [{ prop: "variant", values: ["compact"] }, "dense"] },
+              { not: "tight" },
+            ],
+          }),
+        );
+      }).not.toThrow();
+    });
+
+    it("rejects an empty all list", () => {
+      expect(() => {
+        validateContractRows(row({ all: [] }));
+      }).toThrow("when all must not be empty");
+    });
+
+    it("rejects an empty any list", () => {
+      expect(() => {
+        validateContractRows(row({ any: [] }));
+      }).toThrow("when any must not be empty");
+    });
+
+    it("rejects an empty values list nested under a composite arm", () => {
+      expect(() => {
+        validateContractRows(
+          row({ any: ["dense", { not: { prop: "as", values: [] } }] }),
+        );
+      }).toThrow('when "as" values must not be empty');
+    });
+
+    it("rejects a nameless prop test at any depth", () => {
+      expect(() => {
+        validateContractRows(row({ all: ["dense", { prop: "" }] }));
+      }).toThrow("when must name a prop");
+    });
+
+    // The schema's `oneOf` catches this on a configured table; a table built
+    // programmatically reaches the validator without passing through it.
+    it("rejects an object carrying more than one arm", () => {
+      expect(() => {
+        validateContractRows(row({ all: ["dense"], not: "tight" }));
+      }).toThrow("when must carry one of prop/all/any/not, not all and not");
+    });
+
+    it("rejects a prop test carrying a composite arm as well", () => {
+      expect(() => {
+        validateContractRows(row({ prop: "as", any: ["dense"] }));
+      }).toThrow("when must carry one of prop/all/any/not, not prop and any");
+    });
+
+    it("names the row the malformed condition sits in", () => {
+      expect(() => {
+        validateContractRows(row({ not: { all: [] } }));
+      }).toThrow(
+        "contracts: row 0 (props <Button>) when all must not be empty",
+      );
+    });
   });
 
   // These were the four duplicate guards. Rows accumulate now, so each of them

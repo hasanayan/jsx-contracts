@@ -10,10 +10,22 @@ and commits.
   **row** per facet per condition.
 - **Binding** — `contractsFor(gate)`, optionally given the design system's
   module type: it states the import gate once for a whole design system and
-  hands back the `contract` starter, the only way to reach a builder. The
-  module is referenced type-only, so component names are checked against its
-  capitalized export paths without the design system ever being loaded. A
-  component from another package needs its own binding.
+  hands back the `contract` starter — the only way to reach a builder — together
+  with the condition constructors (`prop`, `allOf`, `anyOf`, `not`), so those
+  names never occupy package-level exports. The module is referenced type-only,
+  so component names are checked against its capitalized export paths without
+  the design system ever being loaded. A component from another package needs
+  its own binding.
+- **Condition** — a value that gates a rule: `prop(name).is(...)` /
+  `.isPresent()`, composed with `allOf`, `anyOf` and `not`, nested freely.
+  Because it is a value, one used by several components is written once and
+  shared. Compiles to a row's **when-condition**.
+- **Nameless contract** — `contract()` with no component: every builder method,
+  no name, and so no rule table of its own. `.when(condition, rules)` attaches
+  one to a component, expands its shorthand part names against that component
+  and gates its rows on the condition; a `when` nested inside conjoins with the
+  outer one. A value too, so a recurring set of conditional rules is written
+  once. Named `Fragment` in the types.
 - **Row** — the payload's unit: one statement about one component in one facet,
   optionally gated by a when-condition. A component's rows **accumulate** — every
   active row applies at once, so they are combined into one effective config per

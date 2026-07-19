@@ -1,15 +1,30 @@
 // The binding: the entry point that takes the import gate — and the design
-// system's module type — and hands back the fluent builder. It is the only way
-// to reach a builder; the package exports no unbound `contract`, so a gate is
-// never written twice.
+// system's module type — and hands back the fluent builder together with the
+// condition constructors. It is the only way to reach a builder; the package
+// exports no unbound `contract`, so a gate is never written twice, and no
+// package-level `prop`/`allOf`/`anyOf`/`not` either, so those names stay the
+// consumer's to spend.
 
 import type { Gate } from "./compile.js";
 import type { ComponentNames } from "./component-names.js";
-import type { ContractBuilder } from "./contract-builder.js";
+import type { Condition, PropCondition } from "./condition.js";
+import { allOf, anyOf, not, prop } from "./condition.js";
+import type { ContractBuilder, Fragment } from "./contract-builder.js";
 import { contract } from "./contract-builder.js";
 
 /**
- * Bind a gate and a module's types once, and destructure `contract` off the
+ * The bound `contract` starter. Given a name it starts that component's
+ * contract; given none it starts a nameless one, for `when`.
+ */
+interface BoundContract<Module> {
+  <const Component extends ComponentNames<Module> & string>(
+    component: Component,
+  ): ContractBuilder<never, { module: Module; component: Component }>;
+  (): Fragment;
+}
+
+/**
+ * Bind a gate and a module's types once, and destructure what you need off the
  * result: the import gate is stated for the whole design system rather than
  * repeated per component, and component names are completed and checked
  * against the module's capitalized export paths, so a typo — or a component
@@ -22,34 +37,62 @@ import { contract } from "./contract-builder.js";
  *
  * @param from - The import gate every component of this binding is gated by.
  * @example
- * const { contract } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
+ * const { contract, prop, allOf, anyOf, not } =
+ *   contractsFor<typeof import("@acme/ds")>("@acme/ds");
  * export const tray = contract("Widget.Tray")
  *   .hasSlot(".Title").atLeast(1)
  *   .hasSlot(".Action")
- *   .slotRequires(".Action", ".Title");
+ *   .when(prop("variant").is("compact"), contract().hasSlot(".Title"));
  * // eslint.config.js → rules: mergeContracts(tray, ...).rules()
  */
 export function contractsFor<Module>(from: Gate): BoundContracts<Module> {
   // The starter closes over `from` rather than reading it off `this`, so
-  // destructuring it — the documented spelling — keeps the gate.
+  // destructuring it — the documented spelling — keeps the gate. Its two
+  // arities are one implementation, so the overloaded shape is stated once on
+  // `BoundContract` and asserted here rather than written out twice.
+  const starter = (component?: string): unknown =>
+    component === undefined ? contract() : contract(component, from);
+
   return {
-    contract: <const Component extends ComponentNames<Module> & string>(
-      component: Component,
-    ): ContractBuilder<never, { module: Module; component: Component }> =>
-      contract<{ module: Module; component: Component }>(component, from),
+    contract: starter as BoundContract<Module>,
+    prop,
+    allOf,
+    anyOf,
+    not,
   };
 }
 
-/** What `contractsFor` returns: the bound `contract` starter. */
+/**
+ * What `contractsFor` returns: the bound `contract` starter, and the condition
+ * constructors that gate what it builds.
+ */
 export interface BoundContracts<Module> {
   /**
-   * Start one component's contract builder, gated by the binding. Declared as
-   * a property rather than a method because it is meant to be destructured off
-   * the binding — that is the only way to reach a builder. The component's name
-   * is captured as a literal, and the module travels with it, so the builder
-   * can check shorthand part names against the module's export paths.
+   * Start one component's contract builder, gated by the binding — or, called
+   * with no name, a nameless contract for `when`. Declared as a property
+   * rather than a method because it is meant to be destructured off the
+   * binding — that is the only way to reach a builder. The component's name is
+   * captured as a literal, and the module travels with it, so the builder can
+   * check shorthand part names against the module's export paths.
    */
-  contract: <const Component extends ComponentNames<Module> & string>(
-    component: Component,
-  ) => ContractBuilder<never, { module: Module; component: Component }>;
+  contract: BoundContract<Module>;
+  /** Name a prop to condition on: `.is(...values)` or `.isPresent()`. */
+  prop: (name: string) => PropCondition;
+  /** Every condition must hold. Two operands minimum; nests freely. */
+  allOf: (
+    first: Condition,
+    second: Condition,
+    ...rest: Condition[]
+  ) => Condition;
+  /** At least one condition must hold. Two operands minimum; nests freely. */
+  anyOf: (
+    first: Condition,
+    second: Condition,
+    ...rest: Condition[]
+  ) => Condition;
+  /**
+   * The condition must not hold. Inactive on an element carrying a spread —
+   * the spread may carry the very prop being negated.
+   */
+  not: (condition: Condition) => Condition;
 }

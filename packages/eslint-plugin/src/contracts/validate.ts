@@ -18,6 +18,7 @@ import type {
   SlotConfig,
   SlotsRow,
   SubtreeRow,
+  WhenCondition,
 } from "./payload.js";
 
 export function normalizeSlot(slot: string | SlotConfig): SlotConfig {
@@ -66,9 +67,62 @@ function checkBounds(
   }
 }
 
-function validateWhen(row: ContractRow, fail: Fail): void {
-  if (typeof row.when === "object" && row.when.values?.length === 0) {
-    fail(`when "${row.when.prop}" values must not be empty`);
+// The condition tree's shape rules, applied at every depth. An arm is
+// recognised by its key, which is also what the schema's `oneOf` discriminates
+// on, so an object carrying none of them — or more than one — is not a
+// condition at all.
+function validateWhen(when: WhenCondition, fail: Fail): void {
+  if (typeof when === "string") {
+    if (when.length === 0) {
+      fail("when must name a prop");
+    }
+
+    return;
+  }
+
+  // Exactly one arm, at every depth. Two would leave the evaluator reading the
+  // first and dropping the rest — a condition that silently means less than it
+  // says.
+  const arms = (["prop", "all", "any", "not"] as const).filter(
+    (arm) => arm in when,
+  );
+
+  if (arms.length > 1) {
+    // `fail` throws, so nothing below reads a tree it has already rejected.
+    fail(`when must carry one of prop/all/any/not, not ${arms.join(" and ")}`);
+  }
+
+  if ("all" in when || "any" in when) {
+    const operator = "all" in when ? "all" : "any";
+    // `all` over nothing is vacuously true and `any` over nothing vacuously
+    // false, so an empty list is never what the author meant. One operand is
+    // its own operand, which is harmless — the builder asks for two, the
+    // payload does not.
+    const operands = "all" in when ? when.all : when.any;
+
+    if (!Array.isArray(operands) || operands.length === 0) {
+      fail(`when ${operator} must not be empty`);
+    }
+
+    for (const operand of operands) {
+      validateWhen(operand, fail);
+    }
+
+    return;
+  }
+
+  if ("not" in when) {
+    validateWhen(when.not, fail);
+
+    return;
+  }
+
+  if (typeof when.prop !== "string" || when.prop.length === 0) {
+    fail("when must name a prop");
+  }
+
+  if (when.values?.length === 0) {
+    fail(`when "${when.prop}" values must not be empty`);
   }
 }
 
@@ -207,7 +261,9 @@ export function validateContractRows(rows: ContractRows): void {
   for (const [index, row] of rows.entries()) {
     const fail = failFor(row, index);
 
-    validateWhen(row, fail);
+    if (row.when !== undefined) {
+      validateWhen(row.when, fail);
+    }
 
     switch (row.facet) {
       case "slots": {

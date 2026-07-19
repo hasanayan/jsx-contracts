@@ -38,6 +38,26 @@ describe("contractsFor", () => {
     expect(rowsFor(merged, "slots")[0]?.importPath).toBe("@acme/ds");
     expect(rowsFor(merged, "props")[0]?.importPath).toBe("@acme/legacy");
   });
+
+  it("hands out the condition constructors beside the builder", () => {
+    const { contract, prop, allOf, not } = contractsFor("@acme/ds");
+    const built = contract("Button").when(
+      allOf(prop("as").is("a"), not(prop("disabled").isPresent())),
+      contract().requiresProp("href"),
+    );
+
+    expect(rowsFor(built, "props")).toEqual([
+      {
+        facet: "props",
+        importPath: "@acme/ds",
+        component: "Button",
+        when: {
+          all: [{ prop: "as", values: ["a"] }, { not: { prop: "disabled" } }],
+        },
+        required: ["href"],
+      },
+    ]);
+  });
 });
 
 // A fake design-system module type for `contractsFor`'s type-level checks.
@@ -70,6 +90,13 @@ function typeLevelChecks(): void {
 
   // @ts-expect-error the gate lives on the binding, not on the builder.
   contract("Widget", "g");
+
+  // Called with no name the binding starts a nameless contract, which has no
+  // rule table of its own.
+  contract().requiresProp("href");
+
+  // @ts-expect-error a nameless contract carries no rows.
+  void contract().rows;
 
   // The binding is not callable: the component-keyed map form is gone, so a
   // builder is the only thing it hands back.

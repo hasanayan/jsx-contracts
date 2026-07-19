@@ -126,6 +126,8 @@ function elementFacts(
           table.pool,
           conditionId,
           (facts.props ??= collectProps(sourceCode, node.openingElement)),
+          // A negated tree reads absent evidence, so a spread deactivates it.
+          (facts.hasSpread ??= hasSpreadAttribute(node.openingElement)),
         );
 
         facts.conditions.set(conditionId, held);

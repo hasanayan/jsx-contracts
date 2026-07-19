@@ -340,13 +340,17 @@ export function prepareTable(
   };
 }
 
-/** Evaluate one interned condition against an element's props. */
+/**
+ * Evaluate one interned condition against an element's props. `hasSpread` is
+ * what deactivates a tree containing a negation — see `conditionHolds`.
+ */
 export function holdsAt(
   pool: ConditionPool,
   conditionId: number,
   props: PropFact[],
+  hasSpread: boolean,
 ): boolean {
   const condition = pool.conditions[conditionId];
 
-  return condition !== undefined && conditionHolds(condition, props);
+  return condition !== undefined && conditionHolds(condition, props, hasSpread);
 }

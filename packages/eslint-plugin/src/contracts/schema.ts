@@ -21,7 +21,59 @@ export interface JsonSchema {
   minItems?: number;
   maxItems?: number;
   minimum?: number;
+  /** Draft-4 spelling of `$id`, which is what ESLint's validator resolves. */
+  id?: string;
+  $ref?: string;
+  definitions?: Record<string, JsonSchema>;
 }
+
+// The when-condition is the one recursive shape in the table, so it is the one
+// place a `$ref` is needed. It carries an absolute id and is referenced by it
+// rather than by a JSON pointer: the pointer would have to reach through the
+// wrapper ESLint puts around a rule's option schemas, and would break the day
+// that wrapper changed. The definition below is written into the document
+// exactly once; the four row arms carry only the ref.
+const whenConditionId = "https://jsx-contracts.dev/schema/when-condition.json";
+
+const whenCondition: JsonSchema = { $ref: whenConditionId };
+
+const whenConditionDefinition: JsonSchema = {
+  id: whenConditionId,
+  oneOf: [
+    // A bare string is shorthand for `{ prop }`.
+    { type: "string" },
+    {
+      type: "object",
+      properties: {
+        prop: { type: "string" },
+        values: {
+          type: "array",
+          items: { type: ["string", "number", "boolean"] },
+        },
+      },
+      required: ["prop"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: { all: { type: "array", items: whenCondition } },
+      required: ["all"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: { any: { type: "array", items: whenCondition } },
+      required: ["any"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: { not: whenCondition },
+      required: ["not"],
+      additionalProperties: false,
+    },
+  ],
+};
 
 const forbiddenElement: JsonSchema = {
   oneOf: [
@@ -52,23 +104,7 @@ const groupPairs: JsonSchema = {
 const rowBase: Record<string, JsonSchema> = {
   component: { type: "string" },
   importPath: { type: "string" },
-  when: {
-    oneOf: [
-      { type: "string" },
-      {
-        type: "object",
-        properties: {
-          prop: { type: "string" },
-          values: {
-            type: "array",
-            items: { type: ["string", "number", "boolean"] },
-          },
-        },
-        required: ["prop"],
-        additionalProperties: false,
-      },
-    ],
-  },
+  when: whenCondition,
 };
 
 function rowArm(
@@ -91,6 +127,7 @@ function rowArm(
 export const contractRowsSchema: JsonSchema[] = [
   {
     type: "array",
+    definitions: { whenCondition: whenConditionDefinition },
     items: {
       oneOf: [
         rowArm("slots", {

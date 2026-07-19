@@ -8,6 +8,7 @@ import type {
   SubtreeRow,
 } from "@jsx-contracts/eslint-plugin";
 
+import { prop } from "./condition.js";
 import { contract } from "./contract-builder.js";
 import { mergeContracts } from "./merge-contracts.js";
 import type { CompiledContracts } from "./rule-table.js";
@@ -40,15 +41,24 @@ describe("contract compilation", () => {
       .deprecatesProp("legacy"),
     // A component from another package carries its own gate on its own binding.
     contract("Widget", "@acme/widget")
-      .when("compact")
-      .forbidDescendants("Widget.Footer", { name: "button", from: "*/ds/*" })
-      .when("size", ["large", "Size.huge"])
-      .forbidDescendantProps("autoFocus"),
+      .when(
+        prop("compact").isPresent(),
+        contract().forbidDescendants("Widget.Footer", {
+          name: "button",
+          from: "*/ds/*",
+        }),
+      )
+      .when(
+        prop("size").is("large", "Size.huge"),
+        contract().forbidDescendantProps("autoFocus"),
+      ),
     // Subtree-only, presence activation, plus a component-level deprecation
     // with a replacement hint.
     contract("Menu", "*/ds/widget")
-      .when("open")
-      .forbidDescendantProps("disabled")
+      .when(
+        prop("open").isPresent(),
+        contract().forbidDescendantProps("disabled"),
+      )
       .deprecated("Nav"),
   );
 
@@ -72,7 +82,7 @@ describe("contract compilation", () => {
     expect(rowsFor(compiled, "slots")).toEqual(expected);
   });
 
-  it("fans each subtree ban out to one row, re-stamped with gate + name", () => {
+  it("fans each conditional ban out to one row, re-stamped with gate + name", () => {
     const expected: SubtreeRow[] = [
       {
         facet: "subtree",
@@ -159,8 +169,10 @@ describe("descendants compilation", () => {
     .hasDescendant(".Panel")
     .hasDescendant("Global.Icon", "@acme/icons")
     // A conditional ban on the same component still emits its own row.
-    .when("compact")
-    .forbidDescendants("Tabs.Footer");
+    .when(
+      prop("compact").isPresent(),
+      contract().forbidDescendants("Tabs.Footer"),
+    );
 
   it("compiles descendants to one when-less require row, shorthand expanded", () => {
     const requireRow = rowsFor(compiled, "subtree").find(
@@ -288,30 +300,16 @@ describe("compilation-time validation", () => {
     );
   });
 
-  it("rejects a when() with an empty value list", () => {
-    expect(
-      () =>
-        contract("Widget", "g")
-          .when("size", [] as never)
-          .forbidDescendants("button").rows,
-    ).toThrow(
-      new Error(
-        'contract: component "Widget" has an empty value list in ' +
-          'when("size").',
-      ),
-    );
-  });
-
   it("rejects a forbidDescendants() naming no elements", () => {
     expect(
       () =>
-        contract("Widget", "g")
-          .when("size")
-          .forbidDescendants(...([] as unknown as [string])).rows,
+        contract("Widget", "g").forbidDescendants(
+          ...([] as unknown as [string]),
+        ).rows,
     ).toThrow(
       new Error(
         'contract: component "Widget" calls forbidDescendants() with no ' +
-          'elements under when("size").',
+          "elements.",
       ),
     );
   });
@@ -319,13 +317,13 @@ describe("compilation-time validation", () => {
   it("rejects a forbidDescendantProps() naming no props", () => {
     expect(
       () =>
-        contract("Widget", "g")
-          .when("size")
-          .forbidDescendantProps(...([] as unknown as [string])).rows,
+        contract("Widget", "g").forbidDescendantProps(
+          ...([] as unknown as [string]),
+        ).rows,
     ).toThrow(
       new Error(
         'contract: component "Widget" calls forbidDescendantProps() with no ' +
-          'props under when("size").',
+          "props.",
       ),
     );
   });
