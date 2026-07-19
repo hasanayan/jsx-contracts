@@ -72,6 +72,70 @@ describe("mergeContracts", () => {
     );
   });
 
+  it("rejects two contracts covering the same component", () => {
+    const trayTitle = contract("Widget.Tray", "g").hasSlots({ ".Title": true });
+    const trayAction = contract("Widget.Tray", "g").hasSlots({
+      ".Action": true,
+    });
+
+    // Merged, the two slot rows would intersect to nothing and neither slot
+    // would be allowed — so the merge is refused instead.
+    expect(() => mergeContracts(trayTitle, trayAction)).toThrow(
+      'mergeContracts: component "Widget.Tray" is covered by two contracts',
+    );
+  });
+
+  it("rejects two contracts covering one component on different facets", () => {
+    const traySlots = contract("Widget.Tray", "g").hasSlots({ ".Title": true });
+    const trayAncestor = contract("Widget.Tray", "g").notInside("Button");
+
+    expect(() => mergeContracts(traySlots, trayAncestor)).toThrow(
+      'component "Widget.Tray"',
+    );
+  });
+
+  it("rejects two contracts covering one component under different gates", () => {
+    // Gates are globs, so both rows can match one element and both would be
+    // combined — the identity is the component name alone.
+    const specific = contract("Widget.Tray", "@acme/ds").hasSlots({
+      ".Title": true,
+    });
+
+    const glob = contract("Widget.Tray", "*/ds").hasSlots({ ".Action": true });
+
+    expect(() => mergeContracts(specific, glob)).toThrow(
+      'component "Widget.Tray"',
+    );
+  });
+
+  it("allows one chain to declare several slots for one component", () => {
+    const tray = contract("Widget.Tray", "g").hasSlots({
+      ".Title": true,
+      ".Action": true,
+    });
+
+    const merged = mergeContracts(tray, menu);
+    const [row] = rowsFor(merged, "slots").filter(
+      (candidate) => candidate.component === "Widget.Tray",
+    );
+
+    expect(row?.slots).toEqual([
+      { name: "Widget.Tray.Title" },
+      { name: "Widget.Tray.Action" },
+    ]);
+  });
+
+  it("allows several rows for one component from a single contract", () => {
+    // A base row plus a `when` row is the normal case: the guard is about
+    // separate arguments, not about a component's own accumulating rows.
+    const tray = contract("Widget.Tray", "g")
+      .hasSlots({ ".Title": true })
+      .when("open")
+      .forbidProps("disabled");
+
+    expect(() => mergeContracts(tray, menu)).not.toThrow();
+  });
+
   it("returns a contract that can itself be merged (nesting)", () => {
     const layout = contract("Layout", "g").hasSlots({ ".Slot": true });
 

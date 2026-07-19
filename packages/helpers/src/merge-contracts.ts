@@ -1,5 +1,5 @@
-// Merging: several compiled contracts read as one rule table. See CONTEXT.md
-// for the terms.
+// Merging: several compiled contracts read as one rule table, and the one
+// duplicate guard anywhere. See CONTEXT.md for the terms.
 
 import type { CompiledContracts } from "./rule-table.js";
 import { makeContracts } from "./rule-table.js";
@@ -10,13 +10,39 @@ import { makeContracts } from "./rule-table.js";
  * contract, so merges nest; call `rules()` once at the end, in your ESLint
  * config.
  *
+ * Throws when two arguments cover the same component. Rows accumulate, so two
+ * separate contracts for one container intersect their slot lists to nothing
+ * and the author is told nothing — whereas declaring both slots in one chain
+ * yields a single row allowing both. A component is identified by its dotted
+ * tag alone: gates are globs, so two rows naming one component under different
+ * gates can both match one element, and both are combined.
+ *
  * @example
- * const widgets = mergeContracts(widgetTray, widgetSubtree);
+ * const widgets = mergeContracts(widgetTray, widgetOverflow);
  * export const contracts = mergeContracts(widgets, menu, layout);
  * // eslint.config.js → rules: contracts.rules()
  */
 export function mergeContracts(
   ...contracts: CompiledContracts[]
 ): CompiledContracts {
+  // A component's own rows accumulate — a base row plus one per `when` is the
+  // normal case — so each argument's components are collapsed before being
+  // checked against the components covered by the arguments before it.
+  const covered = new Set<string>();
+
+  for (const entry of contracts) {
+    for (const component of new Set(entry.rows.map((row) => row.component))) {
+      if (covered.has(component)) {
+        throw new Error(
+          `mergeContracts: component "${component}" is covered by two ` +
+            "contracts. Declare everything about a component in one chain — " +
+            "separate contracts for one component narrow each other to nothing.",
+        );
+      }
+
+      covered.add(component);
+    }
+  }
+
   return makeContracts(contracts.flatMap((entry) => entry.rows));
 }
