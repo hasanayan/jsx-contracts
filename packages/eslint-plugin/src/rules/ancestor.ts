@@ -1,6 +1,6 @@
 import type { AncestorMessageId } from "../contracts/evaluate-ancestor.js";
 
-import { createFacetRule } from "./facet-rule.js";
+import { facetRules } from "./facet-rule.js";
 
 export type { AncestorMessageId };
 
@@ -8,19 +8,7 @@ const messages = {
   forbiddenAncestor: "<{{name}}> cannot appear inside <{{ancestor}}>.",
 } as const;
 
-function ancestorRule(
-  name: string,
-  description: string,
-  reported: ReadonlySet<AncestorMessageId> | null,
-): ReturnType<typeof createFacetRule<AncestorMessageId>> {
-  return createFacetRule<AncestorMessageId>({
-    name,
-    description,
-    facet: "ancestor",
-    messages,
-    reported,
-  });
-}
+const ancestorRule = facetRules<AncestorMessageId>("ancestor", messages);
 
 export const ancestor = ancestorRule(
   "ancestor",

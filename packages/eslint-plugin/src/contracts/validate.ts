@@ -30,19 +30,23 @@ export function normalizeForbid(
   return typeof entry === "string" ? { name: entry } : entry;
 }
 
-// Every rejection is prefixed with the row's position and identity, so a table
-// of any size points at the row that has to change.
-function rowLabel(row: ContractRow, index: number): string {
-  return `row ${String(index)} (${row.facet} <${row.component}>)`;
-}
+/**
+ * Rejects the row under validation. Bound to one row so the position and
+ * identity are stamped once: a table of any size points at the row that has to
+ * change.
+ */
+type Fail = (problem: string) => never;
 
-function fail(row: ContractRow, index: number, problem: string): never {
-  throw new Error(`contracts: ${rowLabel(row, index)} ${problem}.`);
+function failFor(row: ContractRow, index: number): Fail {
+  const label = `row ${String(index)} (${row.facet} <${row.component}>)`;
+
+  return (problem) => {
+    throw new Error(`contracts: ${label} ${problem}.`);
+  };
 }
 
 function checkBounds(
-  row: ContractRow,
-  index: number,
+  fail: Fail,
   subject: string,
   min: number | undefined,
   max: number | undefined,
@@ -50,25 +54,33 @@ function checkBounds(
   maxKey: string,
 ): void {
   if (min !== undefined && (!Number.isInteger(min) || min < 0)) {
-    fail(row, index, `${subject} ${minKey} must be a non-negative integer`);
+    fail(`${subject} ${minKey} must be a non-negative integer`);
   }
 
   if (max !== undefined && (!Number.isInteger(max) || max < 1)) {
-    fail(row, index, `${subject} ${maxKey} must be a positive integer`);
+    fail(`${subject} ${maxKey} must be a positive integer`);
   }
 
   if (min !== undefined && max !== undefined && min > max) {
-    fail(row, index, `${subject} ${minKey} exceeds ${maxKey}`);
+    fail(`${subject} ${minKey} exceeds ${maxKey}`);
   }
 }
 
-function validateWhen(row: ContractRow, index: number): void {
+function validateWhen(row: ContractRow, fail: Fail): void {
   if (typeof row.when === "object" && row.when.values?.length === 0) {
-    fail(row, index, `when "${row.when.prop}" values must not be empty`);
+    fail(`when "${row.when.prop}" values must not be empty`);
   }
 }
 
-function validateSlotsRow(row: SlotsRow, index: number): void {
+function validateSlotsRow(row: SlotsRow, fail: Fail): void {
+  // Allowed slots are the intersection across active rows, so a row declaring
+  // none is not the identity — it would empty the container's slot list and
+  // reject every child. A row that has nothing to say about slots is a row that
+  // should not be in the table.
+  if (row.slots.length === 0) {
+    fail("slots must not be empty");
+  }
+
   const slots = new Set<string>();
 
   for (const rawSlot of row.slots) {
@@ -78,14 +90,13 @@ function validateSlotsRow(row: SlotsRow, index: number): void {
     // slot map is keyed by name, so the second declaration would silently win.
     // Two *rows* declaring the same slot are fine — that is accumulation.
     if (slots.has(slot.name)) {
-      fail(row, index, `lists duplicate slot "${slot.name}"`);
+      fail(`lists duplicate slot "${slot.name}"`);
     }
 
     slots.add(slot.name);
 
     checkBounds(
-      row,
-      index,
+      fail,
       `slot "${slot.name}"`,
       slot.minCount,
       slot.maxCount,
@@ -96,7 +107,7 @@ function validateSlotsRow(row: SlotsRow, index: number): void {
 
   // Cross-slot references resolve against the slots declared in the same row.
   // After merging a reference may point at a slot another active row
-  // intersected away; the merge drops it rather than reporting, because
+  // intersected away; the combination drops it rather than reporting, because
   // whether that combination is reachable cannot be decided here.
   const references = [
     ...Object.entries(row.requires ?? {}).flat(),
@@ -105,22 +116,22 @@ function validateSlotsRow(row: SlotsRow, index: number): void {
 
   for (const reference of references) {
     if (!slots.has(reference)) {
-      fail(row, index, `references "${reference}", which it does not declare`);
+      fail(`references "${reference}", which it does not declare`);
     }
   }
 }
 
-function validateSubtreeRow(row: SubtreeRow, index: number): void {
+function validateSubtreeRow(row: SubtreeRow, fail: Fail): void {
   if (row.forbid?.length === 0) {
-    fail(row, index, "forbid must not be empty");
+    fail("forbid must not be empty");
   }
 
   if (row.forbidProps?.length === 0) {
-    fail(row, index, "forbidProps must not be empty");
+    fail("forbidProps must not be empty");
   }
 
   if (row.require?.length === 0) {
-    fail(row, index, "require must not be empty");
+    fail("require must not be empty");
   }
 
   if (
@@ -128,17 +139,16 @@ function validateSubtreeRow(row: SubtreeRow, index: number): void {
     (row.forbidProps?.length ?? 0) === 0 &&
     (row.require?.length ?? 0) === 0
   ) {
-    fail(row, index, "must forbid an element or prop, or require a descendant");
+    fail("must forbid an element or prop, or require a descendant");
   }
 
   for (const entry of row.require ?? []) {
     if (entry.name.length === 0) {
-      fail(row, index, "require entry must name an element");
+      fail("require entry must name an element");
     }
 
     checkBounds(
-      row,
-      index,
+      fail,
       `require "${entry.name}"`,
       entry.min,
       entry.max,
@@ -148,7 +158,7 @@ function validateSubtreeRow(row: SubtreeRow, index: number): void {
   }
 }
 
-function validatePropsRow(row: PropsRow, index: number): void {
+function validatePropsRow(row: PropsRow, fail: Fail): void {
   const declares =
     (row.required?.length ?? 0) > 0 ||
     (row.exclusive?.length ?? 0) > 0 ||
@@ -156,30 +166,30 @@ function validatePropsRow(row: PropsRow, index: number): void {
     row.deprecatedComponent !== undefined;
 
   if (!declares) {
-    fail(row, index, "must declare at least one prop contract");
+    fail("must declare at least one prop contract");
   }
 
   for (const entry of row.required ?? []) {
     if (Array.isArray(entry) && entry.length === 0) {
-      fail(row, index, "has an empty required group");
+      fail("has an empty required group");
     }
   }
 
   for (const [groupA, groupB] of row.exclusive ?? []) {
     if (groupA.length === 0 || groupB.length === 0) {
-      fail(row, index, "has an empty exclusive group");
+      fail("has an empty exclusive group");
     }
   }
 }
 
-function validateAncestorRow(row: AncestorRow, index: number): void {
+function validateAncestorRow(row: AncestorRow, fail: Fail): void {
   if (row.notInside.length === 0) {
-    fail(row, index, "notInside must not be empty");
+    fail("notInside must not be empty");
   }
 
   for (const rawEntry of row.notInside) {
     if (normalizeForbid(rawEntry).name.length === 0) {
-      fail(row, index, "notInside entry must name an element");
+      fail("notInside entry must name an element");
     }
   }
 }
@@ -187,26 +197,28 @@ function validateAncestorRow(row: AncestorRow, index: number): void {
 /** Shape-validate a rule table. Throws on the first malformed row. */
 export function validateContractRows(rows: ContractRows): void {
   for (const [index, row] of rows.entries()) {
-    validateWhen(row, index);
+    const fail = failFor(row, index);
+
+    validateWhen(row, fail);
 
     switch (row.facet) {
       case "slots": {
-        validateSlotsRow(row, index);
+        validateSlotsRow(row, fail);
         break;
       }
 
       case "subtree": {
-        validateSubtreeRow(row, index);
+        validateSubtreeRow(row, fail);
         break;
       }
 
       case "props": {
-        validatePropsRow(row, index);
+        validatePropsRow(row, fail);
         break;
       }
 
       case "ancestor": {
-        validateAncestorRow(row, index);
+        validateAncestorRow(row, fail);
         break;
       }
     }

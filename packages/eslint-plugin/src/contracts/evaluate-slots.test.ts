@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import type {
-  MergedSlots,
+  CombinedSlots,
   ParentFact,
   PreparedSlot,
 } from "./evaluate-slots.js";
 import {
+  combineSlots,
   evaluateSlots,
   isPlacedInContainer,
-  mergeSlots,
   minimumGuaranteedCount,
   prepareSlotsRow,
 } from "./evaluate-slots.js";
@@ -18,8 +18,8 @@ import type { SlotsRow } from "./payload.js";
 
 // Preparing one row and merging it is what the engine does for a component
 // with a single active row.
-function prepareContainer(row: SlotsRow): MergedSlots {
-  return mergeSlots(row.component, [prepareSlotsRow(row)]);
+function prepareContainer(row: SlotsRow): CombinedSlots {
+  return combineSlots(row.component, [prepareSlotsRow(row)]);
 }
 
 function element(name: string, branches: Branch[] = []): RenderedNode {
@@ -148,7 +148,7 @@ describe("isPlacedInContainer", () => {
 });
 
 describe("evaluateSlots count bounds", () => {
-  function prepared(slot: PreparedSlot): MergedSlots {
+  function prepared(slot: PreparedSlot): CombinedSlots {
     return {
       container: "Widget.Tray",
       slots: new Map([[slot.name, slot]]),

@@ -1,10 +1,29 @@
 // The JSON schema for the rule table, shared verbatim by all thirteen rules. A
 // discriminated union on `facet`, each arm rejecting unknown properties, so a
 // misspelled key fails when the config loads rather than matching nothing.
+//
+// The schema is data, so it is typed structurally rather than against ESLint's
+// own `JSONSchema4`: this directory imports nothing from eslint or
+// @typescript-eslint. The adapter is where the two meet.
 
-import type { JSONSchema } from "@typescript-eslint/utils";
+/**
+ * A JSON Schema draft-4 document, as far as this file needs one. Deliberately
+ * loose — its job is to keep the literals below honest, not to model the spec.
+ */
+export interface JsonSchema {
+  type?: string | string[];
+  enum?: unknown[];
+  properties?: Record<string, JsonSchema>;
+  additionalProperties?: JsonSchema | boolean;
+  required?: string[];
+  items?: JsonSchema;
+  oneOf?: JsonSchema[];
+  minItems?: number;
+  maxItems?: number;
+  minimum?: number;
+}
 
-const forbiddenElement: JSONSchema.JSONSchema4 = {
+const forbiddenElement: JsonSchema = {
   oneOf: [
     { type: "string" },
     {
@@ -19,7 +38,7 @@ const forbiddenElement: JSONSchema.JSONSchema4 = {
   ],
 };
 
-const groupPairs: JSONSchema.JSONSchema4 = {
+const groupPairs: JsonSchema = {
   type: "array",
   items: {
     type: "array",
@@ -30,7 +49,7 @@ const groupPairs: JSONSchema.JSONSchema4 = {
 };
 
 // Every row carries the match key and the optional activation condition.
-const rowBase: Record<string, JSONSchema.JSONSchema4> = {
+const rowBase: Record<string, JsonSchema> = {
   component: { type: "string" },
   importPath: { type: "string" },
   when: {
@@ -54,9 +73,9 @@ const rowBase: Record<string, JSONSchema.JSONSchema4> = {
 
 function rowArm(
   facet: string,
-  properties: Record<string, JSONSchema.JSONSchema4>,
+  properties: Record<string, JsonSchema>,
   required: string[] = [],
-): JSONSchema.JSONSchema4 {
+): JsonSchema {
   return {
     type: "object",
     properties: {
@@ -69,7 +88,7 @@ function rowArm(
   };
 }
 
-export const contractRowsSchema: JSONSchema.JSONSchema4[] = [
+export const contractRowsSchema: JsonSchema[] = [
   {
     type: "array",
     items: {

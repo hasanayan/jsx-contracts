@@ -17,7 +17,7 @@ export type PropsMessageId =
 
 type PropsViolation = Violation<PropsMessageId>;
 
-/** One props row, prepared. Merged with the other active rows before use. */
+/** One props row, prepared. Combined with the other active rows before use. */
 export interface PreparedPropsRow {
   required: (string | string[])[];
   exclusive: [string[], string[]][];
@@ -25,8 +25,8 @@ export interface PreparedPropsRow {
   deprecatedComponent: string | true | undefined;
 }
 
-/** The effective prop contract for one element: the merge of its active rows. */
-export interface MergedProps {
+/** The effective prop contract for one element: the combination of its active rows. */
+export interface CombinedProps {
   component: string;
   required: (string | string[])[];
   exclusive: [string[], string[]][];
@@ -51,18 +51,21 @@ export function preparePropsRow(row: PropsRow): PreparedPropsRow {
  * pair repeated across rows would otherwise report twice for one written prop.
  * The first row to deprecate a prop (or the component) fixes its hint.
  */
-export function mergeProps(
+export function combineProps(
   component: string,
   rows: PreparedPropsRow[],
-): MergedProps {
+): CombinedProps {
   const required: (string | string[])[] = [];
   const exclusive: [string[], string[]][] = [];
   const deprecated = new Map<string, string | true>();
   const seen = new Set<string>();
 
-  const fresh = (kind: string, value: unknown): boolean => {
-    const key = `${kind}\n${JSON.stringify(value)}`;
-
+  // A prop group is a set, not a sequence, so it is sorted before keying:
+  // otherwise `["a", "b"]` and `["b", "a"]` survive as two statements and report
+  // twice for one written prop. An exclusive pair's two sides keep their order —
+  // the evaluator reports the left side's props, so swapping them says something
+  // different.
+  const fresh = (key: string): boolean => {
     if (seen.has(key)) {
       return false;
     }
@@ -72,7 +75,10 @@ export function mergeProps(
     return true;
   };
 
-  const merged: MergedProps = {
+  const groupKey = (group: string[]): string =>
+    JSON.stringify([...group].sort());
+
+  const combined: CombinedProps = {
     component,
     required,
     exclusive,
@@ -81,13 +87,18 @@ export function mergeProps(
 
   for (const row of rows) {
     for (const entry of row.required) {
-      if (fresh("required", entry)) {
+      const key =
+        typeof entry === "string"
+          ? `required prop\n${entry}`
+          : `required group\n${groupKey(entry)}`;
+
+      if (fresh(key)) {
         required.push(entry);
       }
     }
 
     for (const pair of row.exclusive) {
-      if (fresh("exclusive", pair)) {
+      if (fresh(`exclusive\n${groupKey(pair[0])}\n${groupKey(pair[1])}`)) {
         exclusive.push(pair);
       }
     }
@@ -100,15 +111,15 @@ export function mergeProps(
 
     if (
       row.deprecatedComponent !== undefined &&
-      merged.deprecatedComponent === undefined
+      combined.deprecatedComponent === undefined
     ) {
-      merged.deprecatedComponent = row.deprecatedComponent;
+      combined.deprecatedComponent = row.deprecatedComponent;
     }
   }
 
-  merged.deprecated = [...deprecated];
+  combined.deprecated = [...deprecated];
 
-  return merged;
+  return combined;
 }
 
 function hintText(replacement: string | true): string {
@@ -125,7 +136,7 @@ function quoted(props: string[]): string {
 // own `ref` reports exclusive and prop-level deprecations, falling back to the
 // element when the fact carries none.
 export function evaluateProps(
-  prepared: MergedProps,
+  prepared: CombinedProps,
   facts: PropFact[],
   hasSpread: boolean,
   elementRef: Ref,

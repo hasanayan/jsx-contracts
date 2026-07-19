@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type {
-  MergedSubtree,
+  CombinedSubtree,
   SubtreeElement,
   SubtreeNode,
   SubtreeRef,
@@ -45,7 +45,9 @@ function prop(name: string, extra: Partial<PropFact> = {}): PropFact {
 }
 
 // A merged contract forbidding <button> anywhere below <Widget>.
-function forbidButton(overrides: Partial<MergedSubtree> = {}): MergedSubtree {
+function forbidButton(
+  overrides: Partial<CombinedSubtree> = {},
+): CombinedSubtree {
   return {
     component: "Widget",
     forbid: [{ name: "button" }],
@@ -56,7 +58,9 @@ function forbidButton(overrides: Partial<MergedSubtree> = {}): MergedSubtree {
 }
 
 // A when-less row requiring exactly one <Tabs.List> anywhere below <Tabs.Root>.
-function requireList(overrides: Partial<MergedSubtree> = {}): MergedSubtree {
+function requireList(
+  overrides: Partial<CombinedSubtree> = {},
+): CombinedSubtree {
   return {
     component: "Tabs.Root",
     forbid: [],

@@ -2,7 +2,7 @@
 // it fixes which violation is reported first.
 //
 // A row is prepared once, at intern time; the active rows for one element are
-// merged into one effective config and evaluated once, so a violation is
+// combined into one effective config and evaluated once, so a violation is
 // reported once and its message describes what the combined state allows.
 
 import { formatList } from "./format.js";
@@ -38,7 +38,7 @@ export interface PreparedSlot {
   matcher: ImportMatcher;
 }
 
-/** One slots row, prepared. Merged with the other active rows before use. */
+/** One slots row, prepared. Combined with the other active rows before use. */
 export interface PreparedSlotsRow {
   slots: Map<string, PreparedSlot>;
   requires: Record<string, string> | undefined;
@@ -46,13 +46,13 @@ export interface PreparedSlotsRow {
   strict: boolean | undefined;
 }
 
-/** The effective children contract for one element: the merge of its active rows. */
-export interface MergedSlots {
+/** The effective children contract for one element: the combination of its active rows. */
+export interface CombinedSlots {
   container: string;
   slots: Map<string, PreparedSlot>;
   slotList: string;
   // A slot may require more than one other slot once rows accumulate, so the
-  // merged form is a list where a single row's payload holds one name.
+  // combined form is a list where a single row's payload holds one name.
   requires: Map<string, string[]>;
   exclusive: [string[], string[]][];
   strict: boolean;
@@ -103,15 +103,15 @@ function bothGates(a: ImportMatcher, b: ImportMatcher): ImportMatcher {
  * another is simply neither allowed nor required, and a cross-slot reference to
  * a slot that did not survive is dropped rather than left unmeetable.
  */
-export function mergeSlots(
+export function combineSlots(
   container: string,
   rows: PreparedSlotsRow[],
-): MergedSlots {
+): CombinedSlots {
   const [first, ...rest] = rows;
   const slots = new Map<string, PreparedSlot>();
 
   for (const [name, slot] of first?.slots ?? []) {
-    let merged = slot;
+    let combined = slot;
     let dropped = false;
 
     for (const row of rest) {
@@ -122,20 +122,20 @@ export function mergeSlots(
         break;
       }
 
-      merged = {
+      combined = {
         name,
-        minCount: Math.max(merged.minCount, other.minCount),
-        maxCount: Math.min(merged.maxCount, other.maxCount),
-        matcher: bothGates(merged.matcher, other.matcher),
+        minCount: Math.max(combined.minCount, other.minCount),
+        maxCount: Math.min(combined.maxCount, other.maxCount),
+        matcher: bothGates(combined.matcher, other.matcher),
       };
     }
 
     if (!dropped) {
       // Tightening from both ends can cross the bounds over; clamping the
-      // lower one keeps the merge total rather than unsatisfiable.
+      // lower one keeps the combination total rather than unsatisfiable.
       slots.set(name, {
-        ...merged,
-        minCount: Math.min(merged.minCount, merged.maxCount),
+        ...combined,
+        minCount: Math.min(combined.minCount, combined.maxCount),
       });
     }
   }
@@ -291,7 +291,7 @@ export function isPlacedInContainer(
 
 // `containerRef` is the node a tooFew violation reports on.
 export function evaluateSlots(
-  prepared: MergedSlots,
+  prepared: CombinedSlots,
   root: RenderedNode,
   containerRef: Ref,
 ): SlotsViolation[] {

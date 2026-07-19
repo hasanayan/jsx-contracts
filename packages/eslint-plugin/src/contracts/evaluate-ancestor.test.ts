@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AncestorFact, MergedAncestor } from "./evaluate-ancestor.js";
+import type { AncestorFact, CombinedAncestor } from "./evaluate-ancestor.js";
 import { evaluateAncestor, prepareAncestorRow } from "./evaluate-ancestor.js";
 import { createImportMatcher } from "./import-matcher.js";
 import type { Ref } from "./model.js";
@@ -9,7 +9,7 @@ import type { Ref } from "./model.js";
 // identity.
 const element: Ref = {};
 
-function prep(overrides: Partial<MergedAncestor> = {}): MergedAncestor {
+function prep(overrides: Partial<CombinedAncestor> = {}): CombinedAncestor {
   return { component: "Button", notInside: [], ...overrides };
 }
 
@@ -17,7 +17,7 @@ function prep(overrides: Partial<MergedAncestor> = {}): MergedAncestor {
 function forbidden(
   name: string,
   gate?: string,
-): MergedAncestor["notInside"][number] {
+): CombinedAncestor["notInside"][number] {
   return gate === undefined
     ? { name }
     : { name, importPath: gate, matcher: createImportMatcher(gate) };

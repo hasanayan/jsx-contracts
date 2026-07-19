@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { MergedProps } from "./evaluate-props.js";
+import type { CombinedProps } from "./evaluate-props.js";
 import { evaluateProps, preparePropsRow } from "./evaluate-props.js";
 import type { PropFact, Ref } from "./model.js";
 
@@ -10,7 +10,7 @@ function fact(name: string, extra: Partial<PropFact> = {}): PropFact {
   return { name, present: true, ref: {}, ...extra };
 }
 
-function prep(overrides: Partial<MergedProps> = {}): MergedProps {
+function prep(overrides: Partial<CombinedProps> = {}): CombinedProps {
   return {
     component: "Widget",
     required: [],

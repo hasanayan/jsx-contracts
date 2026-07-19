@@ -33,13 +33,13 @@ interface PreparedForbiddenAncestor {
   matcher?: ImportMatcher;
 }
 
-/** One ancestor row, prepared. Merged with the other active rows before use. */
+/** One ancestor row, prepared. Combined with the other active rows before use. */
 export interface PreparedAncestorRow {
   notInside: PreparedForbiddenAncestor[];
 }
 
-/** The effective ancestor contract for one element: the merge of its active rows. */
-export interface MergedAncestor {
+/** The effective ancestor contract for one element: the combination of its active rows. */
+export interface CombinedAncestor {
   component: string;
   notInside: PreparedForbiddenAncestor[];
 }
@@ -68,10 +68,10 @@ export function prepareAncestorRow(row: AncestorRow): PreparedAncestorRow {
  * gate are one statement, not two — the evaluator reports once per entry, so a
  * repeat would double the diagnostic for a single illegal nesting.
  */
-export function mergeAncestor(
+export function combineAncestor(
   component: string,
   rows: PreparedAncestorRow[],
-): MergedAncestor {
+): CombinedAncestor {
   const notInside = new Map<string, PreparedForbiddenAncestor>();
 
   for (const row of rows) {
@@ -91,7 +91,7 @@ export function mergeAncestor(
 // `ancestors` is innermost-first, so the `find` reports the nearest match and
 // stops; separate entries matching different ancestors each report once.
 export function evaluateAncestor(
-  prepared: MergedAncestor,
+  prepared: CombinedAncestor,
   ancestors: AncestorFact[],
   elementRef: Ref,
 ): AncestorViolation[] {

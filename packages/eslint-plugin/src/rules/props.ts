@@ -1,6 +1,6 @@
 import type { PropsMessageId } from "../contracts/evaluate-props.js";
 
-import { createFacetRule } from "./facet-rule.js";
+import { facetRules } from "./facet-rule.js";
 
 export type { PropsMessageId };
 
@@ -13,19 +13,7 @@ const messages = {
   deprecatedComponent: "<{{component}}> is deprecated{{hint}}.",
 } as const;
 
-function propsRule(
-  name: string,
-  description: string,
-  reported: ReadonlySet<PropsMessageId> | null,
-): ReturnType<typeof createFacetRule<PropsMessageId>> {
-  return createFacetRule<PropsMessageId>({
-    name,
-    description,
-    facet: "props",
-    messages,
-    reported,
-  });
-}
+const propsRule = facetRules<PropsMessageId>("props", messages);
 
 export const props = propsRule(
   "props",

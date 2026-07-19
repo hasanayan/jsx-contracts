@@ -1,6 +1,6 @@
 import type { SubtreeMessageId } from "../contracts/evaluate-subtree.js";
 
-import { createFacetRule } from "./facet-rule.js";
+import { facetRules } from "./facet-rule.js";
 
 export type { SubtreeMessageId };
 
@@ -18,19 +18,7 @@ const messages = {
     "A <{{component}}> can contain at most {{max}} <{{name}}>.",
 } as const;
 
-function subtreeRule(
-  name: string,
-  description: string,
-  reported: ReadonlySet<SubtreeMessageId> | null,
-): ReturnType<typeof createFacetRule<SubtreeMessageId>> {
-  return createFacetRule<SubtreeMessageId>({
-    name,
-    description,
-    facet: "subtree",
-    messages,
-    reported,
-  });
-}
+const subtreeRule = facetRules<SubtreeMessageId>("subtree", messages);
 
 export const subtree = subtreeRule(
   "subtree",

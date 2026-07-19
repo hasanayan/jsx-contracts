@@ -4,7 +4,7 @@
 // ids. All thirteen rules are built here, from the same table and the same
 // per-element analysis — enabling all of them costs one analysis per file.
 
-import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
+import type { JSONSchema, TSESLint, TSESTree } from "@typescript-eslint/utils";
 import { ESLintUtils } from "@typescript-eslint/utils";
 
 import { createConditionPool } from "../contracts/condition.js";
@@ -63,6 +63,9 @@ interface NodeCache {
   placement?: Placement;
   subtreeRoot?: SubtreeElement;
   ancestors?: AncestorFact[];
+  // Keyed by interned condition id. Held here rather than per facet so a
+  // condition two facets' rows share is evaluated once for this element.
+  conditions: Map<number, boolean>;
 }
 
 const nodeCaches = new WeakMap<TSESTree.JSXElement, NodeCache>();
@@ -83,15 +86,13 @@ function elementFacts(
         filename,
         node.openingElement.name,
       ),
+      conditions: new Map(),
     };
 
     nodeCaches.set(node, cache);
   }
 
   const facts = cache;
-  // Conditions are interned by content, so this memo runs each distinct
-  // condition once per element however many rows share it.
-  const conditions = new Map<number, boolean>();
 
   return {
     name,
@@ -114,18 +115,20 @@ function elementFacts(
       (facts.subtreeRoot ??= collectSubtreeRoot(sourceCode, filename, node)),
     ancestors: () =>
       (facts.ancestors ??= collectAncestors(sourceCode, filename, node)),
+    // Conditions are interned by content, so each distinct condition is
+    // evaluated once per element however many rows — on however many facets —
+    // carry it.
     holds(conditionId): boolean {
-      let held = conditions.get(conditionId);
+      let held = facts.conditions.get(conditionId);
 
       if (held === undefined) {
         held = holdsAt(
           table.pool,
           conditionId,
-          facts.props ??
-            (facts.props = collectProps(sourceCode, node.openingElement)),
+          (facts.props ??= collectProps(sourceCode, node.openingElement)),
         );
 
-        conditions.set(conditionId, held);
+        facts.conditions.set(conditionId, held);
       }
 
       return held;
@@ -146,64 +149,70 @@ const memos: Record<
   ancestor: createNodeMemo(),
 };
 
+/** Builds one of a facet's rules: the shared pipeline, filtered to `reported`. */
+export type FacetRuleMaker<MessageId extends string> = (
+  name: string,
+  description: string,
+  reported: ReadonlySet<MessageId> | null,
+) => TSESLint.RuleModule<MessageId, [ContractRows]>;
+
 /**
- * One facet-feature rule: the shared pipeline, filtered to `reported`. A `null`
- * filter reports every one of the facet's message kinds — the parent rule.
+ * The rule maker for one facet. A `null` `reported` set reports every one of the
+ * facet's message kinds — the parent rule; a set of ids makes a granular
+ * variant, so a consumer can toggle or eslint-disable one feature.
  */
-export function createFacetRule<MessageId extends string>(spec: {
-  name: string;
-  description: string;
-  facet: Facet;
-  messages: Record<MessageId, string>;
-  reported: ReadonlySet<MessageId> | null;
-}): TSESLint.RuleModule<MessageId, [ContractRows]> {
-  const { facet, reported } = spec;
+export function facetRules<MessageId extends string>(
+  facet: Facet,
+  messages: Record<MessageId, string>,
+): FacetRuleMaker<MessageId> {
+  return (name, description, reported) =>
+    createRule<[ContractRows], MessageId>({
+      name,
+      meta: {
+        type: "problem",
+        docs: { description },
+        // The core types the schema structurally, since it may not import from
+        // @typescript-eslint; this is the one point where the two meet.
+        schema: contractRowsSchema as JSONSchema.JSONSchema4[],
+        messages,
+      },
+      defaultOptions: [[]],
+      create(context, [rawRows]) {
+        const rows = intern(rawRows);
 
-  return createRule<[ContractRows], MessageId>({
-    name: spec.name,
-    meta: {
-      type: "problem",
-      docs: { description: spec.description },
-      schema: contractRowsSchema,
-      messages: spec.messages,
-    },
-    defaultOptions: [[]],
-    create(context, [rawRows]) {
-      const rows = intern(rawRows);
+        validateContractRows(rows);
 
-      validateContractRows(rows);
+        const { sourceCode, filename } = context;
+        const table = tableFor(rows);
+        const index = table.facets[facet];
 
-      const { sourceCode, filename } = context;
-      const table = tableFor(rows);
-      const index = table.facets[facet];
+        return {
+          JSXElement(node): void {
+            const tag = tagName(node.openingElement.name);
 
-      return {
-        JSXElement(node): void {
-          const name = tagName(node.openingElement.name);
-
-          if (name === null || !index.names.has(name)) {
-            return;
-          }
-
-          const violations = memos[facet](node, rows, () =>
-            index.analyze(
-              elementFacts(sourceCode, filename, node, name, table),
-            ),
-          );
-
-          for (const violation of violations) {
-            const messageId = violation.messageId as MessageId;
-
-            if (reported === null || reported.has(messageId)) {
-              context.report({
-                node: violation.ref as TSESTree.Node,
-                messageId,
-                data: violation.data,
-              });
+            if (tag === null || !index.names.has(tag)) {
+              return;
             }
-          }
-        },
-      };
-    },
-  });
+
+            const violations = memos[facet](node, rows, () =>
+              index.analyze(
+                elementFacts(sourceCode, filename, node, tag, table),
+              ),
+            );
+
+            for (const violation of violations) {
+              const messageId = violation.messageId as MessageId;
+
+              if (reported === null || reported.has(messageId)) {
+                context.report({
+                  node: violation.ref as TSESTree.Node,
+                  messageId,
+                  data: violation.data,
+                });
+              }
+            }
+          },
+        };
+      },
+    });
 }

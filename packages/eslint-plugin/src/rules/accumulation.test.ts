@@ -207,6 +207,19 @@ const baseAndConditionalBans: ContractRows = [
   },
 ];
 
+// A descendant count that only applies to a compact widget. Activation is the
+// mask's business now, so a conditional `require` never reaches the evaluator
+// while its condition is false.
+const conditionalDescendantCount: ContractRows = [
+  {
+    facet: "subtree",
+    importPath: "@acme/ds",
+    component: "Widget",
+    when: { prop: "variant", values: ["compact"] },
+    require: [{ name: "Widget.Body", min: 1, max: 1 }],
+  },
+];
+
 ruleTester.run("subtree accumulation", subtree, {
   valid: [
     {
@@ -217,6 +230,26 @@ ruleTester.run("subtree accumulation", subtree, {
         const view = (
           <Widget>
             <Widget.Sidebar />
+          </Widget>
+        );
+      `,
+    },
+    {
+      name: "a conditional descendant count does not run while its condition is false",
+      options: [conditionalDescendantCount],
+      code: `
+        import { Widget } from "@acme/ds";
+        const view = <Widget />;
+      `,
+    },
+    {
+      name: "a conditional descendant count is satisfied while its condition holds",
+      options: [conditionalDescendantCount],
+      code: `
+        import { Widget } from "@acme/ds";
+        const view = (
+          <Widget variant="compact">
+            <Widget.Body />
           </Widget>
         );
       `,
@@ -252,6 +285,15 @@ ruleTester.run("subtree accumulation", subtree, {
         { messageId: "forbiddenDescendant" },
         { messageId: "forbiddenDescendant" },
       ],
+    },
+    {
+      name: "a conditional descendant count runs once its condition holds",
+      options: [conditionalDescendantCount],
+      code: `
+        import { Widget } from "@acme/ds";
+        const view = <Widget variant="compact" />;
+      `,
+      errors: [{ messageId: "tooFewDescendants" }],
     },
   ],
 });

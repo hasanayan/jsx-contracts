@@ -132,6 +132,14 @@ describe("validateContractRows", () => {
       }).not.toThrow();
     });
 
+    // Allowed slots intersect across rows, so an empty list is not the identity
+    // — it would empty the container's slot list and reject every child.
+    it("rejects an empty slots list", () => {
+      expect(() => {
+        validateContractRows(row({ slots: [] }));
+      }).toThrow("slots must not be empty");
+    });
+
     it("rejects a slot declared twice in one row", () => {
       expect(() => {
         validateContractRows(

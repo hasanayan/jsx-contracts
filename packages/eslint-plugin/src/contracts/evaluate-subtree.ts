@@ -4,7 +4,7 @@
 // every matching occurrence, branch-aware, across the whole subtree.
 //
 // Activation — the row's import gate and its when-condition — is decided by the
-// engine before this runs, so an inactive row is simply absent from the merge.
+// engine before this runs, so an inactive row is simply absent from the combination.
 
 import {
   allPairwiseCoexist,
@@ -78,15 +78,15 @@ interface PreparedRequire {
   matcher?: ImportMatcher;
 }
 
-/** One subtree row, prepared. Merged with the other active rows before use. */
+/** One subtree row, prepared. Combined with the other active rows before use. */
 export interface PreparedSubtreeRow {
   forbid: PreparedForbid[];
   forbidProps: string[];
   require: PreparedRequire[];
 }
 
-/** The effective subtree contract for one element: the merge of its active rows. */
-export interface MergedSubtree {
+/** The effective subtree contract for one element: the combination of its active rows. */
+export interface CombinedSubtree {
   component: string;
   forbid: PreparedForbid[];
   forbidProps: Set<string>;
@@ -147,10 +147,10 @@ export function prepareSubtreeRow(row: SubtreeRow): PreparedSubtreeRow {
  * twice, and a repeated `require` would tally its occurrences into two buckets.
  * Repeated bounds tighten, clamped so they cannot cross into unsatisfiable.
  */
-export function mergeSubtree(
+export function combineSubtree(
   component: string,
   rows: PreparedSubtreeRow[],
-): MergedSubtree {
+): CombinedSubtree {
   const forbid = new Map<string, PreparedForbid>();
   const forbidProps = new Set<string>();
   const require = new Map<string, PreparedRequire>();
@@ -203,7 +203,10 @@ function countWord(count: number): string {
   return count === 1 ? "one" : String(count);
 }
 
-function matchesForbid(node: SubtreeElement, prepared: MergedSubtree): boolean {
+function matchesForbid(
+  node: SubtreeElement,
+  prepared: CombinedSubtree,
+): boolean {
   if (node.name === "") {
     return false;
   }
@@ -218,7 +221,7 @@ function matchesForbid(node: SubtreeElement, prepared: MergedSubtree): boolean {
 
 function matchesForbidProps(
   node: SubtreeElement,
-  prepared: MergedSubtree,
+  prepared: CombinedSubtree,
 ): string | undefined {
   for (const prop of node.props) {
     if (prepared.forbidProps.has(prop.name) && prop.present) {
@@ -239,7 +242,7 @@ function matchesRequire(node: SubtreeElement, entry: PreparedRequire): boolean {
 }
 
 export function evaluateSubtree(
-  prepared: MergedSubtree,
+  prepared: CombinedSubtree,
   root: SubtreeElement,
 ): SubtreeViolation[] {
   const violations: SubtreeViolation[] = [];

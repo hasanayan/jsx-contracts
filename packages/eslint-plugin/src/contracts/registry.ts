@@ -1,6 +1,6 @@
 // The engine: one generic pipeline over rows, and a registry entry per facet.
 //
-//   group by (component, facet) → activation mask → merge → evaluate
+//   group by (component, facet) → activation mask → combine → evaluate
 //
 // Everything above the registry is generic. A fifth facet is a registry entry
 // plus a row arm in payload.ts — grouping, activation, caching and dispatch do
@@ -13,39 +13,39 @@ import type { ConditionPool } from "./condition.js";
 import { conditionHolds } from "./condition.js";
 import type {
   AncestorFact,
-  MergedAncestor,
+  CombinedAncestor,
   PreparedAncestorRow,
 } from "./evaluate-ancestor.js";
 import {
+  combineAncestor,
   evaluateAncestor,
-  mergeAncestor,
   prepareAncestorRow,
 } from "./evaluate-ancestor.js";
-import type { MergedProps, PreparedPropsRow } from "./evaluate-props.js";
+import type { CombinedProps, PreparedPropsRow } from "./evaluate-props.js";
 import {
+  combineProps,
   evaluateProps,
-  mergeProps,
   preparePropsRow,
 } from "./evaluate-props.js";
 import type {
-  MergedSlots,
+  CombinedSlots,
   Placement,
   PreparedSlotsRow,
 } from "./evaluate-slots.js";
 import {
+  combineSlots,
   evaluateSlots,
   isPlacedInContainer,
-  mergeSlots,
   prepareSlotsRow,
 } from "./evaluate-slots.js";
 import type {
-  MergedSubtree,
+  CombinedSubtree,
   PreparedSubtreeRow,
   SubtreeElement,
 } from "./evaluate-subtree.js";
 import {
+  combineSubtree,
   evaluateSubtree,
-  mergeSubtree,
   prepareSubtreeRow,
 } from "./evaluate-subtree.js";
 import type { ImportMatcher } from "./import-matcher.js";
@@ -95,30 +95,32 @@ interface PreparedEntry<Prepared> {
   condition: number | undefined;
 }
 
-interface Group<Prepared, Merged> {
+interface Group<Prepared, Combined> {
   component: string;
   entries: PreparedEntry<Prepared>[];
   // Keyed by which rows are active. A component has a handful of rows in
   // practice, so merging runs a bounded number of times per process rather than
-  // once per element. Merged values are immutable and shared across elements.
-  cache: Map<string, Merged>;
+  // once per element. A combined value is shared across every element with the
+  // same mask, so the combine functions must build a fresh result rather than
+  // mutate a row's prepared structures, and nothing downstream may write to one.
+  cache: Map<string, Combined>;
 }
 
-interface FacetSpec<Row extends ContractRow, Prepared, Merged> {
+interface FacetSpec<Row extends ContractRow, Prepared, Combined> {
   prepare: (row: Row) => Prepared;
-  merge: (component: string, rows: Prepared[]) => Merged;
-  evaluate: (merged: Merged, element: ElementFacts) => Violation<string>[];
+  combine: (component: string, rows: Prepared[]) => Combined;
+  evaluate: (combined: Combined, element: ElementFacts) => Violation<string>[];
 }
 
 // The whole typed pipeline lives inside this generic function, so the table can
 // hold the four facets' indexes side by side without erasing their types.
-function buildIndex<Row extends ContractRow, Prepared, Merged>(
+function buildIndex<Row extends ContractRow, Prepared, Combined>(
   facet: Facet,
   rows: ContractRows,
   pool: ConditionPool,
-  spec: FacetSpec<Row, Prepared, Merged>,
+  spec: FacetSpec<Row, Prepared, Combined>,
 ): FacetIndex {
-  const groups = new Map<string, Group<Prepared, Merged>>();
+  const groups = new Map<string, Group<Prepared, Combined>>();
 
   for (const row of rows) {
     if (row.facet !== facet) {
@@ -152,7 +154,7 @@ function buildIndex<Row extends ContractRow, Prepared, Merged>(
         return [];
       }
 
-      // Activation is gate ∧ condition. The mask keys the merge cache; where no
+      // Activation is gate ∧ condition. The mask keys the combine cache; where no
       // row is conditional it is constant, and `holds` — and with it prop
       // collection — is never reached.
       let mask = "";
@@ -175,20 +177,20 @@ function buildIndex<Row extends ContractRow, Prepared, Merged>(
         return [];
       }
 
-      let merged = group.cache.get(mask);
+      let combined = group.cache.get(mask);
 
-      if (merged === undefined) {
-        merged = spec.merge(group.component, active);
-        group.cache.set(mask, merged);
+      if (combined === undefined) {
+        combined = spec.combine(group.component, active);
+        group.cache.set(mask, combined);
       }
 
-      return spec.evaluate(merged, element);
+      return spec.evaluate(combined, element);
     },
   };
 }
 
 // Where a slot may be placed. Unlike every other check this one fires on the
-// *slot*, not on the component the row names, so it cannot be a merged config:
+// *slot*, not on the component the row names, so it cannot be a combined config:
 // the container element is not in hand, and its props — and so its rows'
 // conditions — cannot be read. The index therefore spans every slots row whose
 // gate the slot passes, conditional ones included. That is the conservative
@@ -200,15 +202,15 @@ interface SlotPlacement {
 }
 
 function buildSlotsIndex(rows: ContractRows, pool: ConditionPool): FacetIndex {
-  const containers = buildIndex<SlotsRowType, PreparedSlotsRow, MergedSlots>(
+  const containers = buildIndex<SlotsRowType, PreparedSlotsRow, CombinedSlots>(
     "slots",
     rows,
     pool,
     {
       prepare: prepareSlotsRow,
-      merge: mergeSlots,
-      evaluate: (merged, element) =>
-        evaluateSlots(merged, element.slotsRoot(), element.openingRef),
+      combine: combineSlots,
+      evaluate: (combined, element) =>
+        evaluateSlots(combined, element.slotsRoot(), element.openingRef),
     },
   );
 
@@ -297,27 +299,27 @@ export function prepareTable(
     pool,
     facets: {
       slots: buildSlotsIndex(rows, pool),
-      subtree: buildIndex<SubtreeRowType, PreparedSubtreeRow, MergedSubtree>(
+      subtree: buildIndex<SubtreeRowType, PreparedSubtreeRow, CombinedSubtree>(
         "subtree",
         rows,
         pool,
         {
           prepare: prepareSubtreeRow,
-          merge: mergeSubtree,
-          evaluate: (merged, element) =>
-            evaluateSubtree(merged, element.subtreeRoot()),
+          combine: combineSubtree,
+          evaluate: (combined, element) =>
+            evaluateSubtree(combined, element.subtreeRoot()),
         },
       ),
-      props: buildIndex<PropsRowType, PreparedPropsRow, MergedProps>(
+      props: buildIndex<PropsRowType, PreparedPropsRow, CombinedProps>(
         "props",
         rows,
         pool,
         {
           prepare: preparePropsRow,
-          merge: mergeProps,
-          evaluate: (merged, element) =>
+          combine: combineProps,
+          evaluate: (combined, element) =>
             evaluateProps(
-              merged,
+              combined,
               element.props(),
               element.hasSpread(),
               element.openingRef,
@@ -327,12 +329,12 @@ export function prepareTable(
       ancestor: buildIndex<
         AncestorRowType,
         PreparedAncestorRow,
-        MergedAncestor
+        CombinedAncestor
       >("ancestor", rows, pool, {
         prepare: prepareAncestorRow,
-        merge: mergeAncestor,
-        evaluate: (merged, element) =>
-          evaluateAncestor(merged, element.ancestors(), element.openingRef),
+        combine: combineAncestor,
+        evaluate: (combined, element) =>
+          evaluateAncestor(combined, element.ancestors(), element.openingRef),
       }),
     },
   };

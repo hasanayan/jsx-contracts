@@ -1,6 +1,6 @@
 import type { SlotsMessageId } from "../contracts/evaluate-slots.js";
 
-import { createFacetRule } from "./facet-rule.js";
+import { facetRules } from "./facet-rule.js";
 
 export type { SlotsMessageId };
 
@@ -17,19 +17,7 @@ const messages = {
     "The children of <{{container}}> must be statically analyzable.",
 } as const;
 
-function slotsRule(
-  name: string,
-  description: string,
-  reported: ReadonlySet<SlotsMessageId> | null,
-): ReturnType<typeof createFacetRule<SlotsMessageId>> {
-  return createFacetRule<SlotsMessageId>({
-    name,
-    description,
-    facet: "slots",
-    messages,
-    reported,
-  });
-}
+const slotsRule = facetRules<SlotsMessageId>("slots", messages);
 
 export const slots = slotsRule(
   "slots",
