@@ -208,7 +208,7 @@ describe("evaluateSlots count bounds", () => {
 });
 
 describe("prepareContainer count defaults", () => {
-  function boundsOf(slot: SlotsRow["slots"][number]): {
+  function boundsOf(slot: NonNullable<SlotsRow["slots"]>[number]): {
     minCount: number;
     maxCount: number;
   } {
@@ -220,7 +220,7 @@ describe("prepareContainer count defaults", () => {
     });
 
     const name = typeof slot === "string" ? slot : slot.name;
-    const preparedSlot = prepared.slots.get(name);
+    const preparedSlot = prepared.slots?.get(name);
 
     return {
       minCount: preparedSlot?.minCount ?? Number.NaN,
@@ -263,7 +263,9 @@ describe("slots row compilation", () => {
       slots: ["A", "B", "C"],
     });
 
-    expect([...prepared.slots.keys()]).toEqual(["A", "B", "C"]);
+    const names = [...(prepared.slots ?? [])].map(([name]) => name);
+
+    expect(names).toEqual(["A", "B", "C"]);
     expect(prepared.slotList).toBe("<A>, <B> and <C>");
   });
 
@@ -276,11 +278,11 @@ describe("slots row compilation", () => {
     });
 
     // The own-gated slot rejects the container's module and accepts its own.
-    expect(prepared.slots.get("Own")?.matcher("~/widget")).toBe(false);
-    expect(prepared.slots.get("Own")?.matcher("~/chip")).toBe(true);
+    expect(prepared.slots?.get("Own")?.matcher("~/widget")).toBe(false);
+    expect(prepared.slots?.get("Own")?.matcher("~/chip")).toBe(true);
     // The inherited slot falls back to the container's gate.
-    expect(prepared.slots.get("Inherited")?.matcher("~/widget")).toBe(true);
-    expect(prepared.slots.get("Inherited")?.matcher("~/chip")).toBe(false);
+    expect(prepared.slots?.get("Inherited")?.matcher("~/widget")).toBe(true);
+    expect(prepared.slots?.get("Inherited")?.matcher("~/chip")).toBe(false);
   });
 
   // Absent keys are the merge's identity, not empty values, so a row that

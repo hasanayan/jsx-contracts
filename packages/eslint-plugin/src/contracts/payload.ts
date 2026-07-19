@@ -73,8 +73,13 @@ interface RowBase {
 /** One statement about a container's direct children. */
 export interface SlotsRow extends RowBase {
   facet: "slots";
-  /** Accepted slots; a bare string is shorthand for `{ name }`. */
-  slots: (string | SlotConfig)[];
+  /**
+   * Accepted slots; a bare string is shorthand for `{ name }`. Absent is the
+   * identity, not an empty list: the row says nothing about which children are
+   * allowed and sits out the intersection, so a row that only turns strictness
+   * on does not narrow another row's slots to nothing.
+   */
+  slots?: (string | SlotConfig)[];
   /** Slot → a slot that must co-render with it. */
   requires?: Record<string, string>;
   /** Pairs of slot groups that may not co-render. */

@@ -93,37 +93,33 @@ export const contractRowsSchema: JsonSchema[] = [
     type: "array",
     items: {
       oneOf: [
-        rowArm(
-          "slots",
-          {
-            slots: {
-              type: "array",
-              items: {
-                oneOf: [
-                  { type: "string" },
-                  {
-                    type: "object",
-                    properties: {
-                      name: { type: "string" },
-                      minCount: { type: "integer", minimum: 0 },
-                      maxCount: { type: "integer", minimum: 1 },
-                      importPath: { type: "string" },
-                    },
-                    required: ["name"],
-                    additionalProperties: false,
+        rowArm("slots", {
+          slots: {
+            type: "array",
+            items: {
+              oneOf: [
+                { type: "string" },
+                {
+                  type: "object",
+                  properties: {
+                    name: { type: "string" },
+                    minCount: { type: "integer", minimum: 0 },
+                    maxCount: { type: "integer", minimum: 1 },
+                    importPath: { type: "string" },
                   },
-                ],
-              },
+                  required: ["name"],
+                  additionalProperties: false,
+                },
+              ],
             },
-            requires: {
-              type: "object",
-              additionalProperties: { type: "string" },
-            },
-            exclusive: groupPairs,
-            strict: { type: "boolean" },
           },
-          ["slots"],
-        ),
+          requires: {
+            type: "object",
+            additionalProperties: { type: "string" },
+          },
+          exclusive: groupPairs,
+          strict: { type: "boolean" },
+        }),
         rowArm("subtree", {
           forbid: { type: "array", items: forbiddenElement },
           forbidProps: { type: "array", items: { type: "string" } },

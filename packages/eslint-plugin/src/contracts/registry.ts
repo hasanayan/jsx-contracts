@@ -223,7 +223,7 @@ function buildSlotsIndex(rows: ContractRows, pool: ConditionPool): FacetIndex {
 
     const containerMatcher = createImportMatcher(row.importPath);
 
-    for (const rawSlot of row.slots) {
+    for (const rawSlot of row.slots ?? []) {
       const slot = normalizeSlot(rawSlot);
       const entries = placements.get(slot.name) ?? [];
 

@@ -40,7 +40,9 @@ export interface PreparedSlot {
 
 /** One slots row, prepared. Combined with the other active rows before use. */
 export interface PreparedSlotsRow {
-  slots: Map<string, PreparedSlot>;
+  // `undefined` when the row declares no slots: it says nothing about which
+  // children are allowed, so it sits out the intersection.
+  slots: Map<string, PreparedSlot> | undefined;
   requires: Record<string, string> | undefined;
   exclusive: [string[], string[]][] | undefined;
   strict: boolean | undefined;
@@ -49,7 +51,10 @@ export interface PreparedSlotsRow {
 /** The effective children contract for one element: the combination of its active rows. */
 export interface CombinedSlots {
   container: string;
-  slots: Map<string, PreparedSlot>;
+  // `undefined` when no active row declared a slot list. That is not the same
+  // as an empty one: nothing is an invalid child, because nothing said what a
+  // valid child is.
+  slots: Map<string, PreparedSlot> | undefined;
   slotList: string;
   // A slot may require more than one other slot once rows accumulate, so the
   // combined form is a list where a single row's payload holds one name.
@@ -62,14 +67,15 @@ export interface CombinedSlots {
 // the upper bound; only maxCount keeps a lower bound of zero.
 export function prepareSlotsRow(row: SlotsRow): PreparedSlotsRow {
   const containerMatcher = createImportMatcher(row.importPath);
-  const slots = new Map<string, PreparedSlot>();
+  const slots =
+    row.slots === undefined ? undefined : new Map<string, PreparedSlot>();
 
-  for (const rawSlot of row.slots) {
+  for (const rawSlot of row.slots ?? []) {
     const slot = normalizeSlot(rawSlot);
     const maxCount =
       slot.maxCount ?? (slot.minCount !== undefined ? Infinity : 1);
 
-    slots.set(slot.name, {
+    slots?.set(slot.name, {
       name: slot.name,
       minCount: slot.minCount ?? 0,
       maxCount,
@@ -96,19 +102,27 @@ function bothGates(a: ImportMatcher, b: ImportMatcher): ImportMatcher {
 /**
  * Combine the rows active on one element into one effective contract.
  *
- * Allowed slots are the **intersection** across rows — a conditional row that
- * lists fewer slots narrows what the container accepts. Bounds are the tightest
- * among the rows that still allow the slot; everything else unions. The result
- * is always satisfiable: a slot required by one row but intersected away by
- * another is simply neither allowed nor required, and a cross-slot reference to
- * a slot that did not survive is dropped rather than left unmeetable.
+ * Allowed slots are the **intersection** across the rows that declare any — a
+ * conditional row listing fewer slots narrows what the container accepts, while
+ * a row that declares none (one that only turns strictness on, say) is the
+ * identity and leaves the list alone. Bounds are the tightest among the rows
+ * that still allow the slot; everything else unions. The result is always
+ * satisfiable: a slot required by one row but intersected away by another is
+ * simply neither allowed nor required, and a cross-slot reference to a slot
+ * that did not survive is dropped rather than left unmeetable.
  */
 export function combineSlots(
   container: string,
   rows: PreparedSlotsRow[],
 ): CombinedSlots {
-  const [first, ...rest] = rows;
-  const slots = new Map<string, PreparedSlot>();
+  const declaring = rows.filter(
+    (row): row is PreparedSlotsRow & { slots: Map<string, PreparedSlot> } =>
+      row.slots !== undefined,
+  );
+
+  const [first, ...rest] = declaring;
+  const slots =
+    first === undefined ? undefined : new Map<string, PreparedSlot>();
 
   for (const [name, slot] of first?.slots ?? []) {
     let combined = slot;
@@ -133,7 +147,7 @@ export function combineSlots(
     if (!dropped) {
       // Tightening from both ends can cross the bounds over; clamping the
       // lower one keeps the combination total rather than unsatisfiable.
-      slots.set(name, {
+      slots?.set(name, {
         ...combined,
         minCount: Math.min(combined.minCount, combined.maxCount),
       });
@@ -146,7 +160,7 @@ export function combineSlots(
     for (const [from, to] of Object.entries(row.requires ?? {})) {
       // A reference whose target the intersection removed would be
       // unsatisfiable; drop it instead.
-      if (!slots.has(from) || !slots.has(to)) {
+      if (slots === undefined || !slots.has(from) || !slots.has(to)) {
         continue;
       }
 
@@ -176,7 +190,7 @@ export function combineSlots(
   return {
     container,
     slots,
-    slotList: formatList([...slots.keys()].map((name) => `<${name}>`)),
+    slotList: formatList([...(slots?.keys() ?? [])].map((name) => `<${name}>`)),
     requires,
     exclusive,
     strict: rows.some((row) => row.strict === true),
@@ -298,6 +312,28 @@ export function evaluateSlots(
   const { container, slots, slotList } = prepared;
   const violations: SlotsViolation[] = [];
 
+  const reportUnresolvable = (): void => {
+    for (const unknownRef of root.unknownRefs) {
+      violations.push({
+        ref: unknownRef,
+        messageId: "unresolvableChild",
+        data: { container },
+      });
+    }
+  };
+
+  // No active row declared a slot list, so nothing here is an invalid child —
+  // nothing said what a valid one is — and the count and cross-slot checks have
+  // no slot to attach to. Strictness is independent of the list, so a row that
+  // only turned it on still applies.
+  if (slots === undefined) {
+    if (prepared.strict) {
+      reportUnresolvable();
+    }
+
+    return violations;
+  }
+
   const hasUnknownContent = root.unknownRefs.length > 0;
 
   const found: { name: string; maxCount: number; element: RenderedNode }[] = [];
@@ -387,13 +423,7 @@ export function evaluateSlots(
   }
 
   if (prepared.strict) {
-    for (const unknownRef of root.unknownRefs) {
-      violations.push({
-        ref: unknownRef,
-        messageId: "unresolvableChild",
-        data: { container },
-      });
-    }
+    reportUnresolvable();
   } else if (hasUnknownContent) {
     // Unknown content leaves presence checks unprovable, so skip them.
     return violations;

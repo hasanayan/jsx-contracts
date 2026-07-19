@@ -133,11 +133,37 @@ describe("validateContractRows", () => {
     });
 
     // Allowed slots intersect across rows, so an empty list is not the identity
-    // — it would empty the container's slot list and reject every child.
+    // — it would empty the container's slot list and reject every child. An
+    // absent list is the identity, and is how a row says nothing about slots.
     it("rejects an empty slots list", () => {
       expect(() => {
         validateContractRows(row({ slots: [] }));
       }).toThrow("slots must not be empty");
+    });
+
+    it("accepts a row that declares no slots but turns strictness on", () => {
+      expect(() => {
+        validateContractRows([
+          {
+            facet: "slots",
+            importPath: "@acme/ds",
+            component: "Widget.Tray",
+            strict: true,
+          },
+        ]);
+      }).not.toThrow();
+    });
+
+    it("rejects a row that says nothing about the children facet at all", () => {
+      expect(() => {
+        validateContractRows([
+          {
+            facet: "slots",
+            importPath: "@acme/ds",
+            component: "Widget.Tray",
+          },
+        ]);
+      }).toThrow("must declare slots, a cross-slot rule, or strictness");
     });
 
     it("rejects a slot declared twice in one row", () => {

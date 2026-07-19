@@ -73,17 +73,25 @@ function validateWhen(row: ContractRow, fail: Fail): void {
 }
 
 function validateSlotsRow(row: SlotsRow, fail: Fail): void {
-  // Allowed slots are the intersection across active rows, so a row declaring
-  // none is not the identity — it would empty the container's slot list and
-  // reject every child. A row that has nothing to say about slots is a row that
-  // should not be in the table.
-  if (row.slots.length === 0) {
+  // An *absent* `slots` is the identity — a row may legitimately do nothing but
+  // turn strictness on. An *empty* one is a mistake with teeth: allowed slots
+  // intersect, so it would empty the container's list and reject every child.
+  if (row.slots?.length === 0) {
     fail("slots must not be empty");
+  }
+
+  if (
+    row.slots === undefined &&
+    row.requires === undefined &&
+    row.exclusive === undefined &&
+    row.strict === undefined
+  ) {
+    fail("must declare slots, a cross-slot rule, or strictness");
   }
 
   const slots = new Set<string>();
 
-  for (const rawSlot of row.slots) {
+  for (const rawSlot of row.slots ?? []) {
     const slot = normalizeSlot(rawSlot);
 
     // Within one row a repeated slot name is still ill-formed: the prepared

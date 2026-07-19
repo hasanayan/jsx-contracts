@@ -77,6 +77,25 @@ const bothGatesMatch: ContractRows = [
   },
 ];
 
+// A base row declaring the slots, and a conditional row that only turns
+// strictness on. The strict row declares no slots, so it is the identity for
+// the intersection rather than an empty list that would reject every child.
+const conditionalStrictness: ContractRows = [
+  {
+    facet: "slots",
+    importPath: "@acme/ds",
+    component: "Widget.Tray",
+    slots: ["Widget.Tray.Title"],
+  },
+  {
+    facet: "slots",
+    importPath: "@acme/ds",
+    component: "Widget.Tray",
+    when: { prop: "dense" },
+    strict: true,
+  },
+];
+
 ruleTester.run("slots accumulation", slots, {
   valid: [
     {
@@ -113,6 +132,29 @@ ruleTester.run("slots accumulation", slots, {
             <span>anything at all</span>
           </Widget.Tray>
         );
+      `,
+    },
+    {
+      // The strict row declares no slots. If that were read as an empty list
+      // rather than as the identity, <Title> would be intersected away and
+      // reported as an invalid child.
+      name: "a strict-only row leaves the base row's slot list alone",
+      options: [conditionalStrictness],
+      code: `
+        import { Widget } from "@acme/ds";
+        const tray = (
+          <Widget.Tray dense>
+            <Widget.Tray.Title>Deploys</Widget.Tray.Title>
+          </Widget.Tray>
+        );
+      `,
+    },
+    {
+      name: "strictness is off while the row that turns it on is inactive",
+      options: [conditionalStrictness],
+      code: `
+        import { Widget } from "@acme/ds";
+        const tray = <Widget.Tray>{renderTitle()}</Widget.Tray>;
       `,
     },
   ],
@@ -183,6 +225,15 @@ ruleTester.run("slots accumulation", slots, {
           data: { container: "Widget.Tray", slots: "<Widget.Tray.Title>" },
         },
       ],
+    },
+    {
+      name: "a conditional strict-only row turns strictness on once active",
+      options: [conditionalStrictness],
+      code: `
+        import { Widget } from "@acme/ds";
+        const tray = <Widget.Tray dense>{renderTitle()}</Widget.Tray>;
+      `,
+      errors: [{ messageId: "unresolvableChild" }],
     },
   ],
 });

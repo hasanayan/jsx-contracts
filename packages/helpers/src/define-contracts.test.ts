@@ -137,7 +137,7 @@ describe("defineContracts compilation", () => {
 
     // The compiler only ever emits the object slot form; the string arm of the
     // wire shape is for hand-written payloads.
-    const emitted = tray?.slots.filter((slot) => typeof slot !== "string");
+    const emitted = tray?.slots?.filter((slot) => typeof slot !== "string");
     const label = emitted?.find((slot) => slot.name === "Widget.Tray.Label");
     const icon = emitted?.find((slot) => slot.name === "Global.Icon");
 
