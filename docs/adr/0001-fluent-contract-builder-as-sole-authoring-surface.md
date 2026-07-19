@@ -135,10 +135,15 @@ authoring side, at build time, where the trees are visible.
 
 Every builder is already a compiled contract.
 
-|                                          |                                                                                                         |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `.rules(severity?)`                      | One flat-config entry per facet feature. `"error"`, or per-facet `{ slots, subtree, props, ancestor }`. |
-| `.slots` `.subtree` `.props` `.ancestor` | The raw payloads.                                                                                       |
+|                     |                                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------------------------- |
+| `.rules(severity?)` | One flat-config entry per facet feature. `"error"`, or per-facet `{ slots, subtree, props, ancestor }`. |
+| `.rows`             | The rule table. One accessor, because the table is the payload.                                         |
+
+A facet's rows are `rows.filter((row) => row.facet === "slots")` at the call
+site; four accessors returning filtered views would be typed over rows rather
+than over the per-facet configs they used to yield, so the names would survive
+while their meaning changed.
 
 ## Chaining
 
