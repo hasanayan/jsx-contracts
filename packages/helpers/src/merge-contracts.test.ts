@@ -17,6 +17,14 @@ const rowsFor = <F extends ContractRow["facet"]>(
   );
 
 describe("mergeContracts", () => {
+  // The three refusal cases differ in what they feed the merge, not in what
+  // comes back — so the message is asserted whole, once, from here.
+  const coveredTwice = new Error(
+    'mergeContracts: component "Widget.Tray" is covered by two contracts. ' +
+      "Declare everything about a component in one chain — separate " +
+      "contracts for one component narrow each other to nothing.",
+  );
+
   const widget = contract("Widget.Tray", "g")
     .hasSlot(".Action")
     .when("open")
@@ -77,18 +85,14 @@ describe("mergeContracts", () => {
 
     // Merged, the two slot rows would intersect to nothing and neither slot
     // would be allowed — so the merge is refused instead.
-    expect(() => mergeContracts(trayTitle, trayAction)).toThrow(
-      'mergeContracts: component "Widget.Tray" is covered by two contracts',
-    );
+    expect(() => mergeContracts(trayTitle, trayAction)).toThrow(coveredTwice);
   });
 
   it("rejects two contracts covering one component on different facets", () => {
     const traySlots = contract("Widget.Tray", "g").hasSlot(".Title");
     const trayAncestor = contract("Widget.Tray", "g").notInside("Button");
 
-    expect(() => mergeContracts(traySlots, trayAncestor)).toThrow(
-      'component "Widget.Tray"',
-    );
+    expect(() => mergeContracts(traySlots, trayAncestor)).toThrow(coveredTwice);
   });
 
   it("rejects two contracts covering one component under different gates", () => {
@@ -98,9 +102,7 @@ describe("mergeContracts", () => {
 
     const glob = contract("Widget.Tray", "*/ds").hasSlot(".Action");
 
-    expect(() => mergeContracts(specific, glob)).toThrow(
-      'component "Widget.Tray"',
-    );
+    expect(() => mergeContracts(specific, glob)).toThrow(coveredTwice);
   });
 
   it("allows one chain to declare several slots for one component", () => {

@@ -270,54 +270,87 @@ describe("ancestor compilation", () => {
 
 // The type-state rejects each of these, so every subject below defeats it with
 // a cast: the guards are what an untyped (checkJs) caller still meets.
+//
+// Every message is asserted whole, because the message *is* the feature here:
+// an author only ever reaches these through the builder, so each one has to
+// name the method they wrote and nothing they did not.
 describe("compilation-time validation", () => {
   it("rejects a component with no import gate", () => {
     expect(
       () =>
         contract("Widget", undefined as unknown as string).hasSlot(".Action")
           .rows,
-    ).toThrow(/no import gate/);
+    ).toThrow(
+      new Error(
+        'contract: component "Widget" has no import gate ' +
+          "(pass one to contractsFor()).",
+      ),
+    );
   });
 
-  it("rejects an empty `is`", () => {
+  it("rejects a when() with an empty value list", () => {
     expect(
       () =>
         contract("Widget", "g")
           .when("size", [] as never)
           .forbidDescendants("button").rows,
-    ).toThrow(/empty `is`/);
+    ).toThrow(
+      new Error(
+        'contract: component "Widget" has an empty value list in ' +
+          'when("size").',
+      ),
+    );
   });
 
-  it("rejects an empty `forbid`", () => {
+  it("rejects a forbidDescendants() naming no elements", () => {
     expect(
       () =>
         contract("Widget", "g")
           .when("size")
           .forbidDescendants(...([] as unknown as [string])).rows,
-    ).toThrow(/empty `forbid`/);
+    ).toThrow(
+      new Error(
+        'contract: component "Widget" calls forbidDescendants() with no ' +
+          'elements under when("size").',
+      ),
+    );
   });
 
-  it("rejects an empty `forbidProps`", () => {
+  it("rejects a forbidDescendantProps() naming no props", () => {
     expect(
       () =>
         contract("Widget", "g")
           .when("size")
           .forbidDescendantProps(...([] as unknown as [string])).rows,
-    ).toThrow(/empty `forbidProps`/);
+    ).toThrow(
+      new Error(
+        'contract: component "Widget" calls forbidDescendantProps() with no ' +
+          'props under when("size").',
+      ),
+    );
   });
 
-  it("rejects an empty required prop group", () => {
+  it("rejects a requiresAnyProp() naming no props", () => {
     expect(
       () =>
         contract("Widget", "g").requiresAnyProp(
           ...([] as unknown as [string, string]),
         ).rows,
-    ).toThrow(/empty required prop group/);
+    ).toThrow(
+      new Error(
+        'contract: component "Widget" calls requiresAnyProp() with no props.',
+      ),
+    );
   });
 
-  it("rejects an empty exclusive prop group", () => {
+  it("rejects an exclusiveProps() group with no props", () => {
     expect(
       () => contract("Widget", "g").exclusiveProps(["href"], [] as never).rows,
-    ).toThrow(/empty exclusive prop group/);
+    ).toThrow(
+      new Error(
+        'contract: component "Widget" calls exclusiveProps() with an empty ' +
+          "group.",
+      ),
+    );
   });
 });

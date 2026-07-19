@@ -165,22 +165,22 @@ export function compile(
       for (const [prop, ban] of Object.entries(entry.subtree)) {
         if (ban.is?.length === 0) {
           throw new Error(
-            `contract: component "${component}" subtree ban on prop ` +
-              `"${prop}" has an empty \`is\`.`,
+            `contract: component "${component}" has an empty value list in ` +
+              `when("${prop}").`,
           );
         }
 
         if (ban.forbid?.length === 0) {
           throw new Error(
-            `contract: component "${component}" subtree ban on prop ` +
-              `"${prop}" has an empty \`forbid\`.`,
+            `contract: component "${component}" calls forbidDescendants() ` +
+              `with no elements under when("${prop}").`,
           );
         }
 
         if (ban.forbidProps?.length === 0) {
           throw new Error(
-            `contract: component "${component}" subtree ban on prop ` +
-              `"${prop}" has an empty \`forbidProps\`.`,
+            `contract: component "${component}" calls ` +
+              `forbidDescendantProps() with no props under when("${prop}").`,
           );
         }
 
@@ -245,8 +245,8 @@ export function compile(
 
         if (requirement.length === 0) {
           throw new Error(
-            `contract: component "${component}" has an empty required ` +
-              "prop group.",
+            `contract: component "${component}" calls requiresAnyProp() ` +
+              "with no props.",
           );
         }
 
@@ -260,8 +260,8 @@ export function compile(
       propsRow.exclusive = entry.props.exclusive.map(([groupA, groupB]) => {
         if (groupA.length === 0 || groupB.length === 0) {
           throw new Error(
-            `contract: component "${component}" has an empty ` +
-              "exclusive prop group.",
+            `contract: component "${component}" calls exclusiveProps() ` +
+              "with an empty group.",
           );
         }
 

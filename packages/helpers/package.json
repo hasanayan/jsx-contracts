@@ -3,7 +3,7 @@
   "version": "0.0.9",
   "type": "module",
   "license": "MIT",
-  "description": "Type-safe authoring helpers for JSX composition contracts — defineContracts, contractsFor, and the fluent contract() builder that compile to the rule table the @jsx-contracts/eslint-plugin rules consume.",
+  "description": "Type-safe authoring helpers for JSX composition contracts — contractsFor and the fluent contract() builder that compile to the rule table the @jsx-contracts/eslint-plugin rules consume.",
   "keywords": [
     "jsx",
     "react",

@@ -351,8 +351,8 @@ function makeBuilder(
 
       if (entry.requires?.[slot] !== undefined) {
         throw new Error(
-          `contract: component "${component}" already has a slotRequires for ` +
-            `slot "${slot}".`,
+          `contract: component "${component}" already has a slotRequires() ` +
+            `for slot "${slot}".`,
         );
       }
 
@@ -380,8 +380,8 @@ function makeBuilder(
     when(prop, is): PendingBan<string> {
       if (entry.subtree?.[prop] !== undefined) {
         throw new Error(
-          `contract: component "${component}" already has a subtree ban on ` +
-            `prop "${prop}".`,
+          `contract: component "${component}" already has a subtree ban ` +
+            `from when("${prop}").`,
         );
       }
 

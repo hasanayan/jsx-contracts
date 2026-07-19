@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ContractRow, ContractRows } from "@jsx-contracts/eslint-plugin";
 
+import type { PartName } from "./component-names.js";
 import type { ContractBuilder } from "./contract-builder.js";
 import { contract } from "./contract-builder.js";
 import { contractsFor } from "./contracts-for.js";
@@ -84,14 +85,18 @@ describe("contract builder", () => {
     const built = contract("Widget", "g").deprecatesProp("color");
 
     expect(() => built.deprecatesProp("color")).toThrow(
-      "already deprecates prop",
+      new Error(
+        'contract: component "Widget" already deprecates prop "color".',
+      ),
     );
   });
 
   it("rejects deprecating the component twice", () => {
     const built = contract("Widget", "g").deprecated();
 
-    expect(() => built.deprecated()).toThrow("is already deprecated");
+    expect(() => built.deprecated()).toThrow(
+      new Error('contract: component "Widget" is already deprecated.'),
+    );
   });
 
   it("is immutable: chaining does not change earlier builders", () => {
@@ -119,7 +124,10 @@ describe("contract builder", () => {
     const loose = contract("W", "g").hasSlot(".A") as ContractBuilder<string>;
 
     expect(() => loose.slotRequires(".A", ".B")).toThrow(
-      'references slot ".B"',
+      new Error(
+        'contract: component "W" references slot ".B" before declaring it ' +
+          "in hasSlot().",
+      ),
     );
   });
 
@@ -127,7 +135,10 @@ describe("contract builder", () => {
     const loose = contract("W", "g").hasSlot(".A") as ContractBuilder<string>;
 
     expect(() => loose.exclusiveSlots([".A"], [".B"])).toThrow(
-      'references slot ".B"',
+      new Error(
+        'contract: component "W" references slot ".B" before declaring it ' +
+          "in hasSlot().",
+      ),
     );
   });
 
@@ -135,7 +146,10 @@ describe("contract builder", () => {
     const loose = contract("W", "g") as ContractBuilder<string>;
 
     expect(() => loose.slotRequires(".A", ".B")).toThrow(
-      'references slot ".A"',
+      new Error(
+        'contract: component "W" references slot ".A" before declaring it ' +
+          "in hasSlot().",
+      ),
     );
   });
 
@@ -147,7 +161,37 @@ describe("contract builder", () => {
       .slotRequires(".A", ".B");
 
     expect(() => built.slotRequires(".A", ".C")).toThrow(
-      "already has a slotRequires",
+      new Error(
+        'contract: component "W" already has a slotRequires() for slot ".A".',
+      ),
+    );
+  });
+
+  it("rejects a forbid with no ban open, naming the method that opens one", () => {
+    // The type-state offers `forbidDescendants` only on a ban builder, so this
+    // is what an untyped caller meets.
+    const loose = contract("W", "g") as ContractBuilder<string> & {
+      forbidDescendants: (...elements: string[]) => unknown;
+    };
+
+    expect(() => loose.forbidDescendants("X")).toThrow(
+      new Error(
+        'contract: component "W" has no active subtree ban — start one ' +
+          "with when().",
+      ),
+    );
+  });
+
+  it("rejects a count bound with nothing to bound, naming the declarations", () => {
+    const loose = contract("W", "g") as ContractBuilder<string> & {
+      atLeast: (count: number) => unknown;
+    };
+
+    expect(() => loose.atLeast(1)).toThrow(
+      new Error(
+        'contract: component "W" has no slot or descendant to bound — ' +
+          "declare one with hasSlot() or hasDescendant().",
+      ),
     );
   });
 
@@ -156,7 +200,12 @@ describe("contract builder", () => {
       .when("variant", ["compact"])
       .forbidDescendants("X");
 
-    expect(() => built.when("variant")).toThrow("already has a subtree ban");
+    expect(() => built.when("variant")).toThrow(
+      new Error(
+        'contract: component "W" already has a subtree ban from ' +
+          'when("variant").',
+      ),
+    );
   });
 
   describe("hasSlot", () => {
@@ -203,7 +252,7 @@ describe("contract builder", () => {
 
     it("rejects declaring the same slot twice", () => {
       expect(() => contract("W", "g").hasSlot(".A").hasSlot(".A")).toThrow(
-        'declares slot ".A" twice',
+        new Error('contract: component "W" declares slot ".A" twice.'),
       );
     });
   });
@@ -253,7 +302,11 @@ describe("contract builder", () => {
         contract("Tabs.Root", "@acme/tabs")
           .hasDescendant(".List")
           .hasDescendant(".List"),
-      ).toThrow('declares descendant ".List" twice');
+      ).toThrow(
+        new Error(
+          'contract: component "Tabs.Root" declares descendant ".List" twice.',
+        ),
+      );
     });
   });
 
@@ -288,13 +341,21 @@ describe("contract builder", () => {
     it("rejects forbidding the same ancestor twice", () => {
       expect(() =>
         contract("Button", "@acme/ds").notInside("Button").notInside("Button"),
-      ).toThrow('already forbids ancestor "Button"');
+      ).toThrow(
+        new Error(
+          'contract: component "Button" already forbids ancestor "Button".',
+        ),
+      );
     });
 
     it("rejects a repeated ancestor within a single call", () => {
       expect(() =>
         contract("Button", "@acme/ds").notInside("Button", "Button"),
-      ).toThrow('already forbids ancestor "Button"');
+      ).toThrow(
+        new Error(
+          'contract: component "Button" already forbids ancestor "Button".',
+        ),
+      );
     });
 
     it("stays available at every chain state and is immutable", () => {
@@ -323,6 +384,12 @@ interface WidgetModule {
   };
 }
 
+// The binding a shorthand under `Widget.Tray` is checked against.
+interface TrayBinding {
+  module: WidgetModule;
+  component: "Widget.Tray";
+}
+
 // Type-level enforcement. Never executed — tsc checks the @ts-expect-error
 // directives when it compiles this file.
 function typeLevelChecks(): void {
@@ -338,6 +405,28 @@ function typeLevelChecks(): void {
 
   // @ts-expect-error "Widget.Tray.Bogus" is not an export path of the module.
   widget("Widget.Tray").hasSlot(".Bogus");
+
+  // …and what it prints is the sentence. The rejection arm is an otherwise
+  // unsatisfiable `Record` whose *key* carries the message, because the key is
+  // what TypeScript renders in the "not assignable to parameter of type" line:
+  //
+  //   Argument of type '".Bogus"' is not assignable to parameter of type
+  //   '".Bogus" & Record<"Widget.Tray.Bogus is not an export path of the bound
+  //   module", never>'.
+  //
+  // Pinned in both directions so the wording cannot drift into an alias name
+  // the author cannot read.
+  type Rejected = PartName<".Bogus", TrayBinding>;
+  type Sentence = Record<
+    "Widget.Tray.Bogus is not an export path of the bound module",
+    never
+  >;
+
+  const printsTheSentence: Sentence = undefined as unknown as Rejected;
+  const printsNothingWider: Rejected = undefined as unknown as Sentence;
+
+  void printsTheSentence;
+  void printsNothingWider;
 
   // @ts-expect-error "Widget.Tray.Bogus" is not an export path of the module.
   widget("Widget.Tray").hasDescendant(".Bogus");
