@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { ContractRow } from "@jsx-contracts/eslint-plugin";
 
 import { contract } from "./contract-builder.js";
-import { defineContracts } from "./define-contracts.js";
 import { mergeContracts } from "./merge-contracts.js";
 import type { CompiledContracts } from "./rule-table.js";
 
@@ -23,10 +22,10 @@ describe("mergeContracts", () => {
     .when("open")
     .forbidDescendantProps("disabled");
 
-  const menu = defineContracts("g", {
-    "Menu.List": { slots: { ".Item": true } },
-    Menu: { subtree: { dense: { forbid: ["Menu.Footer"] } } },
-  });
+  const menu = mergeContracts(
+    contract("Menu.List", "g").hasSlot(".Item"),
+    contract("Menu", "g").when("dense").forbidDescendants("Menu.Footer"),
+  );
 
   it("concatenates the rows of every contract", () => {
     const merged = mergeContracts(widget, menu);

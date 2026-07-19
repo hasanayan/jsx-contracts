@@ -5,6 +5,9 @@
 import type { ContractRows } from "@jsx-contracts/eslint-plugin";
 
 import type {
+  Forbid,
+  Gate,
+  Literal,
   RuntimeBan,
   RuntimeEntry,
   RuntimeProps,
@@ -12,7 +15,6 @@ import type {
 } from "./compile.js";
 import { compile } from "./compile.js";
 import type { Binding, PartName, PartNames } from "./component-names.js";
-import type { Forbid, Gate, Literal } from "./contract-entry.js";
 import type { CompiledContracts } from "./rule-table.js";
 
 /**
@@ -241,7 +243,7 @@ function makeBuilder(
   let compiled: CompiledContracts | undefined;
 
   const finalize = (): CompiledContracts =>
-    (compiled ??= compile({ [component]: entry }, undefined));
+    (compiled ??= compile({ [component]: entry }));
 
   const requireDeclared = (reference: string): void => {
     if (entry.slots?.[reference] === undefined) {
@@ -312,11 +314,8 @@ function makeBuilder(
     }
 
     const { kind, name } = pendingPart;
-    // A pending part was written by `declarePart`, so it is always an object
-    // spec; the `true` shorthand only reaches an entry through the map form.
-    const declared = entry[partsKey[kind]]?.[name];
-    const spec: RuntimeSlotSpec =
-      declared === undefined || declared === true ? {} : declared;
+    // A pending part was written by `declarePart`, so its spec is always there.
+    const spec: RuntimeSlotSpec = entry[partsKey[kind]]?.[name] ?? {};
 
     return makeBuilder(
       component,

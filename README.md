@@ -208,21 +208,6 @@ const contracts = mergeContracts(widgetContract, tabsContract);
 // plugins/rules as above → rules: contracts.rules()
 ```
 
-### The map form
-
-The component-keyed map — `defineContracts`, or the binding called directly —
-still compiles to the same rows and is still exported:
-
-```ts
-export const contracts = defineContracts("@acme/ds", {
-  "Widget.Tray": { slots: { ".Title": { count: { min: 1 } } } },
-});
-```
-
-It is on its way out: the builder is the spelling every example here uses, and
-the map form will be removed once this repo's own consumers have moved off it.
-Prefer the builder for anything new.
-
 ## What you can enforce
 
 - **Allowed children** — a container accepts only its declared slots as direct

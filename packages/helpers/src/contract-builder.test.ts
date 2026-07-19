@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import type { ContractRow } from "@jsx-contracts/eslint-plugin";
+import type { ContractRow, ContractRows } from "@jsx-contracts/eslint-plugin";
 
 import type { ContractBuilder } from "./contract-builder.js";
 import { contract } from "./contract-builder.js";
-import { contractsFor, defineContracts } from "./define-contracts.js";
+import { contractsFor } from "./contracts-for.js";
 import { mergeContracts } from "./merge-contracts.js";
 import type { CompiledContracts } from "./rule-table.js";
 
@@ -19,7 +19,7 @@ const rowsFor = <F extends ContractRow["facet"]>(
   );
 
 describe("contract builder", () => {
-  it("compiles the same payload as the object DSL", () => {
+  it("emits one row per facet the chain touches", () => {
     const fluent = contract("Widget.Tray", "*/ds/widget")
       .hasSlot(".Action")
       .atLeast(1)
@@ -32,26 +32,33 @@ describe("contract builder", () => {
       .forbidDescendants("Widget.Footer")
       .forbidDescendantProps("data-analytics");
 
-    const object = defineContracts("*/ds/widget", {
-      "Widget.Tray": {
-        slots: { ".Action": { count: { min: 1, max: 3 } }, ".Label": true },
-        requires: { ".Label": ".Action" },
-        exclusive: [[[".Action"], [".Label"]]],
+    const expected: ContractRows = [
+      {
+        facet: "slots",
+        importPath: "*/ds/widget",
+        component: "Widget.Tray",
+        slots: [
+          { name: "Widget.Tray.Action", minCount: 1, maxCount: 3 },
+          { name: "Widget.Tray.Label" },
+        ],
+        requires: { "Widget.Tray.Label": "Widget.Tray.Action" },
+        exclusive: [[["Widget.Tray.Action"], ["Widget.Tray.Label"]]],
         strict: true,
-        subtree: {
-          variant: {
-            is: ["compact"],
-            forbid: ["Widget.Footer"],
-            forbidProps: ["data-analytics"],
-          },
-        },
       },
-    });
+      {
+        facet: "subtree",
+        importPath: "*/ds/widget",
+        component: "Widget.Tray",
+        when: { prop: "variant", values: ["compact"] },
+        forbid: ["Widget.Footer"],
+        forbidProps: ["data-analytics"],
+      },
+    ];
 
-    expect(fluent.rows).toEqual(object.rows);
+    expect(fluent.rows).toEqual(expected);
   });
 
-  it("compiles the same props payload as the object DSL", () => {
+  it("collects every prop-facet method into one props row", () => {
     const fluent = contract("Widget", "@acme/ds")
       .requiresProp("id")
       .requiresAnyProp("href", "onClick")
@@ -60,18 +67,17 @@ describe("contract builder", () => {
       .deprecatesProp("legacy")
       .deprecated("Nav");
 
-    const object = defineContracts("@acme/ds", {
-      Widget: {
-        props: {
-          required: ["id", ["href", "onClick"]],
-          exclusive: [[["href"], ["onClick"]]],
-          deprecated: { color: "tone", legacy: true },
-        },
-        deprecated: "Nav",
+    expect(rowsFor(fluent, "props")).toEqual([
+      {
+        facet: "props",
+        importPath: "@acme/ds",
+        component: "Widget",
+        required: ["id", ["href", "onClick"]],
+        exclusive: [[["href"], ["onClick"]]],
+        deprecated: { color: "tone", legacy: true },
+        deprecatedComponent: "Nav",
       },
-    });
-
-    expect(rowsFor(fluent, "props")).toEqual(rowsFor(object, "props"));
+    ]);
   });
 
   it("rejects deprecating the same prop twice", () => {
@@ -114,6 +120,22 @@ describe("contract builder", () => {
 
     expect(() => loose.slotRequires(".A", ".B")).toThrow(
       'references slot ".B"',
+    );
+  });
+
+  it("rejects a dangling exclusive member at call time", () => {
+    const loose = contract("W", "g").hasSlot(".A") as ContractBuilder<string>;
+
+    expect(() => loose.exclusiveSlots([".A"], [".B"])).toThrow(
+      'references slot ".B"',
+    );
+  });
+
+  it("rejects a cross-slot reference when no slot is declared at all", () => {
+    const loose = contract("W", "g") as ContractBuilder<string>;
+
+    expect(() => loose.slotRequires(".A", ".B")).toThrow(
+      'references slot ".A"',
     );
   });
 
@@ -187,23 +209,24 @@ describe("contract builder", () => {
   });
 
   describe("hasDescendant", () => {
-    it("matches the map form it respells", () => {
+    it("bounds each descendant on its own, in one when-less row", () => {
       const fluent = contract("Tabs.Root", "@acme/tabs")
         .hasDescendant(".List")
         .atLeast(1)
         .atMost(1)
         .hasDescendant(".Panel");
 
-      const object = defineContracts("@acme/tabs", {
-        "Tabs.Root": {
-          descendants: {
-            ".List": { count: { min: 1, max: 1 } },
-            ".Panel": true,
-          },
+      expect(rowsFor(fluent, "subtree")).toEqual([
+        {
+          facet: "subtree",
+          importPath: "@acme/tabs",
+          component: "Tabs.Root",
+          require: [
+            { name: "Tabs.Root.List", min: 1, max: 1 },
+            { name: "Tabs.Root.Panel" },
+          ],
         },
-      });
-
-      expect(rowsFor(fluent, "subtree")).toEqual(rowsFor(object, "subtree"));
+      ]);
     });
 
     it("expands a leading-dot name to the container's name plus the segment", () => {
@@ -235,19 +258,20 @@ describe("contract builder", () => {
   });
 
   describe("notInside", () => {
-    it("matches the fluent .notInside builder", () => {
+    it("keeps a self-gated ancestor's gate and a bare name's bareness", () => {
       const fluent = contract("Button", "@acme/ds").notInside("Button", {
         name: "Link",
         from: "@acme/ds",
       });
 
-      const object = defineContracts("@acme/ds", {
-        Button: {
-          notInside: ["Button", { name: "Link", from: "@acme/ds" }],
+      expect(rowsFor(fluent, "ancestor")).toEqual([
+        {
+          facet: "ancestor",
+          importPath: "@acme/ds",
+          component: "Button",
+          notInside: ["Button", { name: "Link", importPath: "@acme/ds" }],
         },
-      });
-
-      expect(rowsFor(fluent, "ancestor")).toEqual(rowsFor(object, "ancestor"));
+      ]);
     });
 
     it("appends across repeated .notInside calls", () => {

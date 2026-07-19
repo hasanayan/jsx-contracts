@@ -7,23 +7,21 @@ import { describe, expect, it } from "vitest";
 
 import plugin from "@jsx-contracts/eslint-plugin";
 
-import { defineContracts } from "./index.js";
+import { contractsFor, mergeContracts } from "./index.js";
 
-const contracts = defineContracts("@acme/ds", {
-  "Widget.Tray": {
-    slots: { ".Title": { count: { min: 1 } } },
-  },
-  Widget: {
-    subtree: { compact: { forbid: ["Widget.Footer"] } },
-    props: { deprecated: { legacy: "modern" } },
-  },
-  "Tabs.Root": {
-    descendants: { ".List": { count: { min: 1, max: 1 } } },
-  },
-  Button: {
-    notInside: ["Button"],
-  },
-});
+// The round trip this file demonstrates: a builder chain, through the rule
+// table, to the violations a real linter reports.
+const { contract } = contractsFor("@acme/ds");
+
+const contracts = mergeContracts(
+  contract("Widget.Tray").hasSlot(".Title").atLeast(1),
+  contract("Widget")
+    .when("compact")
+    .forbidDescendants("Widget.Footer")
+    .deprecatesProp("legacy", "modern"),
+  contract("Tabs.Root").hasDescendant(".List").atLeast(1).atMost(1),
+  contract("Button").notInside("Button"),
+);
 
 // Three violations: the widget carries a deprecated prop (a props deprecation),
 // the tray is missing its required title (a count bound), and a compact widget

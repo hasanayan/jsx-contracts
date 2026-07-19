@@ -1,6 +1,6 @@
 // Compilation to the rule table: one component entry in, one row per facet it
-// touches out. Both authoring surfaces — the component-keyed map and the
-// fluent builder — funnel through here, which is why they emit the same rows.
+// touches out. The builder is the only authoring surface, so this is the shape
+// it accumulates into — and the last place a chain becomes data.
 
 import type {
   ContractRows,
@@ -13,9 +13,24 @@ import type {
   WhenCondition,
 } from "@jsx-contracts/eslint-plugin";
 
-import type { Gate, Literal } from "./contract-entry.js";
 import type { CompiledContracts } from "./rule-table.js";
 import { makeContracts } from "./rule-table.js";
+
+// -- the authoring vocabulary shared with the builder -------------------------
+
+/** Module a component must be imported from for its contract to apply. */
+export type Gate = string;
+
+/** A prop value a when-condition activates on. */
+export type Literal = string | number | boolean;
+
+interface GatedElement {
+  name: string;
+  from?: Gate;
+}
+
+/** A forbidden element: a bare name, or a name gated by its own import. */
+export type Forbid = string | GatedElement;
 
 // -- runtime shapes (the loosest view, after the type-level layer is gone) -----
 
@@ -24,14 +39,9 @@ export interface RuntimeSlotSpec {
   from?: Gate;
 }
 
-interface RuntimeForbidObject {
-  name: string;
-  from?: Gate;
-}
-
 export interface RuntimeBan {
   is?: readonly Literal[];
-  forbid?: readonly (string | RuntimeForbidObject)[];
+  forbid?: readonly Forbid[];
   forbidProps?: readonly string[];
 }
 
@@ -42,23 +52,26 @@ export interface RuntimeProps {
 }
 
 export interface RuntimeEntry {
+  /**
+   * The gate the binding stated. Optional in this runtime view alone: every
+   * typed entry carries one, and the guard below is what an untyped caller
+   * that omits it meets.
+   */
   from?: Gate;
-  slots?: Record<string, true | RuntimeSlotSpec>;
+  slots?: Record<string, RuntimeSlotSpec>;
   requires?: Record<string, string>;
   exclusive?: readonly (readonly [readonly string[], readonly string[]])[];
   strict?: boolean;
   subtree?: Record<string, RuntimeBan>;
-  descendants?: Record<string, true | RuntimeSlotSpec>;
+  descendants?: Record<string, RuntimeSlotSpec>;
   props?: RuntimeProps;
   deprecated?: string | true;
-  notInside?: readonly (string | RuntimeForbidObject)[];
+  notInside?: readonly Forbid[];
 }
 
 // A `forbid`/`notInside` entry as the payload wants it: a bare name stays a
 // string, an object keeps its gate under the payload's key.
-function forbiddenElement(
-  entry: string | RuntimeForbidObject,
-): string | ForbiddenElement {
+function forbiddenElement(entry: Forbid): string | ForbiddenElement {
   if (typeof entry === "string") {
     return entry;
   }
@@ -74,7 +87,6 @@ function forbiddenElement(
 
 export function compile(
   contracts: Record<string, RuntimeEntry>,
-  sharedGate: Gate | undefined,
 ): CompiledContracts {
   // One flat table. A component contributes one row per facet it touches, in
   // facet order, so its rows stay together and read in the order they were
@@ -82,29 +94,20 @@ export function compile(
   const rows: ContractRows = [];
 
   for (const [component, entry] of Object.entries(contracts)) {
-    const gate = entry.from ?? sharedGate;
+    // Mandatory at the type level, so an untyped caller is the only way to
+    // arrive without one. A gateless row would match nothing, silently — say
+    // so instead.
+    const gate = entry.from;
 
     if (gate === undefined) {
       throw new Error(
-        `defineContracts: component "${component}" has no import gate ` +
-          "(pass a shared default gate or set `from` on the component).",
+        `contract: component "${component}" has no import gate ` +
+          "(pass one to contractsFor()).",
       );
     }
 
     const expand = (key: string): string =>
       key.startsWith(".") ? `${component}${key}` : key;
-
-    const declaredSlotKeys = new Set(Object.keys(entry.slots ?? {}));
-
-    // References are checked as written, before expansion.
-    const requireDeclared = (reference: string): void => {
-      if (!declaredSlotKeys.has(reference)) {
-        throw new Error(
-          `defineContracts: component "${component}" references slot ` +
-            `"${reference}", which it does not declare.`,
-        );
-      }
-    };
 
     if (entry.slots !== undefined) {
       const slotConfigs: SlotConfig[] = [];
@@ -112,18 +115,16 @@ export function compile(
       for (const [slotKey, spec] of Object.entries(entry.slots)) {
         const slotConfig: SlotConfig = { name: expand(slotKey) };
 
-        if (spec !== true) {
-          if (spec.count?.min !== undefined) {
-            slotConfig.minCount = spec.count.min;
-          }
+        if (spec.count?.min !== undefined) {
+          slotConfig.minCount = spec.count.min;
+        }
 
-          if (spec.count?.max !== undefined) {
-            slotConfig.maxCount = spec.count.max;
-          }
+        if (spec.count?.max !== undefined) {
+          slotConfig.maxCount = spec.count.max;
+        }
 
-          if (spec.from !== undefined) {
-            slotConfig.importPath = spec.from;
-          }
+        if (spec.from !== undefined) {
+          slotConfig.importPath = spec.from;
         }
 
         slotConfigs.push(slotConfig);
@@ -140,8 +141,6 @@ export function compile(
         const requires: Record<string, string> = {};
 
         for (const [key, value] of Object.entries(entry.requires)) {
-          requireDeclared(key);
-          requireDeclared(value);
           requires[expand(key)] = expand(value);
         }
 
@@ -149,16 +148,10 @@ export function compile(
       }
 
       if (entry.exclusive !== undefined) {
-        container.exclusive = entry.exclusive.map(([groupA, groupB]) => {
-          const expandGroup = (group: readonly string[]): string[] =>
-            group.map((member) => {
-              requireDeclared(member);
-
-              return expand(member);
-            });
-
-          return [expandGroup(groupA), expandGroup(groupB)];
-        });
+        container.exclusive = entry.exclusive.map(([groupA, groupB]) => [
+          groupA.map(expand),
+          groupB.map(expand),
+        ]);
       }
 
       if (entry.strict !== undefined) {
@@ -166,49 +159,28 @@ export function compile(
       }
 
       rows.push(container);
-    } else if (entry.requires !== undefined || entry.exclusive !== undefined) {
-      // No slots, so every reference dangles — validate to surface the error.
-      for (const reference of [
-        ...Object.entries(entry.requires ?? {}).flat(),
-        ...(entry.exclusive ?? []).flatMap(([groupA, groupB]) => [
-          ...groupA,
-          ...groupB,
-        ]),
-      ]) {
-        requireDeclared(reference);
-      }
     }
 
     if (entry.subtree !== undefined) {
       for (const [prop, ban] of Object.entries(entry.subtree)) {
         if (ban.is?.length === 0) {
           throw new Error(
-            `defineContracts: component "${component}" subtree ban on prop ` +
+            `contract: component "${component}" subtree ban on prop ` +
               `"${prop}" has an empty \`is\`.`,
           );
         }
 
         if (ban.forbid?.length === 0) {
           throw new Error(
-            `defineContracts: component "${component}" subtree ban on prop ` +
+            `contract: component "${component}" subtree ban on prop ` +
               `"${prop}" has an empty \`forbid\`.`,
           );
         }
 
         if (ban.forbidProps?.length === 0) {
           throw new Error(
-            `defineContracts: component "${component}" subtree ban on prop ` +
+            `contract: component "${component}" subtree ban on prop ` +
               `"${prop}" has an empty \`forbidProps\`.`,
-          );
-        }
-
-        if (
-          (ban.forbid?.length ?? 0) === 0 &&
-          (ban.forbidProps?.length ?? 0) === 0
-        ) {
-          throw new Error(
-            `defineContracts: component "${component}" subtree ban on prop ` +
-              `"${prop}" must forbid an element or a prop.`,
           );
         }
 
@@ -242,18 +214,16 @@ export function compile(
       for (const [key, spec] of Object.entries(entry.descendants)) {
         const required: RequiredDescendant = { name: expand(key) };
 
-        if (spec !== true) {
-          if (spec.count?.min !== undefined) {
-            required.min = spec.count.min;
-          }
+        if (spec.count?.min !== undefined) {
+          required.min = spec.count.min;
+        }
 
-          if (spec.count?.max !== undefined) {
-            required.max = spec.count.max;
-          }
+        if (spec.count?.max !== undefined) {
+          required.max = spec.count.max;
+        }
 
-          if (spec.from !== undefined) {
-            required.importPath = spec.from;
-          }
+        if (spec.from !== undefined) {
+          required.importPath = spec.from;
         }
 
         require.push(required);
@@ -275,7 +245,7 @@ export function compile(
 
         if (requirement.length === 0) {
           throw new Error(
-            `defineContracts: component "${component}" has an empty required ` +
+            `contract: component "${component}" has an empty required ` +
               "prop group.",
           );
         }
@@ -290,7 +260,7 @@ export function compile(
       propsRow.exclusive = entry.props.exclusive.map(([groupA, groupB]) => {
         if (groupA.length === 0 || groupB.length === 0) {
           throw new Error(
-            `defineContracts: component "${component}" has an empty ` +
+            `contract: component "${component}" has an empty ` +
               "exclusive prop group.",
           );
         }

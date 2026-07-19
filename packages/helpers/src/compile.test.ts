@@ -8,7 +8,8 @@ import type {
   SubtreeRow,
 } from "@jsx-contracts/eslint-plugin";
 
-import { defineContracts } from "./define-contracts.js";
+import { contract } from "./contract-builder.js";
+import { mergeContracts } from "./merge-contracts.js";
 import type { CompiledContracts } from "./rule-table.js";
 
 // The compiled payload is one flat table; nearly every assertion below is about
@@ -21,42 +22,35 @@ const rowsFor = <F extends ContractRow["facet"]>(
     (row): row is Extract<ContractRow, { facet: F }> => row.facet === facet,
   );
 
-describe("defineContracts compilation", () => {
-  const compiled = defineContracts("*/ds/widget", {
-    "Widget.Tray": {
-      slots: {
-        ".Action": { count: { min: 1, max: 3 } },
-        ".Label": true,
-        "Global.Icon": { from: "@acme/icons" },
-      },
-      requires: { ".Label": ".Action" },
-      exclusive: [[[".Action"], [".Label"]]],
-      strict: true,
-      props: {
-        required: ["id", ["href", "onClick"]],
-        exclusive: [[["href"], ["onClick"]]],
-        deprecated: { color: "tone", legacy: true },
-      },
-    },
-    Widget: {
-      // Per-component gate overrides the shared default.
-      from: "@acme/widget",
-      subtree: {
-        compact: {
-          forbid: ["Widget.Footer", { name: "button", from: "*/ds/*" }],
-        },
-        size: { is: ["large", "Size.huge"], forbidProps: ["autoFocus"] },
-      },
-    },
-    Menu: {
-      // Inherits the shared gate; subtree-only, presence activation.
-      subtree: {
-        open: { forbidProps: ["disabled"] },
-      },
-      // Component-level deprecation with a replacement hint.
-      deprecated: "Nav",
-    },
-  });
+describe("contract compilation", () => {
+  const compiled = mergeContracts(
+    contract("Widget.Tray", "*/ds/widget")
+      .hasSlot(".Action")
+      .atLeast(1)
+      .atMost(3)
+      .hasSlot(".Label")
+      .hasSlot("Global.Icon", "@acme/icons")
+      .slotRequires(".Label", ".Action")
+      .exclusiveSlots([".Action"], [".Label"])
+      .strictSlots()
+      .requiresProp("id")
+      .requiresAnyProp("href", "onClick")
+      .exclusiveProps(["href"], ["onClick"])
+      .deprecatesProp("color", "tone")
+      .deprecatesProp("legacy"),
+    // A component from another package carries its own gate on its own binding.
+    contract("Widget", "@acme/widget")
+      .when("compact")
+      .forbidDescendants("Widget.Footer", { name: "button", from: "*/ds/*" })
+      .when("size", ["large", "Size.huge"])
+      .forbidDescendantProps("autoFocus"),
+    // Subtree-only, presence activation, plus a component-level deprecation
+    // with a replacement hint.
+    contract("Menu", "*/ds/widget")
+      .when("open")
+      .forbidDescendantProps("disabled")
+      .deprecated("Nav"),
+  );
 
   it("emits one slots row per slots facet, with shorthand expanded", () => {
     const expected: SlotsRow[] = [
@@ -158,17 +152,15 @@ describe("defineContracts compilation", () => {
 });
 
 describe("descendants compilation", () => {
-  const compiled = defineContracts("@acme/tabs", {
-    "Tabs.Root": {
-      descendants: {
-        ".List": { count: { min: 1, max: 1 } },
-        ".Panel": true,
-        "Global.Icon": { from: "@acme/icons" },
-      },
-      // A conditional ban on the same component still emits its own row.
-      subtree: { compact: { forbid: ["Tabs.Footer"] } },
-    },
-  });
+  const compiled = contract("Tabs.Root", "@acme/tabs")
+    .hasDescendant(".List")
+    .atLeast(1)
+    .atMost(1)
+    .hasDescendant(".Panel")
+    .hasDescendant("Global.Icon", "@acme/icons")
+    // A conditional ban on the same component still emits its own row.
+    .when("compact")
+    .forbidDescendants("Tabs.Footer");
 
   it("compiles descendants to one when-less require row, shorthand expanded", () => {
     const requireRow = rowsFor(compiled, "subtree").find(
@@ -225,26 +217,23 @@ describe("descendants compilation", () => {
     });
   });
 
-  it("emits nothing for an empty descendants record", () => {
-    const empty = defineContracts("@acme/tabs", {
-      "Tabs.Root": { descendants: {} },
-    });
+  it("emits nothing when no descendant is declared", () => {
+    const empty = contract("Tabs.Root", "@acme/tabs").strictSlots();
 
     expect(rowsFor(empty, "subtree")).toEqual([]);
   });
 });
 
 describe("ancestor compilation", () => {
-  const compiled = defineContracts("@acme/ds", {
-    Button: {
-      notInside: ["Button"],
-    },
-    "Card.Action": {
-      // A gated forbidden ancestor keeps its `from` as importPath; a bare
-      // string stays a bare string.
-      notInside: [{ name: "Modal.Footer", from: "@acme/modal" }, "Dialog"],
-    },
-  });
+  const compiled = mergeContracts(
+    contract("Button", "@acme/ds").notInside("Button"),
+    // A gated forbidden ancestor keeps its `from` as importPath; a bare string
+    // stays a bare string.
+    contract("Card.Action", "@acme/ds").notInside(
+      { name: "Modal.Footer", from: "@acme/modal" },
+      "Dialog",
+    ),
+  );
 
   it("emits one ancestor row per component, restamped with the gate", () => {
     const expected: AncestorRow[] = [
@@ -273,107 +262,62 @@ describe("ancestor compilation", () => {
   });
 
   it("emits nothing when no component forbids an ancestor", () => {
-    const none = defineContracts("@acme/ds", {
-      Widget: { slots: { ".Action": true } },
-    });
+    const none = contract("Widget", "@acme/ds").hasSlot(".Action");
 
     expect(rowsFor(none, "ancestor")).toEqual([]);
   });
 });
 
-describe("defineContracts runtime validation", () => {
-  it("rejects a component with no resolvable import gate", () => {
-    expect(() =>
-      defineContracts({ Widget: { slots: { ".Action": true } } }),
-    ).toThrow(/defineContracts: component "Widget" has no import gate/);
-  });
-
-  it("rejects a dangling requires value", () => {
-    expect(() =>
-      defineContracts("g", {
-        Widget: {
-          slots: { ".Action": true },
-          requires: { ".Action": ".Bogus" } as never,
-        },
-      }),
-    ).toThrow(/references slot "\.Bogus"/);
-  });
-
-  it("rejects a dangling requires key", () => {
-    expect(() =>
-      defineContracts("g", {
-        Widget: {
-          slots: { ".Action": true },
-          requires: { ".Bogus": ".Action" } as never,
-        },
-      }),
-    ).toThrow(/references slot "\.Bogus"/);
-  });
-
-  it("rejects a dangling exclusive member", () => {
-    expect(() =>
-      defineContracts("g", {
-        Widget: {
-          slots: { ".Action": true },
-          exclusive: [[[".Action"], [".Nope"]]] as never,
-        },
-      }),
-    ).toThrow(/references slot "\.Nope"/);
-  });
-
-  it("rejects cross-slot references when there is no slots facet", () => {
-    expect(() =>
-      defineContracts("g", {
-        Widget: { requires: { ".Action": ".Label" } } as never,
-      }),
-    ).toThrow(/references slot "\.Action"/);
+// The type-state rejects each of these, so every subject below defeats it with
+// a cast: the guards are what an untyped (checkJs) caller still meets.
+describe("compilation-time validation", () => {
+  it("rejects a component with no import gate", () => {
+    expect(
+      () =>
+        contract("Widget", undefined as unknown as string).hasSlot(".Action")
+          .rows,
+    ).toThrow(/no import gate/);
   });
 
   it("rejects an empty `is`", () => {
-    expect(() =>
-      defineContracts("g", {
-        Widget: { subtree: { size: { is: [], forbid: ["button"] } as never } },
-      }),
+    expect(
+      () =>
+        contract("Widget", "g")
+          .when("size", [] as never)
+          .forbidDescendants("button").rows,
     ).toThrow(/empty `is`/);
   });
 
   it("rejects an empty `forbid`", () => {
-    expect(() =>
-      defineContracts("g", {
-        Widget: { subtree: { size: { forbid: [] } as never } },
-      }),
+    expect(
+      () =>
+        contract("Widget", "g")
+          .when("size")
+          .forbidDescendants(...([] as unknown as [string])).rows,
     ).toThrow(/empty `forbid`/);
   });
 
   it("rejects an empty `forbidProps`", () => {
-    expect(() =>
-      defineContracts("g", {
-        Widget: { subtree: { size: { forbidProps: [] } as never } },
-      }),
+    expect(
+      () =>
+        contract("Widget", "g")
+          .when("size")
+          .forbidDescendantProps(...([] as unknown as [string])).rows,
     ).toThrow(/empty `forbidProps`/);
   });
 
-  it("rejects a ban that forbids nothing", () => {
-    expect(() =>
-      defineContracts("g", {
-        Widget: { subtree: { size: { is: ["x"] } as never } },
-      }),
-    ).toThrow(/must forbid an element or a prop/);
-  });
-
   it("rejects an empty required prop group", () => {
-    expect(() =>
-      defineContracts("g", {
-        Widget: { props: { required: [[]] } as never },
-      }),
+    expect(
+      () =>
+        contract("Widget", "g").requiresAnyProp(
+          ...([] as unknown as [string, string]),
+        ).rows,
     ).toThrow(/empty required prop group/);
   });
 
   it("rejects an empty exclusive prop group", () => {
-    expect(() =>
-      defineContracts("g", {
-        Widget: { props: { exclusive: [[["href"], []]] } as never },
-      }),
+    expect(
+      () => contract("Widget", "g").exclusiveProps(["href"], [] as never).rows,
     ).toThrow(/empty exclusive prop group/);
   });
 });

@@ -5,8 +5,8 @@ import type { CompiledContracts } from "./rule-table.js";
 import { makeContracts } from "./rule-table.js";
 
 /**
- * Merge any number of contracts — from `defineContracts`, a `contract()`
- * builder, or other `mergeContracts` calls — into one. The result is itself a
+ * Merge any number of contracts — `contract()` builders, or the results of
+ * other `mergeContracts` calls — into one. The result is itself a
  * contract, so merges nest; call `rules()` once at the end, in your ESLint
  * config.
  *
