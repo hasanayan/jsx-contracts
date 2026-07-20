@@ -42,7 +42,7 @@ from moving whenever the authoring surface does.
 
 Raspberry Pi 5 Model B Rev 1.0 (4 cores, 8 GB), Linux 6.18.34-rpt-rpi-2712,
 Node v24.18.0, ESLint 9.39.4, `@jsx-contracts/eslint-plugin` 0.0.9.
-Recorded 2026-07-20 at commit `BASELINE_SHA`. Medians of 25 timed iterations
+Recorded 2026-07-20 at commit `25eb35d`. Medians of 25 timed iterations
 after 5 warmup, three runs.
 
 | scenario      | baseline | with rules | delta      | delta / element |
