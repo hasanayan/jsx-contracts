@@ -1,5 +1,5 @@
 import type { ImportMatcher } from "./import-matcher.js";
-import { createImportMatcher, matchesGate } from "./import-matcher.js";
+import { createImportMatcher, gateKey, matchesGate } from "./import-matcher.js";
 import type { Ref, Violation } from "./model.js";
 import type { AncestorRow } from "./payload.js";
 import { normalizeForbid } from "./validate.js";
@@ -67,7 +67,7 @@ export function combineAncestor(
 
   for (const row of rows) {
     for (const entry of row.notInside) {
-      const key = `${entry.name}\n${entry.importPath ?? ""}`;
+      const key = gateKey(entry);
 
       if (!notInside.has(key)) {
         notInside.set(key, entry);

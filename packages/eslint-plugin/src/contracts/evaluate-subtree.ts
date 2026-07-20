@@ -1,11 +1,12 @@
+import { countWord } from "./format.js";
+import type { ImportMatcher } from "./import-matcher.js";
+import { createImportMatcher, gateKey, matchesGate } from "./import-matcher.js";
+import type { Branch, PropFact, Ref, Violation } from "./model.js";
 import {
   allPairwiseCoexist,
   minimumGuaranteedCount,
   subsetsOfSize,
-} from "./evaluate-slots.js";
-import type { ImportMatcher } from "./import-matcher.js";
-import { createImportMatcher, matchesGate } from "./import-matcher.js";
-import type { Branch, PropFact, Ref, Violation } from "./model.js";
+} from "./model.js";
 import type { SubtreeRow } from "./payload.js";
 import { normalizeForbid } from "./validate.js";
 
@@ -84,10 +85,6 @@ export interface CombinedSubtree {
 interface Occurrence {
   ref: Ref;
   branches: Branch[];
-}
-
-function gateKey(entry: { name: string; importPath?: string }): string {
-  return `${entry.name}\n${entry.importPath ?? ""}`;
 }
 
 export function prepareSubtreeRow(row: SubtreeRow): PreparedSubtreeRow {
@@ -180,10 +177,6 @@ export function combineSubtree(
     forbidProps,
     require: [...require.values()],
   };
-}
-
-function countWord(count: number): string {
-  return count === 1 ? "one" : String(count);
 }
 
 function matchesForbid(

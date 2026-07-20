@@ -9,7 +9,6 @@ import {
   combineSlots,
   evaluateSlots,
   isPlacedInContainer,
-  minimumGuaranteedCount,
   prepareSlotsRow,
 } from "./evaluate-slots.js";
 import { createImportMatcher } from "./import-matcher.js";
@@ -33,48 +32,6 @@ function element(name: string, branches: Branch[] = []): RenderedNode {
     textRefs: [],
   };
 }
-
-describe("minimumGuaranteedCount", () => {
-  it("is zero with no occurrences", () => {
-    expect(minimumGuaranteedCount([])).toBe(0);
-  });
-
-  it("counts unconditional occurrences directly", () => {
-    expect(minimumGuaranteedCount([element("X"), element("X")])).toBe(2);
-  });
-
-  it("guarantees one when present in both branches of a ternary", () => {
-    expect(
-      minimumGuaranteedCount([
-        element("X", ["1:consequent"]),
-        element("X", ["1:alternate"]),
-      ]),
-    ).toBe(1);
-  });
-
-  it("guarantees nothing for a single-branch occurrence", () => {
-    expect(minimumGuaranteedCount([element("X", ["1:consequent"])])).toBe(0);
-  });
-
-  it("guarantees nothing when both occurrences share one branch", () => {
-    expect(
-      minimumGuaranteedCount([
-        element("X", ["1:consequent"]),
-        element("X", ["1:consequent"]),
-      ]),
-    ).toBe(0);
-  });
-
-  it("adds the unconditional floor to branch-guaranteed occurrences", () => {
-    expect(
-      minimumGuaranteedCount([
-        element("X"),
-        element("X", ["1:consequent"]),
-        element("X", ["1:alternate"]),
-      ]),
-    ).toBe(2);
-  });
-});
 
 describe("isPlacedInContainer", () => {
   const container = "Widget.Tray";

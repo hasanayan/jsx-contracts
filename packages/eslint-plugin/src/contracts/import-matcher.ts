@@ -22,3 +22,8 @@ export function matchesGate(
 ): boolean {
   return importSource === null || matcher(importSource);
 }
+
+/** Dedup identity of a gated named entry: same name under the same gate. */
+export function gateKey(entry: { name: string; importPath?: string }): string {
+  return `${entry.name}\n${entry.importPath ?? ""}`;
+}

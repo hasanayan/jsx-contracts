@@ -51,3 +51,73 @@ export function canCoexist(a: Branched, b: Branched): boolean {
     return b.branches.includes(`${conditionalId}:${otherSide}` as Branch);
   });
 }
+
+export function subsetsOfSize<T>(items: T[], size: number): T[][] {
+  const result: T[][] = [];
+
+  function choose(start: number, chosen: T[]): void {
+    if (chosen.length === size) {
+      result.push(chosen);
+
+      return;
+    }
+
+    for (let index = start; index < items.length; index++) {
+      choose(index + 1, [...chosen, items[index] as T]);
+    }
+  }
+
+  choose(0, []);
+
+  return result;
+}
+
+export function allPairwiseCoexist(elements: Branched[]): boolean {
+  return elements.every((element, index) =>
+    elements.slice(index + 1).every((other) => canCoexist(element, other)),
+  );
+}
+
+function conditionalIdOf(branch: Branch): string {
+  return branch.slice(0, branch.indexOf(":"));
+}
+
+function sideOf(branch: Branch): "consequent" | "alternate" {
+  return branch.endsWith("consequent") ? "consequent" : "alternate";
+}
+
+/** The count guaranteed on every render path, over every branch assignment. */
+export function minimumGuaranteedCount(occurrences: Branched[]): number {
+  const branchPoints = [
+    ...new Set(
+      occurrences.flatMap((occurrence) =>
+        occurrence.branches.map((branch) => conditionalIdOf(branch)),
+      ),
+    ),
+  ];
+
+  let minimum = Infinity;
+
+  for (
+    let assignment = 0;
+    assignment < 1 << branchPoints.length;
+    assignment++
+  ) {
+    const chosenSide = new Map<string, "consequent" | "alternate">(
+      branchPoints.map((point, index) => [
+        point,
+        (assignment & (1 << index)) === 0 ? "consequent" : "alternate",
+      ]),
+    );
+
+    const present = occurrences.filter((occurrence) =>
+      occurrence.branches.every(
+        (branch) => chosenSide.get(conditionalIdOf(branch)) === sideOf(branch),
+      ),
+    );
+
+    minimum = Math.min(minimum, present.length);
+  }
+
+  return minimum === Infinity ? 0 : minimum;
+}
