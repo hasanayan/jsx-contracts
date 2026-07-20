@@ -148,5 +148,7 @@ Two published packages, split by side of the contract:
   safety at this boundary is deliberately loose (a row's component is a plain
   string); the guarantee here is the runtime one.
 - **Facet registry** — the core's one facet-specific seam: per facet, its
-  combine function, evaluator and message ids. Everything above it — grouping,
+  prepare, combine and evaluate functions, plus an optional supplementary index
+  the slots facet alone uses for its placement pass (the `misplaced` check keys
+  off the slot element, not the container). Everything above it — grouping,
   activation, dispatch — is generic over rows.

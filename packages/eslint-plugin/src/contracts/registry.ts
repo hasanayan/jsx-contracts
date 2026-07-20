@@ -22,9 +22,9 @@ import type {
   PreparedSlotsRow,
 } from "./evaluate-slots.js";
 import {
+  buildPlacementIndex,
   combineSlots,
   evaluateSlots,
-  isPlacedInContainer,
   prepareSlotsRow,
 } from "./evaluate-slots.js";
 import type {
@@ -41,7 +41,6 @@ import type { ImportMatcher } from "./import-matcher.js";
 import { createImportMatcher, matchesGate } from "./import-matcher.js";
 import type { PropFact, Ref, RenderedNode, Violation } from "./model.js";
 import type { ContractRow, ContractRows, Facet } from "./payload.js";
-import { normalizeSlot } from "./validate.js";
 
 /**
  * One element, as the adapter presents it. Every accessor beyond `name` and
@@ -93,6 +92,14 @@ interface FacetSpec<Row extends ContractRow, Prepared, Combined> {
   prepare: (row: Row) => Prepared;
   combine: (component: string, rows: Prepared[]) => Combined;
   evaluate: (combined: Combined, element: ElementFacts) => Violation<string>[];
+  /**
+   * A facet-specific supplementary index, built over the facet's own rows and
+   * merged into the generic per-component one. The slots facet uses it for the
+   * placement pass — the `misplaced` check keys off the slot element, not the
+   * container, so it cannot go through the per-component grouping. The other
+   * three facets omit it, and the code above the seam stays generic over rows.
+   */
+  index?: (rows: Row[]) => FacetIndex;
 }
 
 function buildIndex<Row extends ContractRow, Prepared, Combined>(
@@ -102,11 +109,14 @@ function buildIndex<Row extends ContractRow, Prepared, Combined>(
   spec: FacetSpec<Row, Prepared, Combined>,
 ): FacetIndex {
   const groups = new Map<string, Group<Prepared, Combined>>();
+  const facetRows: Row[] = [];
 
   for (const row of rows) {
     if (row.facet !== facet) {
       continue;
     }
+
+    facetRows.push(row as Row);
 
     // Grouped by component name alone; the gate is part of activation.
     let group = groups.get(row.component);
@@ -123,7 +133,7 @@ function buildIndex<Row extends ContractRow, Prepared, Combined>(
     });
   }
 
-  return {
+  const base: FacetIndex = {
     names: new Set(groups.keys()),
     analyze(element): Violation<string>[] {
       const group = groups.get(element.name);
@@ -162,91 +172,21 @@ function buildIndex<Row extends ContractRow, Prepared, Combined>(
       return spec.evaluate(combined, element);
     },
   };
-}
 
-// Where a slot may be placed. Checked on the slot itself, so conditional rows
-// count too: the container element is not in hand.
-interface SlotPlacement {
-  container: string;
-  containerMatcher: ImportMatcher;
-  slotMatcher: ImportMatcher;
-}
+  const extra = spec.index?.(facetRows);
 
-function buildSlotsIndex(rows: ContractRows, pool: ConditionPool): FacetIndex {
-  const containers = buildIndex<SlotsRowType, PreparedSlotsRow, CombinedSlots>(
-    "slots",
-    rows,
-    pool,
-    {
-      prepare: prepareSlotsRow,
-      combine: combineSlots,
-      evaluate: (combined, element) =>
-        evaluateSlots(combined, element.slotsRoot(), element.openingRef),
-    },
-  );
-
-  const placements = new Map<string, SlotPlacement[]>();
-
-  for (const row of rows) {
-    if (row.facet !== "slots") {
-      continue;
-    }
-
-    const containerMatcher = createImportMatcher(row.importPath);
-
-    for (const rawSlot of row.slots ?? []) {
-      const slot = normalizeSlot(rawSlot);
-      const entries = placements.get(slot.name) ?? [];
-
-      entries.push({
-        container: row.component,
-        containerMatcher,
-        slotMatcher:
-          slot.importPath === undefined
-            ? containerMatcher
-            : createImportMatcher(slot.importPath),
-      });
-
-      placements.set(slot.name, entries);
-    }
+  if (extra === undefined) {
+    return base;
   }
 
+  // The supplementary index runs beside the per-component one; its names widen
+  // the skip set and its violations follow the per-component ones.
   return {
-    names: new Set([...containers.names, ...placements.keys()]),
-    analyze(element): Violation<string>[] {
-      const violations = containers.analyze(element);
-      const declared = placements.get(element.name);
-
-      if (declared === undefined) {
-        return violations;
-      }
-
-      // One `misplaced` per declaring container, deduped.
-      const reported = new Set<string>();
-
-      for (const entry of declared) {
-        if (
-          reported.has(entry.container) ||
-          !matchesGate(entry.slotMatcher, element.importSource) ||
-          isPlacedInContainer(
-            element.placement(),
-            entry.container,
-            entry.containerMatcher,
-          )
-        ) {
-          continue;
-        }
-
-        reported.add(entry.container);
-        violations.push({
-          ref: element.elementRef,
-          messageId: "misplaced",
-          data: { container: entry.container, name: element.name },
-        });
-      }
-
-      return violations;
-    },
+    names: new Set([...base.names, ...extra.names]),
+    analyze: (element): Violation<string>[] => [
+      ...base.analyze(element),
+      ...extra.analyze(element),
+    ],
   };
 }
 
@@ -268,7 +208,18 @@ export function prepareTable(
   return {
     pool,
     facets: {
-      slots: buildSlotsIndex(rows, pool),
+      slots: buildIndex<SlotsRowType, PreparedSlotsRow, CombinedSlots>(
+        "slots",
+        rows,
+        pool,
+        {
+          prepare: prepareSlotsRow,
+          combine: combineSlots,
+          evaluate: (combined, element) =>
+            evaluateSlots(combined, element.slotsRoot(), element.openingRef),
+          index: buildPlacementIndex,
+        },
+      ),
       subtree: buildIndex<SubtreeRowType, PreparedSubtreeRow, CombinedSubtree>(
         "subtree",
         rows,
