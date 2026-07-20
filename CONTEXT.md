@@ -140,7 +140,11 @@ Two published packages, split by side of the contract:
 - **Core** (`packages/eslint-plugin/src/contracts/`) — pure: rendered-tree
   model, activation, combination, evaluation, gate matching, and the payload
   types, JSON schema and runtime validators — the single source of truth for
-  what the plugin accepts. No ESLint imports. Vitest-tested.
+  what the plugin accepts. The three are three encodings of one row, so they are
+  pinned to agree: a shared corpus of row fixtures, typed against the payload,
+  asserts the schema rejects malformed shape and the validator catches what the
+  schema deliberately lets through, and no field escapes both. No ESLint
+  imports. Vitest-tested.
 - **Adapter** (`packages/eslint-plugin/src/rules/`) — ESLint side: collects the
   tree via scope analysis, feeds the core, reports. RuleTester-tested.
 - **Rule table** — frozen JSON every rule takes as its option: a flat list of
