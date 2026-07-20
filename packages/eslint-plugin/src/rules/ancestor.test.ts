@@ -4,7 +4,7 @@ import { afterAll, describe, it } from "vitest";
 
 import type { ContractRows } from "../contracts/payload.js";
 
-import { ancestor } from "./ancestor.js";
+import { ancestorGranular } from "./ancestor.js";
 
 RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
@@ -49,7 +49,7 @@ const memberOptions: ContractRows = [
   },
 ];
 
-ruleTester.run("ancestor", ancestor, {
+ruleTester.run("ancestor", ancestorGranular["ancestor.forbid"], {
   valid: [
     {
       name: "a button not nested inside another button",

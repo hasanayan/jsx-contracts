@@ -3,15 +3,19 @@
 // surface emits more than one row per component per facet yet — the rule-test
 // seam is the only place the merge is reachable.
 
+import type { RunTests } from "@typescript-eslint/rule-tester";
 import { RuleTester } from "@typescript-eslint/rule-tester";
+import type { TSESLint } from "@typescript-eslint/utils";
 import { afterAll, describe, it } from "vitest";
 
 import type { ContractRows } from "../contracts/payload.js";
 
-import { ancestor } from "./ancestor.js";
-import { props } from "./props.js";
-import { slots } from "./slots.js";
-import { subtree } from "./subtree.js";
+import { ancestorGranular } from "./ancestor.js";
+import { propsGranular } from "./props.js";
+import type { SlotsMessageId } from "./slots.js";
+import { slotsGranular } from "./slots.js";
+import type { SubtreeMessageId } from "./subtree.js";
+import { subtreeGranular } from "./subtree.js";
 
 RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
@@ -21,6 +25,51 @@ RuleTester.itOnly = it.only;
 const ruleTester = new RuleTester({
   languageOptions: { parserOptions: { ecmaFeatures: { jsx: true } } },
 });
+
+// The slots and subtree suites here assert messages spanning several granular
+// rules, so each case runs under every granular rule that owns one of its
+// asserted messages — its `errors` narrowed to that rule's messages, a case
+// spanning several rules split across them. Valid cases run under every rule,
+// preserving the parent's "no message of any kind" guarantee. The props and
+// ancestor suites each stay within one granular rule, so they run against it
+// directly.
+function runGranular<MessageId extends string>(
+  suite: string,
+  granular: Readonly<
+    Record<string, TSESLint.RuleModule<MessageId, [ContractRows]>>
+  >,
+  owns: Readonly<Record<string, readonly MessageId[]>>,
+  tests: RunTests<MessageId, [ContractRows]>,
+): void {
+  for (const [id, rule] of Object.entries(granular)) {
+    const owned = new Set<MessageId>(owns[id] ?? []);
+
+    const invalid = tests.invalid
+      .map((testCase) => ({
+        ...testCase,
+        errors: testCase.errors.filter((error) => owned.has(error.messageId)),
+      }))
+      .filter((testCase) => testCase.errors.length > 0);
+
+    ruleTester.run(`${suite} (${id})`, rule, { valid: tests.valid, invalid });
+  }
+}
+
+// Which message ids each granular rule reports (mirrors slots.ts / subtree.ts).
+const slotsOwns: Record<string, readonly SlotsMessageId[]> = {
+  "slots.children": ["invalidChild"],
+  "slots.count": ["tooFew", "tooMany"],
+  "slots.placement": ["misplaced"],
+  "slots.requires": ["requiresSlot"],
+  "slots.exclusive": ["exclusiveSlots"],
+  "slots.strict": ["unresolvableChild"],
+};
+
+const subtreeOwns: Record<string, readonly SubtreeMessageId[]> = {
+  "subtree.forbid": ["forbiddenDescendant"],
+  "subtree.forbidProps": ["forbiddenPropDescendant"],
+  "subtree.count": ["tooFewDescendants", "tooManyDescendants"],
+};
 
 // -- slots ---------------------------------------------------------------------
 
@@ -96,7 +145,7 @@ const conditionalStrictness: ContractRows = [
   },
 ];
 
-ruleTester.run("slots accumulation", slots, {
+runGranular<SlotsMessageId>("slots accumulation", slotsGranular, slotsOwns, {
   valid: [
     {
       name: "a slot both rows declare is accepted",
@@ -271,12 +320,16 @@ const conditionalDescendantCount: ContractRows = [
   },
 ];
 
-ruleTester.run("subtree accumulation", subtree, {
-  valid: [
-    {
-      name: "the conditional row's ban does not apply while its condition is false",
-      options: [baseAndConditionalBans],
-      code: `
+runGranular<SubtreeMessageId>(
+  "subtree accumulation",
+  subtreeGranular,
+  subtreeOwns,
+  {
+    valid: [
+      {
+        name: "the conditional row's ban does not apply while its condition is false",
+        options: [baseAndConditionalBans],
+        code: `
         import { Widget } from "@acme/ds";
         const view = (
           <Widget>
@@ -284,19 +337,19 @@ ruleTester.run("subtree accumulation", subtree, {
           </Widget>
         );
       `,
-    },
-    {
-      name: "a conditional descendant count does not run while its condition is false",
-      options: [conditionalDescendantCount],
-      code: `
+      },
+      {
+        name: "a conditional descendant count does not run while its condition is false",
+        options: [conditionalDescendantCount],
+        code: `
         import { Widget } from "@acme/ds";
         const view = <Widget />;
       `,
-    },
-    {
-      name: "a conditional descendant count is satisfied while its condition holds",
-      options: [conditionalDescendantCount],
-      code: `
+      },
+      {
+        name: "a conditional descendant count is satisfied while its condition holds",
+        options: [conditionalDescendantCount],
+        code: `
         import { Widget } from "@acme/ds";
         const view = (
           <Widget variant="compact">
@@ -304,13 +357,13 @@ ruleTester.run("subtree accumulation", subtree, {
           </Widget>
         );
       `,
-    },
-  ],
-  invalid: [
-    {
-      name: "the base row's ban applies whatever the condition",
-      options: [baseAndConditionalBans],
-      code: `
+      },
+    ],
+    invalid: [
+      {
+        name: "the base row's ban applies whatever the condition",
+        options: [baseAndConditionalBans],
+        code: `
         import { Widget } from "@acme/ds";
         const view = (
           <Widget>
@@ -318,12 +371,12 @@ ruleTester.run("subtree accumulation", subtree, {
           </Widget>
         );
       `,
-      errors: [{ messageId: "forbiddenDescendant" }],
-    },
-    {
-      name: "an active conditional row's ban unions with the base row's",
-      options: [baseAndConditionalBans],
-      code: `
+        errors: [{ messageId: "forbiddenDescendant" }],
+      },
+      {
+        name: "an active conditional row's ban unions with the base row's",
+        options: [baseAndConditionalBans],
+        code: `
         import { Widget } from "@acme/ds";
         const view = (
           <Widget variant="compact">
@@ -332,22 +385,23 @@ ruleTester.run("subtree accumulation", subtree, {
           </Widget>
         );
       `,
-      errors: [
-        { messageId: "forbiddenDescendant" },
-        { messageId: "forbiddenDescendant" },
-      ],
-    },
-    {
-      name: "a conditional descendant count runs once its condition holds",
-      options: [conditionalDescendantCount],
-      code: `
+        errors: [
+          { messageId: "forbiddenDescendant" },
+          { messageId: "forbiddenDescendant" },
+        ],
+      },
+      {
+        name: "a conditional descendant count runs once its condition holds",
+        options: [conditionalDescendantCount],
+        code: `
         import { Widget } from "@acme/ds";
         const view = <Widget variant="compact" />;
       `,
-      errors: [{ messageId: "tooFewDescendants" }],
-    },
-  ],
-});
+        errors: [{ messageId: "tooFewDescendants" }],
+      },
+    ],
+  },
+);
 
 // -- props ---------------------------------------------------------------------
 
@@ -369,7 +423,7 @@ const conditionalProps: ContractRows = [
   },
 ];
 
-ruleTester.run("props accumulation", props, {
+ruleTester.run("props accumulation", propsGranular["props.required"], {
   valid: [
     {
       name: "the conditional requirement is absent while its condition is false",
@@ -425,7 +479,7 @@ const unionedAncestors: ContractRows = [
   },
 ];
 
-ruleTester.run("ancestor accumulation", ancestor, {
+ruleTester.run("ancestor accumulation", ancestorGranular["ancestor.forbid"], {
   valid: [
     {
       name: "no forbidden ancestor above",

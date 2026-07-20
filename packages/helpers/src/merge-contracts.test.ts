@@ -2,10 +2,36 @@ import { describe, expect, it } from "vitest";
 
 import type { ContractRow } from "@jsx-contracts/eslint-plugin";
 
-import { prop } from "./condition.js";
-import { contract } from "./contract-builder.js";
+import type { Gate } from "./compile.js";
+import type { ContractBuilder, Fragment } from "./contract-builder.js";
+import { contractsFor } from "./contracts-for.js";
 import { mergeContracts } from "./merge-contracts.js";
 import type { CompiledContracts } from "./rule-table.js";
+
+// The tested artifact is the shipped one: every builder and condition is
+// reached through `contractsFor`, the public binding. The binding fixes one
+// gate, so a thin adapter re-admits the per-component gate these tables were
+// written with — each call still routes through a real
+// `contractsFor(...).contract(...)`. Without a module type the binding widens
+// component names to string, so the tables compile unchanged.
+const { prop } = contractsFor("g");
+
+// `contractsFor` fixes one gate; this reference re-admits a per-call one, and
+// accepts an undefined gate so the missing-gate guard stays reachable.
+const bind = contractsFor as (
+  from: Gate | undefined,
+) => ReturnType<typeof contractsFor>;
+
+function contract(): Fragment;
+function contract(component: string, from: Gate): ContractBuilder<never>;
+function contract(
+  component?: string,
+  from?: Gate,
+): ContractBuilder<never> | Fragment {
+  return component === undefined
+    ? bind("g").contract()
+    : bind(from).contract(component);
+}
 
 // The compiled payload is one flat table; the assertions below are about a
 // single facet's rows, so narrow the table to that facet's arm once here.

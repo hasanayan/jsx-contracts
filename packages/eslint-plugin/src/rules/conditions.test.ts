@@ -10,8 +10,8 @@ import { afterAll, describe, it } from "vitest";
 
 import type { ContractRows } from "../contracts/payload.js";
 
-import { slots } from "./slots.js";
-import { subtree } from "./subtree.js";
+import { slotsGranular } from "./slots.js";
+import { subtreeGranular } from "./subtree.js";
 
 RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
@@ -41,7 +41,7 @@ const combinedTree: ContractRows = [
   },
 ];
 
-ruleTester.run("condition trees", subtree, {
+ruleTester.run("condition trees", subtreeGranular["subtree.forbid"], {
   valid: [
     {
       name: "the any arm fails, so the tree does not hold",
@@ -115,7 +115,7 @@ const negatedBesideBase: ContractRows = [
   },
 ];
 
-ruleTester.run("negation under a spread", subtree, {
+ruleTester.run("negation under a spread", subtreeGranular["subtree.forbid"], {
   valid: [
     {
       name: "a written prop satisfies the negation's operand, so the row is off",
@@ -181,7 +181,7 @@ const widenedByExclusiveRows: ContractRows = [
   },
 ];
 
-ruleTester.run("all-conditional rows", slots, {
+ruleTester.run("all-conditional rows", slotsGranular["slots.children"], {
   valid: [
     {
       name: "the negated row is active, and its slot list allows the child",

@@ -1,9 +1,12 @@
+import type { RunTests } from "@typescript-eslint/rule-tester";
 import { RuleTester } from "@typescript-eslint/rule-tester";
+import type { TSESLint } from "@typescript-eslint/utils";
 import { afterAll, describe, it } from "vitest";
 
 import type { ContractRows, SlotsRow } from "../contracts/payload.js";
 
-import { slots } from "./slots.js";
+import type { SlotsMessageId } from "./slots.js";
+import { slotsGranular } from "./slots.js";
 
 RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
@@ -17,6 +20,44 @@ const ruleTester = new RuleTester({
     },
   },
 });
+
+// The suites here were authored against a facet's parent rule, which reports
+// every message kind. The plugin registers only the granular rules, each
+// surfacing one feature's messages, so a case runs under every granular rule
+// that owns one of its asserted messages — its `errors` narrowed to that rule's
+// messages, a case spanning several rules split across them. Valid cases run
+// under every rule, preserving the parent's "no message of any kind" guarantee.
+function runGranular<MessageId extends string>(
+  suite: string,
+  granular: Readonly<
+    Record<string, TSESLint.RuleModule<MessageId, [ContractRows]>>
+  >,
+  owns: Readonly<Record<string, readonly MessageId[]>>,
+  tests: RunTests<MessageId, [ContractRows]>,
+): void {
+  for (const [id, rule] of Object.entries(granular)) {
+    const owned = new Set<MessageId>(owns[id] ?? []);
+
+    const invalid = tests.invalid
+      .map((testCase) => ({
+        ...testCase,
+        errors: testCase.errors.filter((error) => owned.has(error.messageId)),
+      }))
+      .filter((testCase) => testCase.errors.length > 0);
+
+    ruleTester.run(`${suite} (${id})`, rule, { valid: tests.valid, invalid });
+  }
+}
+
+// Which message ids each granular slots rule reports (mirrors slots.ts).
+const slotsOwns: Record<string, readonly SlotsMessageId[]> = {
+  "slots.children": ["invalidChild"],
+  "slots.count": ["tooFew", "tooMany"],
+  "slots.placement": ["misplaced"],
+  "slots.requires": ["requiresSlot"],
+  "slots.exclusive": ["exclusiveSlots"],
+  "slots.strict": ["unresolvableChild"],
+};
 
 const widgetOptions: ContractRows = [
   {
@@ -127,7 +168,7 @@ const chipMinTwoOptions: ContractRows = [
   },
 ];
 
-ruleTester.run("slots", slots, {
+runGranular<SlotsMessageId>("slots", slotsGranular, slotsOwns, {
   valid: [
     {
       name: "primary action alone",

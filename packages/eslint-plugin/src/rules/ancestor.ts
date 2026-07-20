@@ -10,12 +10,6 @@ const messages = {
 
 const ancestorRule = facetRules<AncestorMessageId>("ancestor", messages);
 
-export const ancestor = ancestorRule(
-  "ancestor",
-  "Forbid a configured component from rendering anywhere below its declared forbidden ancestors.",
-  null,
-);
-
 export const ancestorGranular = {
   "ancestor.forbid": ancestorRule(
     "ancestor.forbid",

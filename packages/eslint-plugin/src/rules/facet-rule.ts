@@ -24,7 +24,7 @@ import {
 } from "./collect.js";
 import { createInterner, createNodeMemo } from "./memo.js";
 
-// Granular variants live in the same doc as the parent rule.
+// Every granular variant of a facet shares that facet's one doc file.
 const createRule = ESLintUtils.RuleCreator(
   (name) => `packages/eslint-plugin/src/rules/${name.split(".")[0] ?? name}.ts`,
 );
@@ -139,13 +139,13 @@ const memos: Record<
 export type FacetRuleMaker<MessageId extends string> = (
   name: string,
   description: string,
-  reported: ReadonlySet<MessageId> | null,
+  reported: ReadonlySet<MessageId>,
 ) => TSESLint.RuleModule<MessageId, [ContractRows]>;
 
 /**
- * The rule maker for one facet. A `null` `reported` set reports every one of the
- * facet's message kinds — the parent rule; a set of ids makes a granular
- * variant, so a consumer can toggle or eslint-disable one feature.
+ * The rule maker for one facet. The `reported` set names the facet's message
+ * kinds this rule surfaces — one granular variant per feature, so a consumer can
+ * toggle or eslint-disable a single one.
  */
 export function facetRules<MessageId extends string>(
   facet: Facet,
@@ -187,7 +187,7 @@ export function facetRules<MessageId extends string>(
             for (const violation of violations) {
               const messageId = violation.messageId as MessageId;
 
-              if (reported === null || reported.has(messageId)) {
+              if (reported.has(messageId)) {
                 context.report({
                   node: violation.ref as TSESTree.Node,
                   messageId,

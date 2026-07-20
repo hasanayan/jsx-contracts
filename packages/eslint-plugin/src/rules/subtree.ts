@@ -16,12 +16,6 @@ const messages = {
 
 const subtreeRule = facetRules<SubtreeMessageId>("subtree", messages);
 
-export const subtree = subtreeRule(
-  "subtree",
-  "Forbid certain elements anywhere in the JSX subtree of a configured component rendered with a given prop.",
-  null,
-);
-
 export const subtreeGranular = {
   "subtree.forbid": subtreeRule(
     "subtree.forbid",

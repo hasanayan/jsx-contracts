@@ -1,10 +1,13 @@
+import type { RunTests } from "@typescript-eslint/rule-tester";
 import { RuleTester } from "@typescript-eslint/rule-tester";
+import type { TSESLint } from "@typescript-eslint/utils";
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import { afterAll, describe, it } from "vitest";
 
 import type { ContractRows } from "../contracts/payload.js";
 
-import { props } from "./props.js";
+import type { PropsMessageId } from "./props.js";
+import { propsGranular } from "./props.js";
 
 RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
@@ -18,6 +21,41 @@ const ruleTester = new RuleTester({
     },
   },
 });
+
+// The suites here were authored against a facet's parent rule, which reports
+// every message kind. The plugin registers only the granular rules, each
+// surfacing one feature's messages, so a case runs under every granular rule
+// that owns one of its asserted messages — its `errors` narrowed to that rule's
+// messages, a case spanning several rules split across them. Valid cases run
+// under every rule, preserving the parent's "no message of any kind" guarantee.
+function runGranular<MessageId extends string>(
+  suite: string,
+  granular: Readonly<
+    Record<string, TSESLint.RuleModule<MessageId, [ContractRows]>>
+  >,
+  owns: Readonly<Record<string, readonly MessageId[]>>,
+  tests: RunTests<MessageId, [ContractRows]>,
+): void {
+  for (const [id, rule] of Object.entries(granular)) {
+    const owned = new Set<MessageId>(owns[id] ?? []);
+
+    const invalid = tests.invalid
+      .map((testCase) => ({
+        ...testCase,
+        errors: testCase.errors.filter((error) => owned.has(error.messageId)),
+      }))
+      .filter((testCase) => testCase.errors.length > 0);
+
+    ruleTester.run(`${suite} (${id})`, rule, { valid: tests.valid, invalid });
+  }
+}
+
+// Which message ids each granular props rule reports (mirrors props.ts).
+const propsOwns: Record<string, readonly PropsMessageId[]> = {
+  "props.required": ["requiredProp", "requiredAnyProp"],
+  "props.exclusive": ["exclusiveProps"],
+  "props.deprecated": ["deprecatedProp", "deprecatedComponent"],
+};
 
 const requiredOptions: ContractRows = [
   {
@@ -73,7 +111,7 @@ const memberOptions: ContractRows = [
   },
 ];
 
-ruleTester.run("props", props, {
+runGranular<PropsMessageId>("props", propsGranular, propsOwns, {
   valid: [
     {
       name: "required props all present",

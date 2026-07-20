@@ -19,12 +19,6 @@ const messages = {
 
 const slotsRule = facetRules<SlotsMessageId>("slots", messages);
 
-export const slots = slotsRule(
-  "slots",
-  "Constrain the children of configured JSX container components to their slots, and require the slots to be placed directly in their containers.",
-  null,
-);
-
 export const slotsGranular = {
   "slots.children": slotsRule(
     "slots.children",

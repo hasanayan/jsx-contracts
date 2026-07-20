@@ -15,12 +15,6 @@ const messages = {
 
 const propsRule = facetRules<PropsMessageId>("props", messages);
 
-export const props = propsRule(
-  "props",
-  "Enforce a configured component's element-local prop contracts: required props, mutually exclusive prop groups, and deprecations.",
-  null,
-);
-
 export const propsGranular = {
   "props.required": propsRule(
     "props.required",
