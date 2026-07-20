@@ -116,7 +116,13 @@ and commits.
 
 - **Rendered tree** — pure data the adapter collects, the core evaluates against.
   Each node: dotted tag name, branch tags, import provenance, prop facts,
-  children (body vs. JSX-through-props, distinguished).
+  children (body vs. JSX-through-props, distinguished). Its whole vocabulary is
+  one module, `contracts/facts.ts`: the per-facet views (the slots tree, the
+  lazy subtree, a slot's placement, the ancestor chain) and `ElementFacts`, the
+  seam itself — one element as the adapter presents it, every accessor beyond
+  its name and import source a thunk, so the pipeline collects only what the
+  active rows need. Both sides import it; neither evaluator exports a type the
+  adapter must produce. A fifth facet's facts land there.
 - **Transparent node** — renders no element, collection descends through:
   fragments, expression containers, ternaries (both sides), logical (`&&` drops
   its condition), constant JSX-valued identifiers (cycle-guarded).
@@ -136,14 +142,16 @@ Two published packages, split by side of the contract:
   compiles to the rule table, and the owner of consumer-facing type safety.
   Also the home of the unsatisfiability check, which needs the condition trees
   the plugin only sees as payload. Imports the payload types type-only. Zero
-  runtime dependencies — so the condition normalization and prop-absence rule
-  the check needs are re-implemented here rather than imported from the core,
-  with a cross-package agreement test pinning the two copies to agree (ADR
-  0002). Vitest-tested.
+  runtime dependencies — so the condition normalization, prop-absence rule and
+  count-default rule the check needs are re-implemented here rather than
+  imported from the core, with a cross-package agreement test per body of
+  semantics pinning each pair of copies to agree (ADR 0002). Vitest-tested.
 - **Core** (`packages/eslint-plugin/src/contracts/`) — pure: rendered-tree
-  model, activation, combination, evaluation, gate matching, and the payload
-  types, JSON schema and runtime validators — the single source of truth for
-  what the plugin accepts. The three are three encodings of one row, so they are
+  facts (`facts.ts`, the vocabulary the adapter owes it) and the semantics it
+  applies to them (`model.ts` — coexistence, count bounds), activation,
+  combination, evaluation, gate matching, and the payload types, JSON schema
+  and runtime validators — the single source of truth for what the plugin
+  accepts. The three are three encodings of one row, so they are
   pinned to agree: a shared corpus of row fixtures, typed against the payload,
   asserts the schema rejects malformed shape and the validator catches what the
   schema deliberately lets through, and no field escapes both. No ESLint
