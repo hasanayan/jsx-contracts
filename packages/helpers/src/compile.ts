@@ -45,11 +45,6 @@ export interface RuntimeConditional {
 }
 
 export interface RuntimeEntry {
-  /**
-   * The gate the binding stated. Optional in this runtime view alone: a
-   * nameless contract inherits the gate of the component it is attached to.
-   */
-  from?: Gate;
   slots?: Record<string, RuntimeSlotSpec>;
   requires?: Record<string, string>;
   exclusive?: readonly (readonly [readonly string[], readonly string[]])[];
@@ -180,25 +175,11 @@ function emitRows(
   }
 
   if (entry.forbid !== undefined) {
-    if (entry.forbid.length === 0) {
-      throw new Error(
-        `contract: component "${component}" calls forbidDescendants() with ` +
-          "no elements.",
-      );
-    }
-
     subtreeRow.forbid = entry.forbid.map(forbiddenElement);
     hasSubtree = true;
   }
 
   if (entry.forbidProps !== undefined) {
-    if (entry.forbidProps.length === 0) {
-      throw new Error(
-        `contract: component "${component}" calls forbidDescendantProps() ` +
-          "with no props.",
-      );
-    }
-
     subtreeRow.forbidProps = [...entry.forbidProps];
     hasSubtree = true;
   }
@@ -242,35 +223,18 @@ function emitRows(
   }
 
   if (entry.props?.required !== undefined) {
-    propsRow.required = entry.props.required.map((requirement) => {
-      if (typeof requirement === "string") {
-        return requirement;
-      }
-
-      if (requirement.length === 0) {
-        throw new Error(
-          `contract: component "${component}" calls requiresAnyProp() ` +
-            "with no props.",
-        );
-      }
-
-      return [...requirement];
-    });
+    propsRow.required = entry.props.required.map((requirement) =>
+      typeof requirement === "string" ? requirement : [...requirement],
+    );
 
     hasProps = true;
   }
 
   if (entry.props?.exclusive !== undefined) {
-    propsRow.exclusive = entry.props.exclusive.map(([groupA, groupB]) => {
-      if (groupA.length === 0 || groupB.length === 0) {
-        throw new Error(
-          `contract: component "${component}" calls exclusiveProps() ` +
-            "with an empty group.",
-        );
-      }
-
-      return [[...groupA], [...groupB]];
-    });
+    propsRow.exclusive = entry.props.exclusive.map(([groupA, groupB]) => [
+      [...groupA],
+      [...groupB],
+    ]);
 
     hasProps = true;
   }
@@ -290,22 +254,18 @@ function emitRows(
   }
 
   if (entry.notInside !== undefined) {
-    const notInside = entry.notInside.map(forbiddenElement);
+    const ancestorRow: AncestorRow = {
+      facet: "ancestor",
+      importPath: gate,
+      component,
+      notInside: entry.notInside.map(forbiddenElement),
+    };
 
-    if (notInside.length > 0) {
-      const ancestorRow: AncestorRow = {
-        facet: "ancestor",
-        importPath: gate,
-        component,
-        notInside,
-      };
-
-      if (when !== undefined) {
-        ancestorRow.when = when;
-      }
-
-      rows.push(ancestorRow);
+    if (when !== undefined) {
+      ancestorRow.when = when;
     }
+
+    rows.push(ancestorRow);
   }
 
   for (const conditional of entry.conditional ?? []) {
@@ -319,23 +279,20 @@ function emitRows(
   }
 }
 
+/**
+ * One named contract as a rule table: the component, the gate its binding
+ * stated, and the entry its chain accumulated. Emission only — shorthand
+ * expansion, when-conjunction and facet fan-out. What an entry may hold is
+ * guarded by the builder method that received it, so nothing here rejects.
+ */
 export function compile(
-  contracts: Record<string, RuntimeEntry>,
+  component: string,
+  gate: Gate,
+  entry: RuntimeEntry,
 ): CompiledContracts {
   const rows: ContractRows = [];
 
-  for (const [component, entry] of Object.entries(contracts)) {
-    const gate = entry.from;
-
-    if (gate === undefined) {
-      throw new Error(
-        `contract: component "${component}" has no import gate ` +
-          "(pass one to contractsFor()).",
-      );
-    }
-
-    emitRows(rows, component, gate, entry, undefined);
-  }
+  emitRows(rows, component, gate, entry, undefined);
 
   return makeContracts(rows);
 }

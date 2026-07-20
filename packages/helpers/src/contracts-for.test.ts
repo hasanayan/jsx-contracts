@@ -39,6 +39,19 @@ describe("contractsFor", () => {
     expect(rowsFor(merged, "props")[0]?.importPath).toBe("@acme/legacy");
   });
 
+  // The type-state rejects this, so the subject defeats it with a cast: the
+  // guard is what an untyped (checkJs) caller still meets. It throws at the
+  // binding, the one place a gate is written, rather than at the `.rows` of
+  // some contract built against it.
+  it("rejects a binding with no import gate", () => {
+    expect(() => contractsFor(undefined as unknown as string)).toThrow(
+      new Error(
+        "contractsFor: needs an import gate — the module its components " +
+          "must be imported from.",
+      ),
+    );
+  });
+
   it("hands out the condition constructors beside the builder", () => {
     const { contract, prop, allOf, not } = contractsFor("@acme/ds");
     const built = contract("Button").when(

@@ -37,6 +37,15 @@ interface BoundContract<Module> {
  * // eslint.config.js → rules: mergeContracts(tray, ...).rules()
  */
 export function contractsFor<Module>(from: Gate): BoundContracts<Module> {
+  // The gate is stated here and nowhere else, so this is where a missing one
+  // is caught — before a single contract is built against the binding.
+  if (typeof from !== "string" || from.length === 0) {
+    throw new Error(
+      "contractsFor: needs an import gate — the module its components must " +
+        "be imported from.",
+    );
+  }
+
   const starter = (component?: string): unknown =>
     component === undefined ? contract() : contract(component, from);
 

@@ -24,32 +24,62 @@ type Builder<
   Named extends boolean,
 > = Named extends true ? ContractBuilder<SlotKey, Bound> : Fragment<SlotKey>;
 
+/** A count-bound method, named by the spelling that offers it. */
+type CountMethod = "atLeast" | "atMost" | "exactly";
+
+/**
+ * The count bounds in full. `Offered` is what the declaration has not spent
+ * yet: each method drops itself and every method that would set a bound it has
+ * already set, so a bound is stated once and never silently overwritten.
+ */
+interface CountMethods<
+  SlotKey extends string,
+  Bound extends Binding,
+  Named extends boolean,
+  Offered extends CountMethod,
+> {
+  /** The part must appear at least `count` times; the upper bound goes unbounded. */
+  atLeast(
+    count: number,
+  ): SlotBuilder<
+    SlotKey,
+    Bound,
+    Named,
+    Exclude<Offered, "atLeast" | "exactly">
+  >;
+  /** The part may appear at most `count` times; the lower bound stays nought. */
+  atMost(
+    count: number,
+  ): SlotBuilder<SlotKey, Bound, Named, Exclude<Offered, "atMost" | "exactly">>;
+  /** The part must appear exactly `count` times: both bounds at once. */
+  exactly(count: number): SlotBuilder<SlotKey, Bound, Named, never>;
+}
+
 /**
  * Count bounds for the slot or descendant just declared. Offered by the
  * type-state only directly after the declaration they bound — and after each
  * other, so `.atLeast(1).atMost(1)` reads — so a bound cannot silently attach
- * to the wrong part.
+ * to the wrong part, nor be stated twice.
  */
-export interface PendingCount<
+export type PendingCount<
   SlotKey extends string,
   Bound extends Binding = Binding,
   Named extends boolean = true,
-> {
-  /** The part must appear at least `count` times; the upper bound goes unbounded. */
-  atLeast(count: number): SlotBuilder<SlotKey, Bound, Named>;
-  /** The part may appear at most `count` times; the lower bound stays nought. */
-  atMost(count: number): SlotBuilder<SlotKey, Bound, Named>;
-}
+  Offered extends CountMethod = CountMethod,
+> = Pick<CountMethods<SlotKey, Bound, Named, Offered>, Offered>;
 
 /**
  * A builder whose latest slot or descendant declaration can still take count
- * bounds; any other call closes the declaration.
+ * bounds; any other call closes the declaration, and every bound spent closes
+ * it too.
  */
 export type SlotBuilder<
   SlotKey extends string,
   Bound extends Binding = Binding,
   Named extends boolean = true,
-> = Builder<SlotKey, Bound, Named> & PendingCount<SlotKey, Bound, Named>;
+  Offered extends CountMethod = CountMethod,
+> = Builder<SlotKey, Bound, Named> &
+  PendingCount<SlotKey, Bound, Named, Offered>;
 
 /**
  * Every method a contract offers, named or nameless. The two differ only in
@@ -251,14 +281,30 @@ export function contract<Bound extends Binding = Binding>(
   component: Bound["component"],
   from: Gate,
 ): ContractBuilder<never, Bound>;
-export function contract(component?: string, from?: Gate): AnyBuilder {
-  return makeBuilder(component, component === undefined ? {} : { from });
+export function contract(...named: [] | [string, Gate]): AnyBuilder {
+  return makeBuilder(
+    named.length === 0 ? undefined : { component: named[0], gate: named[1] },
+    {},
+  );
 }
 
-interface AnyBuilder extends CompiledContracts {
+/**
+ * The whole method surface, with every narrowing the types add widened away:
+ * the literal slot keys, the checked part names and the pending-count state
+ * machine are the types' job alone, and the runtime below is one object
+ * offering all of it at once. Extending it is what ties the two together — a
+ * method added to the interface has no implementation, and a signature the
+ * runtime cannot honour fails to extend.
+ */
+type WidenedContract = ContractMethods<string, Binding, true> &
+  PendingCount<string> &
+  CompiledContracts;
+
+interface AnyBuilder extends WidenedContract {
   hasSlot: (name: string, from?: Gate) => AnyBuilder;
   atLeast: (count: number) => AnyBuilder;
   atMost: (count: number) => AnyBuilder;
+  exactly: (count: number) => AnyBuilder;
   slotRequires: (slot: string, requiredSlot: string) => AnyBuilder;
   exclusiveSlots: (groupA: string[], groupB: string[]) => AnyBuilder;
   strictSlots: () => AnyBuilder;
@@ -273,6 +319,14 @@ interface AnyBuilder extends CompiledContracts {
   notInside: (...elements: Forbid[]) => AnyBuilder;
   when: (condition: Condition | undefined, rules: object) => AnyBuilder;
 }
+
+/**
+ * A method the runtime declares and the interface does not know about: none,
+ * and the annotation on the builder below keeps it that way — such a key is
+ * typed `never`, so it cannot be implemented. The other direction of the same
+ * pin is `AnyBuilder extends WidenedContract`.
+ */
+type UndeclaredMethods = Exclude<keyof AnyBuilder, keyof WidenedContract>;
 
 /**
  * Which kind of part a declaration names. A slot is the children facet's unit
@@ -292,32 +346,46 @@ interface PendingPart {
   readonly name: string;
 }
 
+/**
+ * What a named contract compiles against: the component its rules describe and
+ * the gate its binding stated. Absent on a nameless contract — it has neither
+ * until `when` attaches it to a component.
+ */
+interface NamedContract {
+  readonly component: string;
+  readonly gate: Gate;
+}
+
 // Keyed off the builder object so `when` can read a nameless contract's rules.
 const namelessEntries = new WeakMap<object, RuntimeEntry>();
 
 function makeBuilder(
-  component: string | undefined,
+  named: NamedContract | undefined,
   entry: RuntimeEntry,
   pendingPart?: PendingPart,
 ): AnyBuilder {
   let compiled: CompiledContracts | undefined;
 
+  // Every message below names the contract it is about, so a rule authored in
+  // a nameless contract is not reported against some component.
   const subject =
-    component === undefined ? "nameless contract" : `component "${component}"`;
+    named === undefined
+      ? "nameless contract"
+      : `component "${named.component}"`;
 
   const finalize = (): CompiledContracts => {
-    if (component === undefined) {
+    if (named === undefined) {
       throw new Error(
         "contract: a nameless contract has no rule table of its own — " +
           "attach it to a component with when().",
       );
     }
 
-    return (compiled ??= compile({ [component]: entry }));
+    return (compiled ??= compile(named.component, named.gate, entry));
   };
 
   const next = (updated: RuntimeEntry, part?: PendingPart): AnyBuilder =>
-    makeBuilder(component, updated, part);
+    makeBuilder(named, updated, part);
 
   const requireDeclared = (reference: string): void => {
     if (entry.slots?.[reference] === undefined) {
@@ -351,7 +419,9 @@ function makeBuilder(
     return next(withPart(kind, name, spec), { kind, name });
   };
 
-  const boundPart = (bound: "min" | "max", count: number): AnyBuilder => {
+  // The type-state spends each bound as it is stated, so a repeat is only
+  // reachable from untyped JS — where it would silently win over the first.
+  const boundPart = (bounds: { min?: number; max?: number }): AnyBuilder => {
     if (pendingPart === undefined) {
       throw new Error(
         `contract: ${subject} has no slot or descendant to bound — declare ` +
@@ -362,11 +432,17 @@ function makeBuilder(
     const { kind, name } = pendingPart;
     const spec: RuntimeSlotSpec = entry[partsKey[kind]]?.[name] ?? {};
 
+    for (const bound of ["min", "max"] as const) {
+      if (bounds[bound] !== undefined && spec.count?.[bound] !== undefined) {
+        throw new Error(
+          `contract: ${subject} bounds ${kind} "${name}" twice — atLeast(), ` +
+            "atMost() and exactly() each apply once.",
+        );
+      }
+    }
+
     return next(
-      withPart(kind, name, {
-        ...spec,
-        count: { ...spec.count, [bound]: count },
-      }),
+      withPart(kind, name, { ...spec, count: { ...spec.count, ...bounds } }),
       pendingPart,
     );
   };
@@ -376,15 +452,18 @@ function makeBuilder(
   const withProps = (updated: RuntimeProps): AnyBuilder =>
     next({ ...entry, props: updated });
 
-  const builder: AnyBuilder = {
+  const builder: AnyBuilder & Record<UndeclaredMethods, never> = {
     hasSlot(name, from): AnyBuilder {
       return declarePart("slot", name, from);
     },
     atLeast(count): AnyBuilder {
-      return boundPart("min", count);
+      return boundPart({ min: count });
     },
     atMost(count): AnyBuilder {
-      return boundPart("max", count);
+      return boundPart({ max: count });
+    },
+    exactly(count): AnyBuilder {
+      return boundPart({ min: count, max: count });
     },
     slotRequires(slot, requiredSlot): AnyBuilder {
       requireDeclared(slot);
@@ -419,9 +498,21 @@ function makeBuilder(
       return declarePart("descendant", name, from);
     },
     forbidDescendants(...elements): AnyBuilder {
+      if (elements.length === 0) {
+        throw new Error(
+          `contract: ${subject} calls forbidDescendants() with no elements.`,
+        );
+      }
+
       return next({ ...entry, forbid: [...(entry.forbid ?? []), ...elements] });
     },
     forbidDescendantProps(...props): AnyBuilder {
+      if (props.length === 0) {
+        throw new Error(
+          `contract: ${subject} calls forbidDescendantProps() with no props.`,
+        );
+      }
+
       return next({
         ...entry,
         forbidProps: [...(entry.forbidProps ?? []), ...props],
@@ -436,6 +527,12 @@ function makeBuilder(
       });
     },
     requiresAnyProp(...group): AnyBuilder {
+      if (group.length === 0) {
+        throw new Error(
+          `contract: ${subject} calls requiresAnyProp() with no props.`,
+        );
+      }
+
       const props = currentProps();
 
       return withProps({
@@ -444,6 +541,12 @@ function makeBuilder(
       });
     },
     exclusiveProps(groupA, groupB): AnyBuilder {
+      if (groupA.length === 0 || groupB.length === 0) {
+        throw new Error(
+          `contract: ${subject} calls exclusiveProps() with an empty group.`,
+        );
+      }
+
       const props = currentProps();
 
       return withProps({
@@ -473,6 +576,12 @@ function makeBuilder(
       return next({ ...entry, deprecated: useInstead ?? true });
     },
     notInside(...elements): AnyBuilder {
+      if (elements.length === 0) {
+        throw new Error(
+          `contract: ${subject} calls notInside() with no ancestors.`,
+        );
+      }
+
       const existing = entry.notInside ?? [];
       const seen = new Set(
         existing.map((el) => (typeof el === "string" ? el : el.name)),
@@ -527,7 +636,7 @@ function makeBuilder(
     },
   };
 
-  if (component === undefined) {
+  if (named === undefined) {
     namelessEntries.set(builder, entry);
   }
 

@@ -19,21 +19,14 @@ import type { CompiledContracts } from "./rule-table.js";
 // the type-level checks below) compile unchanged.
 const { prop, allOf, anyOf, not } = contractsFor("g");
 
-// `contractsFor` fixes one gate; this reference re-admits a per-call one, and
-// accepts an undefined gate so the missing-gate guard stays reachable.
-const bind = contractsFor as (
-  from: Gate | undefined,
-) => ReturnType<typeof contractsFor>;
-
 function contract(): Fragment;
 function contract(component: string, from: Gate): ContractBuilder<never>;
 function contract(
-  component?: string,
-  from?: Gate,
+  ...named: [] | [string, Gate]
 ): ContractBuilder<never> | Fragment {
-  return component === undefined
-    ? bind("g").contract()
-    : bind(from).contract(component);
+  return named.length === 0
+    ? contractsFor("g").contract()
+    : contractsFor(named[1]).contract(named[0]);
 }
 
 // The compiled payload is one flat table; nearly every assertion below is about
@@ -223,23 +216,54 @@ describe("contract builder", () => {
       ]);
     });
 
-    it("emits the four count-default cases", () => {
+    // ADR 0001's count-default table, verbatim: you assert only what you write.
+    it("emits the five count-default cases", () => {
       const fluent = contract("Widget.Tray", "g")
         .hasSlot(".Bare")
         .hasSlot(".Lower")
         .atLeast(1)
         .hasSlot(".Upper")
         .atMost(2)
+        .hasSlot(".Exact")
+        .exactly(1)
         .hasSlot(".Both")
         .atLeast(1)
-        .atMost(3);
+        .atMost(4);
 
       expect(rowsFor(fluent, "slots")[0]?.slots).toEqual([
         { name: "Widget.Tray.Bare" },
         { name: "Widget.Tray.Lower", minCount: 1 },
         { name: "Widget.Tray.Upper", maxCount: 2 },
-        { name: "Widget.Tray.Both", minCount: 1, maxCount: 3 },
+        { name: "Widget.Tray.Exact", minCount: 1, maxCount: 1 },
+        { name: "Widget.Tray.Both", minCount: 1, maxCount: 4 },
       ]);
+    });
+
+    it("rejects a second bound on one declaration at call time", () => {
+      // The type-state spends each bound; the cast is what untyped JS meets.
+      const loose = contract("W", "g").hasSlot(".A").atLeast(1) as unknown as {
+        atLeast: (count: number) => unknown;
+      };
+
+      expect(() => loose.atLeast(2)).toThrow(
+        new Error(
+          'contract: component "W" bounds slot ".A" twice — atLeast(), ' +
+            "atMost() and exactly() each apply once.",
+        ),
+      );
+    });
+
+    it("rejects exactly() after a bound it would overwrite", () => {
+      const loose = contract("W", "g").hasSlot(".A").atMost(2) as unknown as {
+        exactly: (count: number) => unknown;
+      };
+
+      expect(() => loose.exactly(1)).toThrow(
+        new Error(
+          'contract: component "W" bounds slot ".A" twice — atLeast(), ' +
+            "atMost() and exactly() each apply once.",
+        ),
+      );
     });
 
     it("carries a part's own import gate to the emitted row", () => {
@@ -370,6 +394,90 @@ describe("contract builder", () => {
         "Button",
       ]);
     });
+  });
+});
+
+// The type-state rejects each call below, so every one of them defeats it with
+// a cast: these guards are what an untyped (checkJs) caller still meets. Each
+// throws from the call that made the mistake rather than from `.rows` later,
+// so the stack lands on the offending line.
+//
+// Every message is asserted whole, because the message *is* the feature here:
+// an author only ever reaches these through the builder, so each one has to
+// name the method they wrote and nothing they did not.
+describe("arity guards", () => {
+  it("rejects a forbidDescendants() naming no elements", () => {
+    expect(() =>
+      contract("Widget", "g").forbidDescendants(...([] as unknown as [string])),
+    ).toThrow(
+      new Error(
+        'contract: component "Widget" calls forbidDescendants() with no ' +
+          "elements.",
+      ),
+    );
+  });
+
+  it("rejects a forbidDescendantProps() naming no props", () => {
+    expect(() =>
+      contract("Widget", "g").forbidDescendantProps(
+        ...([] as unknown as [string]),
+      ),
+    ).toThrow(
+      new Error(
+        'contract: component "Widget" calls forbidDescendantProps() with no ' +
+          "props.",
+      ),
+    );
+  });
+
+  it("rejects a requiresAnyProp() naming no props", () => {
+    expect(() =>
+      contract("Widget", "g").requiresAnyProp(
+        ...([] as unknown as [string, string]),
+      ),
+    ).toThrow(
+      new Error(
+        'contract: component "Widget" calls requiresAnyProp() with no props.',
+      ),
+    );
+  });
+
+  it("rejects an exclusiveProps() group with no props", () => {
+    expect(() =>
+      contract("Widget", "g").exclusiveProps(["href"], [] as never),
+    ).toThrow(
+      new Error(
+        'contract: component "Widget" calls exclusiveProps() with an empty ' +
+          "group.",
+      ),
+    );
+  });
+
+  it("rejects a notInside() naming no ancestors", () => {
+    expect(() =>
+      contract("Widget", "g").notInside(...([] as unknown as [string])),
+    ).toThrow(
+      new Error(
+        'contract: component "Widget" calls notInside() with no ancestors.',
+      ),
+    );
+  });
+
+  // The rules are authored on the nameless contract, so it is the subject —
+  // naming the component the `when` lands on would send the author to a line
+  // they did not write.
+  it("names the nameless contract an empty call was written in", () => {
+    expect(() =>
+      contract("Widget", "g").when(
+        prop("variant").is("compact"),
+        contract().forbidDescendants(...([] as unknown as [string])),
+      ),
+    ).toThrow(
+      new Error(
+        "contract: nameless contract calls forbidDescendants() with no " +
+          "elements.",
+      ),
+    );
   });
 });
 
@@ -815,6 +923,23 @@ function typeLevelChecks(): void {
   // reads as one range.
   contract("Widget.Tray", "g").hasSlot(".Title").atLeast(1).atMost(1);
   contract("Widget.Tray", "g").hasDescendant(".List").atMost(1).atLeast(1);
+
+  // …but each is spent once: a repeat would last-write-win over the first.
+  // @ts-expect-error the lower bound is already stated.
+  void contract("Widget.Tray", "g").hasSlot(".Title").atLeast(1).atLeast;
+
+  // @ts-expect-error the upper bound is already stated.
+  void contract("Widget.Tray", "g").hasDescendant(".List").atMost(1).atMost;
+
+  // `exactly` states both bounds, so nothing is left to state — before or
+  // after it.
+  contract("Widget.Tray", "g").hasSlot(".Title").exactly(1);
+
+  // @ts-expect-error `exactly` left no bound unspent.
+  void contract("Widget.Tray", "g").hasSlot(".Title").exactly(1).atMost;
+
+  // @ts-expect-error `exactly` would overwrite the bound already stated.
+  void contract("Widget.Tray", "g").hasSlot(".Title").atLeast(1).exactly;
 
   // Names declared by hasSlot accumulate into the referenceable slot keys.
   contract("Widget.Tray", "g")

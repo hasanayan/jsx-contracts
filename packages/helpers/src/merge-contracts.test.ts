@@ -16,21 +16,14 @@ import type { CompiledContracts } from "./rule-table.js";
 // component names to string, so the tables compile unchanged.
 const { prop } = contractsFor("g");
 
-// `contractsFor` fixes one gate; this reference re-admits a per-call one, and
-// accepts an undefined gate so the missing-gate guard stays reachable.
-const bind = contractsFor as (
-  from: Gate | undefined,
-) => ReturnType<typeof contractsFor>;
-
 function contract(): Fragment;
 function contract(component: string, from: Gate): ContractBuilder<never>;
 function contract(
-  component?: string,
-  from?: Gate,
+  ...named: [] | [string, Gate]
 ): ContractBuilder<never> | Fragment {
-  return component === undefined
-    ? bind("g").contract()
-    : bind(from).contract(component);
+  return named.length === 0
+    ? contractsFor("g").contract()
+    : contractsFor(named[1]).contract(named[0]);
 }
 
 // The compiled payload is one flat table; the assertions below are about a

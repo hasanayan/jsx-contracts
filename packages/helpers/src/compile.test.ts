@@ -22,21 +22,14 @@ import type { CompiledContracts } from "./rule-table.js";
 // component names to string, so the tables compile unchanged.
 const { prop } = contractsFor("g");
 
-// `contractsFor` fixes one gate; this reference re-admits a per-call one, and
-// accepts an undefined gate so the missing-gate guard stays reachable.
-const bind = contractsFor as (
-  from: Gate | undefined,
-) => ReturnType<typeof contractsFor>;
-
 function contract(): Fragment;
 function contract(component: string, from: Gate): ContractBuilder<never>;
 function contract(
-  component?: string,
-  from?: Gate,
+  ...named: [] | [string, Gate]
 ): ContractBuilder<never> | Fragment {
-  return component === undefined
-    ? bind("g").contract()
-    : bind(from).contract(component);
+  return named.length === 0
+    ? contractsFor("g").contract()
+    : contractsFor(named[1]).contract(named[0]);
 }
 
 // The compiled payload is one flat table; nearly every assertion below is about
@@ -303,78 +296,5 @@ describe("ancestor compilation", () => {
     const none = contract("Widget", "@acme/ds").hasSlot(".Action");
 
     expect(rowsFor(none, "ancestor")).toEqual([]);
-  });
-});
-
-// The type-state rejects each of these, so every subject below defeats it with
-// a cast: the guards are what an untyped (checkJs) caller still meets.
-//
-// Every message is asserted whole, because the message *is* the feature here:
-// an author only ever reaches these through the builder, so each one has to
-// name the method they wrote and nothing they did not.
-describe("compilation-time validation", () => {
-  it("rejects a component with no import gate", () => {
-    expect(
-      () =>
-        contract("Widget", undefined as unknown as string).hasSlot(".Action")
-          .rows,
-    ).toThrow(
-      new Error(
-        'contract: component "Widget" has no import gate ' +
-          "(pass one to contractsFor()).",
-      ),
-    );
-  });
-
-  it("rejects a forbidDescendants() naming no elements", () => {
-    expect(
-      () =>
-        contract("Widget", "g").forbidDescendants(
-          ...([] as unknown as [string]),
-        ).rows,
-    ).toThrow(
-      new Error(
-        'contract: component "Widget" calls forbidDescendants() with no ' +
-          "elements.",
-      ),
-    );
-  });
-
-  it("rejects a forbidDescendantProps() naming no props", () => {
-    expect(
-      () =>
-        contract("Widget", "g").forbidDescendantProps(
-          ...([] as unknown as [string]),
-        ).rows,
-    ).toThrow(
-      new Error(
-        'contract: component "Widget" calls forbidDescendantProps() with no ' +
-          "props.",
-      ),
-    );
-  });
-
-  it("rejects a requiresAnyProp() naming no props", () => {
-    expect(
-      () =>
-        contract("Widget", "g").requiresAnyProp(
-          ...([] as unknown as [string, string]),
-        ).rows,
-    ).toThrow(
-      new Error(
-        'contract: component "Widget" calls requiresAnyProp() with no props.',
-      ),
-    );
-  });
-
-  it("rejects an exclusiveProps() group with no props", () => {
-    expect(
-      () => contract("Widget", "g").exclusiveProps(["href"], [] as never).rows,
-    ).toThrow(
-      new Error(
-        'contract: component "Widget" calls exclusiveProps() with an empty ' +
-          "group.",
-      ),
-    );
   });
 });
