@@ -136,7 +136,10 @@ Two published packages, split by side of the contract:
   compiles to the rule table, and the owner of consumer-facing type safety.
   Also the home of the unsatisfiability check, which needs the condition trees
   the plugin only sees as payload. Imports the payload types type-only. Zero
-  runtime dependencies; Vitest-tested.
+  runtime dependencies — so the condition normalization and prop-absence rule
+  the check needs are re-implemented here rather than imported from the core,
+  with a cross-package agreement test pinning the two copies to agree (ADR
+  0002). Vitest-tested.
 - **Core** (`packages/eslint-plugin/src/contracts/`) — pure: rendered-tree
   model, activation, combination, evaluation, gate matching, and the payload
   types, JSON schema and runtime validators — the single source of truth for

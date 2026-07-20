@@ -45,8 +45,10 @@ function disjoint(left: Literal[], right: Literal[]): boolean {
 }
 
 // Values a test matches on a prop the model counts as absent: `as={false}` and
-// `as={undefined}`.
-function matchesWhileAbsent(value: Literal): boolean {
+// `as={undefined}`. Exported for the cross-package agreement test, which pins
+// this re-encoding of the adapter's absence rule against the adapter itself
+// (see docs/adr/0002-*).
+export function matchesWhileAbsent(value: Literal): boolean {
   return value === false || value === "undefined";
 }
 

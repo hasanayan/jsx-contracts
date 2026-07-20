@@ -177,8 +177,14 @@ function resolveConstantInit(
   return isReassigned ? null : definition.node.init;
 }
 
-// Absent only when literally `false`, `null`, or `undefined`.
-function isAttributePresent(value: TSESTree.JSXAttribute["value"]): boolean {
+// Absent only when literally `false`, `null`, or `undefined`. Exported — not
+// through the package's "." barrel, so it stays private to consumers — solely
+// for the cross-package agreement test, which reaches it via this package's
+// built output to pin the helpers' re-encoding of this absence rule against it
+// (see docs/adr/0002-*).
+export function isAttributePresent(
+  value: TSESTree.JSXAttribute["value"],
+): boolean {
   if (value === null) {
     return true;
   }

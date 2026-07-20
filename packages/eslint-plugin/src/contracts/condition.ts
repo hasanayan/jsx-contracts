@@ -5,13 +5,17 @@ import type { ConditionValue, WhenCondition } from "./payload.js";
  * A condition tree with the string shorthand expanded, rebuilt with keys in a
  * fixed order so the interning key is canonical.
  */
-type NormalizedWhen =
+export type NormalizedWhen =
   | { prop: string; values?: ConditionValue[] }
   | { all: NormalizedWhen[] }
   | { any: NormalizedWhen[] }
   | { not: NormalizedWhen };
 
-function normalizeWhen(when: WhenCondition): NormalizedWhen {
+// Exported — not through the package's "." barrel, so it stays private to
+// consumers — solely for the cross-package agreement test, which reaches it via
+// this package's built output to pin the helpers' mirror of this normalization
+// against it (see docs/adr/0002-*).
+export function normalizeWhen(when: WhenCondition): NormalizedWhen {
   if (typeof when === "string") {
     return { prop: when };
   }
