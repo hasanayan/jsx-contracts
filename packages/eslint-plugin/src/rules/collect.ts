@@ -11,6 +11,8 @@ import type {
 } from "../contracts/evaluate-subtree.js";
 import type { Branch, PropFact, RenderedNode } from "../contracts/model.js";
 
+import { memoized } from "./memo.js";
+
 type SourceCode = Readonly<TSESLint.SourceCode>;
 
 const importSpecifierNodeTypes = new Set<AST_NODE_TYPES>([
@@ -78,29 +80,6 @@ interface ResolutionIndex {
   declared: WeakMap<TSESLint.Scope.Scope, Map<string, TSESLint.Scope.Variable>>;
   /** Import specifier per tag-name node — an ancestor resolves once for the file. */
   importSources: Map<TSESTree.JSXTagNameExpression, string | null>;
-}
-
-// Get-or-create against any of the caches below. `Value` never includes
-// `undefined`, so a miss is unambiguous.
-function memoized<Key, Value>(
-  cache: {
-    get: (key: Key) => Value | undefined;
-    set: (key: Key, value: Value) => unknown;
-  },
-  key: Key,
-  compute: () => Value,
-): Value {
-  const existing = cache.get(key);
-
-  if (existing !== undefined) {
-    return existing;
-  }
-
-  const value = compute();
-
-  cache.set(key, value);
-
-  return value;
 }
 
 const resolutionIndexes = new WeakMap<SourceCode, ResolutionIndex>();

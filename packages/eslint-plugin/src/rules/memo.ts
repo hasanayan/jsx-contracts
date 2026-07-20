@@ -1,3 +1,32 @@
+/** The `get`/`set` pair every memo here is built on — `Map` or `WeakMap` alike. */
+export interface Cache<Key, Value> {
+  get: (key: Key) => Value | undefined;
+  set: (key: Key, value: Value) => unknown;
+}
+
+/**
+ * Get-or-create against one cache: the shape every memo in the plugin is made
+ * of. `Value` excludes `undefined` so a stored value is never mistaken for a
+ * miss — `null` caches, `undefined` does not.
+ */
+export function memoized<Key, Value extends NonNullable<unknown> | null>(
+  cache: Cache<Key, Value>,
+  key: Key,
+  compute: () => Value,
+): Value {
+  const existing = cache.get(key);
+
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const value = compute();
+
+  cache.set(key, value);
+
+  return value;
+}
+
 /**
  * Content-keyed interning. ESLint deep-clones rule options for every rule and
  * every file, so object identity can never key a shared cache; this maps every
@@ -9,18 +38,8 @@ export function createInterner<Options extends object>(): (
 ) => Options {
   const canonical = new Map<string, Options>();
 
-  return (options) => {
-    const key = JSON.stringify(options);
-    const existing = canonical.get(key);
-
-    if (existing !== undefined) {
-      return existing;
-    }
-
-    canonical.set(key, options);
-
-    return options;
-  };
+  return (options) =>
+    memoized(canonical, JSON.stringify(options), () => options);
 }
 
 /**
@@ -36,26 +55,13 @@ export type NodeMemo<Result extends NonNullable<unknown>> = (
 export function createNodeMemo<
   Result extends NonNullable<unknown>,
 >(): NodeMemo<Result> {
-  const cache = new WeakMap<object, WeakMap<object, Result>>();
+  const byNode = new WeakMap<object, WeakMap<object, Result>>();
 
-  return (node, options, compute) => {
-    let byOptions = cache.get(node);
-
-    if (byOptions === undefined) {
-      byOptions = new WeakMap();
-      cache.set(node, byOptions);
-    }
-
-    const cached = byOptions.get(options);
-
-    if (cached !== undefined) {
-      return cached;
-    }
-
-    const result = compute();
-
-    byOptions.set(options, result);
-
-    return result;
-  };
+  // Two levels, so two applications of the one-level memo.
+  return (node, options, compute) =>
+    memoized(
+      memoized(byNode, node, () => new WeakMap<object, Result>()),
+      options,
+      compute,
+    );
 }

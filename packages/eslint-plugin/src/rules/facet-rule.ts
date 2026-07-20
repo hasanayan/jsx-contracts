@@ -22,7 +22,7 @@ import {
   resolveImportSource,
   tagName,
 } from "./collect.js";
-import { createInterner, createNodeMemo } from "./memo.js";
+import { createInterner, createNodeMemo, memoized } from "./memo.js";
 
 // Every granular variant of a facet shares that facet's one doc file.
 const createRule = ESLintUtils.RuleCreator(
@@ -36,14 +36,9 @@ const intern = createInterner<ContractRows>();
 const tables = new WeakMap<ContractRows, PreparedTable>();
 
 function tableFor(rows: ContractRows): PreparedTable {
-  let table = tables.get(rows);
-
-  if (table === undefined) {
-    table = prepareTable(rows, createConditionPool());
-    tables.set(rows, table);
-  }
-
-  return table;
+  return memoized(tables, rows, () =>
+    prepareTable(rows, createConditionPool()),
+  );
 }
 
 // AST-derived facts about one element, computed at most once.
@@ -68,22 +63,14 @@ function elementFacts(
   name: string,
   table: PreparedTable,
 ): ElementFacts {
-  let cache = nodeCaches.get(node);
-
-  if (cache === undefined) {
-    cache = {
-      importSource: resolveImportSource(
-        sourceCode,
-        filename,
-        node.openingElement.name,
-      ),
-      conditions: new Map(),
-    };
-
-    nodeCaches.set(node, cache);
-  }
-
-  const facts = cache;
+  const facts = memoized(nodeCaches, node, (): NodeCache => ({
+    importSource: resolveImportSource(
+      sourceCode,
+      filename,
+      node.openingElement.name,
+    ),
+    conditions: new Map(),
+  }));
 
   const props = (): PropFact[] =>
     (facts.props ??= collectProps(sourceCode, node.openingElement));
@@ -110,17 +97,10 @@ function elementFacts(
       (facts.subtreeRoot ??= collectSubtreeRoot(sourceCode, filename, node)),
     ancestors: () =>
       (facts.ancestors ??= collectAncestors(sourceCode, filename, node)),
-    holds(conditionId): boolean {
-      let held = facts.conditions.get(conditionId);
-
-      if (held === undefined) {
-        held = holdsAt(table.pool, conditionId, props(), hasSpread());
-
-        facts.conditions.set(conditionId, held);
-      }
-
-      return held;
-    },
+    holds: (conditionId): boolean =>
+      memoized(facts.conditions, conditionId, () =>
+        holdsAt(table.pool, conditionId, props(), hasSpread()),
+      ),
   };
 }
 
