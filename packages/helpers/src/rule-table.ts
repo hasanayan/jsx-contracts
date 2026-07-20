@@ -1,7 +1,42 @@
-import type { ContractRows } from "@jsx-contracts/eslint-plugin";
+import type { ContractRows, RuleId } from "@jsx-contracts/eslint-plugin";
 
 /** Severity of an emitted rule. */
 export type Severity = "error" | "warn";
+
+/**
+ * A flat-config key: the plugin's rule id under the `@jsx-contracts` plugin
+ * name. Derived from the plugin's `RuleId`, so a renamed, added or removed rule
+ * over there is a compile error here rather than a dead config key.
+ */
+type PluginRuleId = `@jsx-contracts/${RuleId}`;
+
+/**
+ * The flat-config keys `rules()` emits, in the order rules are registered.
+ * `helpers` cannot import the plugin's values (it stays zero-runtime-dependency
+ * and type-only), so this is the one runtime restatement of the id list — but
+ * `asExhaustive` pins it to `PluginRuleId` in both directions: a typo or a
+ * removed rule fails the element type, and a missing rule fails the coverage
+ * check, so the list can never drift from the plugin.
+ */
+const asExhaustive = <const Ids extends readonly PluginRuleId[]>(
+  ids: [PluginRuleId] extends [Ids[number]] ? Ids : never,
+): Ids => ids;
+
+const ruleIds = asExhaustive([
+  "@jsx-contracts/slots.children",
+  "@jsx-contracts/slots.count",
+  "@jsx-contracts/slots.placement",
+  "@jsx-contracts/slots.requires",
+  "@jsx-contracts/slots.exclusive",
+  "@jsx-contracts/slots.strict",
+  "@jsx-contracts/subtree.forbid",
+  "@jsx-contracts/subtree.forbidProps",
+  "@jsx-contracts/subtree.count",
+  "@jsx-contracts/props.required",
+  "@jsx-contracts/props.exclusive",
+  "@jsx-contracts/props.deprecated",
+  "@jsx-contracts/ancestor.forbid",
+]);
 
 /** Per-facet or single severity for the emitted rules. */
 type SeverityChoice =
@@ -39,28 +74,19 @@ export interface CompiledContracts {
    */
   rules(
     severity?: SeverityChoice,
-  ): Record<
-    | "@jsx-contracts/slots.children"
-    | "@jsx-contracts/slots.count"
-    | "@jsx-contracts/slots.placement"
-    | "@jsx-contracts/slots.requires"
-    | "@jsx-contracts/slots.exclusive"
-    | "@jsx-contracts/slots.strict"
-    | "@jsx-contracts/subtree.forbid"
-    | "@jsx-contracts/subtree.forbidProps"
-    | "@jsx-contracts/subtree.count"
-    | "@jsx-contracts/props.required"
-    | "@jsx-contracts/props.exclusive"
-    | "@jsx-contracts/props.deprecated"
-    | "@jsx-contracts/ancestor.forbid",
-    [Severity, ContractRows]
-  >;
+  ): Record<PluginRuleId, [Severity, ContractRows]>;
 }
 
-type FacetSeverities = Record<
-  "slots" | "subtree" | "props" | "ancestor",
-  Severity
->;
+type Facet = "slots" | "subtree" | "props" | "ancestor";
+
+type FacetSeverities = Record<Facet, Severity>;
+
+/** The facet a rule id belongs to — its segment before the first dot. */
+function facetOf(id: PluginRuleId): Facet {
+  const feature = id.slice("@jsx-contracts/".length);
+
+  return feature.slice(0, feature.indexOf(".")) as Facet;
+}
 
 function facetSeverities(severity: SeverityChoice): FacetSeverities {
   if (typeof severity === "string") {
@@ -89,21 +115,9 @@ export function makeContracts(rows: ContractRows): CompiledContracts {
     ): ReturnType<CompiledContracts["rules"]> {
       const facet = facetSeverities(severity);
 
-      return {
-        "@jsx-contracts/slots.children": [facet.slots, rows],
-        "@jsx-contracts/slots.count": [facet.slots, rows],
-        "@jsx-contracts/slots.placement": [facet.slots, rows],
-        "@jsx-contracts/slots.requires": [facet.slots, rows],
-        "@jsx-contracts/slots.exclusive": [facet.slots, rows],
-        "@jsx-contracts/slots.strict": [facet.slots, rows],
-        "@jsx-contracts/subtree.forbid": [facet.subtree, rows],
-        "@jsx-contracts/subtree.forbidProps": [facet.subtree, rows],
-        "@jsx-contracts/subtree.count": [facet.subtree, rows],
-        "@jsx-contracts/props.required": [facet.props, rows],
-        "@jsx-contracts/props.exclusive": [facet.props, rows],
-        "@jsx-contracts/props.deprecated": [facet.props, rows],
-        "@jsx-contracts/ancestor.forbid": [facet.ancestor, rows],
-      };
+      return Object.fromEntries(
+        ruleIds.map((id) => [id, [facet[facetOf(id)], rows]] as const),
+      ) as ReturnType<CompiledContracts["rules"]>;
     },
   };
 }

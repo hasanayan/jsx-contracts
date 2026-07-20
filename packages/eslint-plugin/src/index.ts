@@ -35,12 +35,24 @@ export type { AncestorMessageId } from "./rules/ancestor.js";
  * switched off or targeted with an eslint-disable comment. Register them with
  * `contracts.rules()`.
  */
-export const rules = {
+const granularRules = {
   ...slotsGranular,
   ...subtreeGranular,
   ...propsGranular,
   ...ancestorGranular,
-} as unknown as NonNullable<ESLint.Plugin["rules"]>;
+};
+
+/**
+ * The single owner of the facet-feature rule-id list. Every other spelling —
+ * the plugin's rules record, and the flat-config keys `@jsx-contracts/helpers`
+ * emits — derives from or is pinned against this union, so renaming, adding or
+ * removing a rule here is a type error there rather than a silent dead key.
+ */
+export type RuleId = keyof typeof granularRules;
+
+export const rules = granularRules as unknown as NonNullable<
+  ESLint.Plugin["rules"]
+>;
 
 /** The `@jsx-contracts` ESLint plugin. Register under that plugin name. */
 const plugin: ESLint.Plugin = {
