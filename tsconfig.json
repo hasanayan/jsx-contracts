@@ -11,6 +11,7 @@
     "scripts/**/*.ts"
   ],
   "references": [
+    { "path": "packages/bench" },
     { "path": "packages/eslint-plugin" },
     { "path": "packages/helpers" },
     { "path": "packages/playground" }

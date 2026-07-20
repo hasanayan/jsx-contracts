@@ -1,0 +1,19 @@
+{
+  "name": "@jsx-contracts/bench",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench": "tsc --build ../eslint-plugin && tsx src/main.ts"
+  },
+  "dependencies": {
+    "@jsx-contracts/eslint-plugin": "workspace:*",
+    "@typescript-eslint/parser": "8.62.1",
+    "eslint": "9.39.4"
+  },
+  "devDependencies": {
+    "tsx": "4.22.4",
+    "typescript": "6.0.3",
+    "vitest": "4.1.9"
+  }
+}
