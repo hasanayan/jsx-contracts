@@ -115,6 +115,18 @@ const strictWidgetOptions: ContractRows = widgetOptions.map((config) =>
   config.component === "Widget.Tray" ? { ...config, strict: true } : config,
 );
 
+// A strict container whose one slot admits several occurrences, so the same
+// hoisted slot constant can legitimately be rendered more than once.
+const strictRepeatOptions: ContractRows = [
+  {
+    facet: "slots",
+    importPath: "*/acme-ds/components/widget",
+    component: "Tray",
+    slots: [{ name: "Tray.Item", maxCount: 5 }],
+    strict: true,
+  },
+];
+
 const overrideSlotOptions: ContractRows = [
   {
     facet: "slots",
@@ -179,6 +191,14 @@ runGranular<SlotsMessageId>("slots", slotsGranular, slotsOwns, {
             <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
           </Widget.Tray>
         );
+      `,
+    },
+    {
+      name: "a shared slot constant rendered twice in a strict container",
+      options: [strictRepeatOptions],
+      code: `
+        const item = <Tray.Item>x</Tray.Item>;
+        const tray = <Tray>{item}{item}</Tray>;
       `,
     },
     {
@@ -921,6 +941,20 @@ runGranular<SlotsMessageId>("slots", slotsGranular, slotsOwns, {
           data: { container: "GroupSelf", name: "GroupSelf" },
         },
       ],
+    },
+    {
+      name: "strict container reports a self-referential constant as unresolvable",
+      options: [strictRepeatOptions],
+      code: `
+        const loop = <>{loop}</>;
+        const tray = (
+          <Tray>
+            {loop}
+            <Tray.Item>x</Tray.Item>
+          </Tray>
+        );
+      `,
+      errors: [{ messageId: "unresolvableChild", data: { container: "Tray" } }],
     },
     {
       name: "strict container reports unresolvable content",

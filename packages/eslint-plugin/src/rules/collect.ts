@@ -65,27 +65,98 @@ function* scopeChain(
   }
 }
 
+/**
+ * Per-file resolution state, built once and consulted by hash lookup. Scanning
+ * a scope's reference list per identifier is quadratic in file size: a
+ * JSX-heavy file puts every reference in one function scope, and collection
+ * resolves many identifiers per element.
+ */
+interface ResolutionIndex {
+  /** Every reference's identifier node → what it resolved to, unresolved as null. */
+  resolved: Map<TSESTree.Node, TSESLint.Scope.Variable | null>;
+  /** Each scope's declarations by name, built on first use of that scope. */
+  declared: WeakMap<TSESLint.Scope.Scope, Map<string, TSESLint.Scope.Variable>>;
+  /** Import specifier per tag-name node — an ancestor resolves once for the file. */
+  importSources: Map<TSESTree.JSXTagNameExpression, string | null>;
+}
+
+// Get-or-create against any of the caches below. `Value` never includes
+// `undefined`, so a miss is unambiguous.
+function memoized<Key, Value>(
+  cache: {
+    get: (key: Key) => Value | undefined;
+    set: (key: Key, value: Value) => unknown;
+  },
+  key: Key,
+  compute: () => Value,
+): Value {
+  const existing = cache.get(key);
+
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const value = compute();
+
+  cache.set(key, value);
+
+  return value;
+}
+
+const resolutionIndexes = new WeakMap<SourceCode, ResolutionIndex>();
+
+function resolutionIndexFor(sourceCode: SourceCode): ResolutionIndex {
+  return memoized(resolutionIndexes, sourceCode, () => {
+    const resolved = new Map<TSESTree.Node, TSESLint.Scope.Variable | null>();
+
+    // A reference lives in the scope it occurs in, which is always on the
+    // scope chain the per-identifier scan walked; indexing every scope at once
+    // is the same lookup without the scan.
+    for (const scope of sourceCode.scopeManager?.scopes ?? []) {
+      for (const reference of scope.references) {
+        resolved.set(reference.identifier, reference.resolved);
+      }
+    }
+
+    return { resolved, declared: new WeakMap(), importSources: new Map() };
+  });
+}
+
+function declaredIn(
+  index: ResolutionIndex,
+  scope: TSESLint.Scope.Scope,
+): Map<string, TSESLint.Scope.Variable> {
+  return memoized(index.declared, scope, () => {
+    const byName = new Map<string, TSESLint.Scope.Variable>();
+
+    // First declaration wins, matching the `find` this replaces.
+    for (const variable of scope.variables) {
+      if (!byName.has(variable.name)) {
+        byName.set(variable.name, variable);
+      }
+    }
+
+    return byName;
+  });
+}
+
 function resolveJsxVariable(
   sourceCode: SourceCode,
   identifier: TSESTree.JSXIdentifier,
 ): TSESLint.Scope.Variable | null {
-  const scope = sourceCode.getScope(identifier);
+  const index = resolutionIndexFor(sourceCode);
+  const referenced = index.resolved.get(identifier);
 
-  for (const current of scopeChain(scope)) {
-    const reference = current.references.find(
-      ({ identifier: referenceIdentifier }) =>
-        referenceIdentifier === identifier,
-    );
-
-    if (reference !== undefined) {
-      return reference.resolved;
-    }
+  // Present but null is an unresolved reference, which the name pass below
+  // never rescued either.
+  if (referenced !== undefined) {
+    return referenced;
   }
 
-  for (const current of scopeChain(scope)) {
-    const variable = current.variables.find(
-      ({ name }) => name === identifier.name,
-    );
+  // An intrinsic tag makes no reference at all, so fall back to the nearest
+  // scope declaring the name.
+  for (const current of scopeChain(sourceCode.getScope(identifier))) {
+    const variable = declaredIn(index, current).get(identifier.name);
 
     if (variable !== undefined) {
       return variable;
@@ -97,9 +168,22 @@ function resolveJsxVariable(
 
 /**
  * The specifier a tag's root identifier is imported from, normalized against the
- * filename when relative. Null for a non-import.
+ * filename when relative. Null for a non-import. Memoized on the tag-name node:
+ * an ancestor resolved once stays resolved for every descendant walking past
+ * it. The memo does not key on `filename`, because it lives in the index of
+ * the one `sourceCode` that filename belongs to.
  */
 export function resolveImportSource(
+  sourceCode: SourceCode,
+  filename: string,
+  name: TSESTree.JSXTagNameExpression,
+): string | null {
+  return memoized(resolutionIndexFor(sourceCode).importSources, name, () =>
+    computeImportSource(sourceCode, filename, name),
+  );
+}
+
+function computeImportSource(
   sourceCode: SourceCode,
   filename: string,
   name: TSESTree.JSXTagNameExpression,
@@ -150,12 +234,7 @@ function resolveConstantInit(
   sourceCode: SourceCode,
   identifier: TSESTree.Identifier | TSESTree.JSXIdentifier,
 ): TSESTree.Expression | null {
-  const scope = sourceCode.getScope(identifier);
-  const reference = scope.references.find(
-    ({ identifier: referenceIdentifier }) => referenceIdentifier === identifier,
-  );
-
-  const variable = reference?.resolved;
+  const variable = resolutionIndexFor(sourceCode).resolved.get(identifier);
   const definition = variable?.defs[0];
 
   if (
@@ -359,6 +438,16 @@ function descendTransparent(
 }
 
 /**
+ * How many constants one container's collection may inline. Inlining is per
+ * reference, not per constant, so a chain of constants each naming its
+ * predecessor twice doubles per link — content no hand-written container has,
+ * but nothing in the language forbids. Past the budget the remaining
+ * references degrade to unknown refs, which is what the collector already says
+ * about content it cannot see through.
+ */
+const maxConstantExpansions = 1000;
+
+/**
  * A container's direct rendered children, seen through transparent nodes and
  * resolved constants. Child elements are opaque: recorded, not recursed into.
  */
@@ -371,7 +460,11 @@ export function collectContainerChildren(
   const unknownRefs: TSESTree.Node[] = [];
   const textRefs: TSESTree.JSXText[] = [];
 
-  const visitedVariables = new Set<TSESTree.Expression>();
+  // The inits currently on the descent stack — entered before descending and
+  // left on the way out, so only a constant that reaches itself counts as a
+  // cycle. A plain second reference to a shared constant is inlined again.
+  const inFlightInits = new Set<TSESTree.Expression>();
+  let expansionsLeft = maxConstantExpansions;
 
   function visitLeaf(
     node: TSESTree.JSXChild | TSESTree.Expression,
@@ -408,14 +501,16 @@ export function collectContainerChildren(
 
         const init = resolveConstantInit(sourceCode, node);
 
-        if (init === null || visitedVariables.has(init)) {
+        if (init === null || inFlightInits.has(init) || expansionsLeft === 0) {
           unknownRefs.push(node);
 
           return;
         }
 
-        visitedVariables.add(init);
+        expansionsLeft -= 1;
+        inFlightInits.add(init);
         descendTransparent(init, branches, visitLeaf);
+        inFlightInits.delete(init);
 
         return;
       }

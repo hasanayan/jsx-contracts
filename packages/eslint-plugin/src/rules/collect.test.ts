@@ -255,6 +255,53 @@ describe("collectContainerChildren", () => {
 
     expect(result.names).toEqual(["A"]);
   });
+
+  it("inlines a shared constant at each of its references", () => {
+    const result = childrenOf(
+      "const a = <A />;\nconst x = <Tray>{a}{a}</Tray>;",
+      "Tray",
+    );
+
+    expect(result.names).toEqual(["A", "A"]);
+    expect(result.unknown).toBe(0);
+  });
+
+  it("degrades a self-referential constant to an unknown ref", () => {
+    const result = childrenOf(
+      "const a = <><B />{a}</>;\nconst x = <Tray>{a}</Tray>;",
+      "Tray",
+    );
+
+    expect(result.names).toEqual(["B"]);
+    expect(result.unknown).toBe(1);
+  });
+
+  it("bounds a doubling constant chain instead of expanding it", () => {
+    const links = Array.from(
+      { length: 18 },
+      (_unused, index) => `const a${index + 1} = <>{a${index}}{a${index}}</>;`,
+    ).join("\n");
+
+    const result = childrenOf(
+      `const a0 = <A />;\n${links}\nconst x = <Tray>{a18}</Tray>;`,
+      "Tray",
+    );
+
+    // Inlining every reference is exponential in the chain's length, so the
+    // budget cuts in and the rest of the content degrades to unknown.
+    expect(result.names.length).toBeLessThan(2000);
+    expect(result.unknown).toBeGreaterThan(0);
+  });
+
+  it("degrades a pair of mutually referential constants to an unknown ref", () => {
+    const result = childrenOf(
+      "const a = <><B />{b}</>;\nconst b = <><C />{a}</>;\nconst x = <Tray>{a}</Tray>;",
+      "Tray",
+    );
+
+    expect(result.names).toEqual(["B", "C"]);
+    expect(result.unknown).toBe(1);
+  });
 });
 
 describe("collectSubtreeRoot", () => {
