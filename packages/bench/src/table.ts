@@ -1,13 +1,3 @@
-// The bench's rule table: a hand-written `ContractRows`, not one compiled
-// through @jsx-contracts/helpers. The table is a documented hand-writable
-// format (CONTEXT.md), so writing it by hand keeps the bench decoupled from
-// authoring-surface churn — a rename in the builder cannot silently reshape
-// what is being measured.
-//
-// It covers all four facets, both when-less and conditional rows, and is sized
-// like a real design system's: a handful of rows per component rather than one,
-// so the activation mask and the combine cache are actually exercised.
-
 import type { ContractRows } from "@jsx-contracts/eslint-plugin";
 
 /** The module the fixture imports its contracted components from. */
@@ -28,7 +18,6 @@ export const CONDITION_PROP = "variant";
 export const CONDITION_VALUE = "compact";
 
 export const table: ContractRows = [
-  // ---- slots ----------------------------------------------------------
   {
     facet: "slots",
     component: "Widget",
@@ -43,26 +32,18 @@ export const table: ContractRows = [
     exclusive: [[["Widget.Footer"], ["Widget.Action"]]],
   },
   {
-    // A second when-less row on the same component: rows accumulate, so this
-    // one alone makes the combine step non-trivial.
     facet: "slots",
     component: "Widget",
     importPath: GATE,
     strict: false,
   },
   {
-    // Conditional: narrows the container to its body when compact.
     facet: "slots",
     component: "Widget",
     importPath: GATE,
     when: { prop: CONDITION_PROP, values: [CONDITION_VALUE] },
     slots: [{ name: "Widget.Body", minCount: 1, maxCount: 8 }],
   },
-  // `Widget.Body` deliberately carries no slots row: it is where the fixture
-  // nests, and a container there would make every nested element a violation,
-  // turning the bench into a measurement of `context.report`.
-
-  // ---- subtree --------------------------------------------------------
   {
     facet: "subtree",
     component: "Widget",
@@ -89,7 +70,6 @@ export const table: ContractRows = [
     forbid: ["Legacy.Button", "iframe"],
   },
 
-  // ---- props ----------------------------------------------------------
   {
     facet: "props",
     component: "Widget",
@@ -117,7 +97,6 @@ export const table: ContractRows = [
     deprecatedComponent: "use Widget.Action",
   },
 
-  // ---- ancestor -------------------------------------------------------
   {
     facet: "ancestor",
     component: "Widget.Action",

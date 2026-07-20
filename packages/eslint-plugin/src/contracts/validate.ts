@@ -1,14 +1,3 @@
-// The runtime validators for the rule table, authoritative for hand-written
-// payloads. Config-load rejections throw rather than reporting, so they name
-// the offending row and the problem: a consumer hand-writing a table fixes it
-// without reading this source.
-//
-// There is deliberately no duplicate guard here. Rows accumulate — many rows
-// may name one component in one facet — so "duplicate component" is the normal
-// case rather than an error. Guarding against two independent contracts for one
-// component is @jsx-contracts/helpers' job, via `mergeContracts`. Hand-written
-// tables are unguarded, and that is accepted.
-
 import type {
   AncestorRow,
   ContractRow,
@@ -31,11 +20,7 @@ export function normalizeForbid(
   return typeof entry === "string" ? { name: entry } : entry;
 }
 
-/**
- * Rejects the row under validation. Bound to one row so the position and
- * identity are stamped once: a table of any size points at the row that has to
- * change.
- */
+/** Rejects the row under validation, naming its position and identity. */
 type Fail = (problem: string) => never;
 
 function failFor(row: ContractRow, index: number): Fail {
@@ -67,10 +52,6 @@ function checkBounds(
   }
 }
 
-// The condition tree's shape rules, applied at every depth. An arm is
-// recognised by its key, which is also what the schema's `oneOf` discriminates
-// on, so an object carrying none of them — or more than one — is not a
-// condition at all.
 function validateWhen(when: WhenCondition, fail: Fail): void {
   if (typeof when === "string") {
     if (when.length === 0) {
@@ -80,24 +61,17 @@ function validateWhen(when: WhenCondition, fail: Fail): void {
     return;
   }
 
-  // Exactly one arm, at every depth. Two would leave the evaluator reading the
-  // first and dropping the rest — a condition that silently means less than it
-  // says.
+  // Exactly one arm, at every depth.
   const arms = (["prop", "all", "any", "not"] as const).filter(
     (arm) => arm in when,
   );
 
   if (arms.length > 1) {
-    // `fail` throws, so nothing below reads a tree it has already rejected.
     fail(`when must carry one of prop/all/any/not, not ${arms.join(" and ")}`);
   }
 
   if ("all" in when || "any" in when) {
     const operator = "all" in when ? "all" : "any";
-    // `all` over nothing is vacuously true and `any` over nothing vacuously
-    // false, so an empty list is never what the author meant. One operand is
-    // its own operand, which is harmless — the builder asks for two, the
-    // payload does not.
     const operands = "all" in when ? when.all : when.any;
 
     if (!Array.isArray(operands) || operands.length === 0) {
@@ -127,9 +101,8 @@ function validateWhen(when: WhenCondition, fail: Fail): void {
 }
 
 function validateSlotsRow(row: SlotsRow, fail: Fail): void {
-  // An *absent* `slots` is the identity — a row may legitimately do nothing but
-  // turn strictness on. An *empty* one is a mistake with teeth: allowed slots
-  // intersect, so it would empty the container's list and reject every child.
+  // Absent `slots` is the identity; empty would intersect the container's list
+  // away.
   if (row.slots?.length === 0) {
     fail("slots must not be empty");
   }
@@ -148,9 +121,6 @@ function validateSlotsRow(row: SlotsRow, fail: Fail): void {
   for (const rawSlot of row.slots ?? []) {
     const slot = normalizeSlot(rawSlot);
 
-    // Within one row a repeated slot name is still ill-formed: the prepared
-    // slot map is keyed by name, so the second declaration would silently win.
-    // Two *rows* declaring the same slot are fine — that is accumulation.
     if (slots.has(slot.name)) {
       fail(`lists duplicate slot "${slot.name}"`);
     }
@@ -168,9 +138,6 @@ function validateSlotsRow(row: SlotsRow, fail: Fail): void {
   }
 
   // Cross-slot references resolve against the slots declared in the same row.
-  // After merging a reference may point at a slot another active row
-  // intersected away; the combination drops it rather than reporting, because
-  // whether that combination is reachable cannot be decided here.
   const references = [
     ...Object.entries(row.requires ?? {}).flat(),
     ...(row.exclusive ?? []).flat(2),

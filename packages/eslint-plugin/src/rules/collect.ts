@@ -1,6 +1,3 @@
-// The adapter's collection layer: the only place the AST is read for the two
-// rules, producing the pure rendered-tree model and slot placement facts.
-
 import { posix } from "node:path";
 
 import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
@@ -22,8 +19,7 @@ const importSpecifierNodeTypes = new Set<AST_NODE_TYPES>([
   AST_NODE_TYPES.ImportNamespaceSpecifier,
 ]);
 
-// Node types that render no element of their own, so a child inside them is
-// still a direct child of the enclosing element.
+// Render no element of their own.
 const transparentNodeTypes = new Set<AST_NODE_TYPES>([
   AST_NODE_TYPES.JSXExpressionContainer,
   AST_NODE_TYPES.JSXFragment,
@@ -57,19 +53,25 @@ function nearestSignificantAncestor(
   return ancestor;
 }
 
-// A JSX reference may be recorded in an enclosing scope, so walk the chain;
-// failing that, match the variable by name.
+function* scopeChain(
+  scope: TSESLint.Scope.Scope,
+): Generator<TSESLint.Scope.Scope> {
+  for (
+    let current: TSESLint.Scope.Scope | null = scope;
+    current !== null;
+    current = current.upper
+  ) {
+    yield current;
+  }
+}
+
 function resolveJsxVariable(
   sourceCode: SourceCode,
   identifier: TSESTree.JSXIdentifier,
 ): TSESLint.Scope.Variable | null {
   const scope = sourceCode.getScope(identifier);
 
-  for (
-    let current: TSESLint.Scope.Scope | null = scope;
-    current !== null;
-    current = current.upper
-  ) {
+  for (const current of scopeChain(scope)) {
     const reference = current.references.find(
       ({ identifier: referenceIdentifier }) =>
         referenceIdentifier === identifier,
@@ -80,11 +82,7 @@ function resolveJsxVariable(
     }
   }
 
-  for (
-    let current: TSESLint.Scope.Scope | null = scope;
-    current !== null;
-    current = current.upper
-  ) {
+  for (const current of scopeChain(scope)) {
     const variable = current.variables.find(
       ({ name }) => name === identifier.name,
     );
@@ -97,8 +95,10 @@ function resolveJsxVariable(
   return null;
 }
 
-// The specifier a tag's root identifier is imported from, normalized against
-// the filename when relative. Null for a non-import (the lenient case).
+/**
+ * The specifier a tag's root identifier is imported from, normalized against the
+ * filename when relative. Null for a non-import.
+ */
 export function resolveImportSource(
   sourceCode: SourceCode,
   filename: string,
@@ -144,8 +144,8 @@ export function resolveImportSource(
   return specifier;
 }
 
-// The initializer of a local variable, only when it has a single definition and
-// is never reassigned. Null for anything else (imports, params, reassignment).
+// The initializer of a single-definition, never-reassigned local; null
+// otherwise.
 function resolveConstantInit(
   sourceCode: SourceCode,
   identifier: TSESTree.Identifier | TSESTree.JSXIdentifier,
@@ -177,10 +177,7 @@ function resolveConstantInit(
   return isReassigned ? null : definition.node.init;
 }
 
-// -- prop facts ----------------------------------------------------------------
-
-// An attribute value is "present" unless it is literally `false`, `null`, or
-// `undefined`.
+// Absent only when literally `false`, `null`, or `undefined`.
 function isAttributePresent(value: TSESTree.JSXAttribute["value"]): boolean {
   if (value === null) {
     return true;
@@ -291,8 +288,7 @@ export function collectProps(
   return props;
 }
 
-// Whether the element carries a `{...spread}`, which may supply any prop and so
-// makes an absence unprovable.
+/** Whether the element carries a `{...spread}`, making an absence unprovable. */
 export function hasSpreadAttribute(
   openingElement: TSESTree.JSXOpeningElement,
 ): boolean {
@@ -301,11 +297,8 @@ export function hasSpreadAttribute(
   );
 }
 
-// -- transparent descent -------------------------------------------------------
-
-// Descends the nodes that render no element of their own (fragments, expression
-// containers, ternaries extending the branch tags, `&&`/`||` logicals), handing
-// every other node to `visit` with the branch tags accumulated so far.
+// Descends transparent nodes, handing every other node to `visit` with the
+// branch tags accumulated so far.
 function descendTransparent(
   node: TSESTree.JSXChild | TSESTree.Expression,
   branches: Branch[],
@@ -359,11 +352,10 @@ function descendTransparent(
   }
 }
 
-// -- children facet collection (slots) -----------------------------------------
-
-// Collects a container's direct rendered children through transparent nodes,
-// resolving constant JSX-valued identifiers (cycle-guarded). Elements are
-// opaque: recorded, not recursed into.
+/**
+ * A container's direct rendered children, seen through transparent nodes and
+ * resolved constants. Child elements are opaque: recorded, not recursed into.
+ */
 export function collectContainerChildren(
   sourceCode: SourceCode,
   filename: string,
@@ -383,7 +375,7 @@ export function collectContainerChildren(
       case AST_NODE_TYPES.JSXElement: {
         const name = tagName(node.openingElement.name);
 
-        // Namespaced elements (e.g. <svg:rect>) have no name; skip them.
+        // Namespaced elements (e.g. <svg:rect>) have no name.
         if (name !== null) {
           children.push({
             name,
@@ -456,12 +448,11 @@ export function collectContainerChildren(
   };
 }
 
-// -- subtree facet collection --------------------------------------------------
-
-// Builds the lazy subtree: elements are recursed into, and namespaced elements
-// keep an empty name so their forbidProps and descendants are still walked.
-// Constants are not inlined — each reference becomes a SubtreeRef, leaving all
-// dedup and cycle bookkeeping to the evaluator.
+/**
+ * The lazy subtree rooted at `element`. Namespaced elements keep an empty name
+ * so their props and descendants are still walked. Constants are not inlined:
+ * each reference becomes a ref node the evaluator resolves.
+ */
 export function collectSubtreeRoot(
   sourceCode: SourceCode,
   filename: string,
@@ -481,8 +472,8 @@ export function collectSubtreeRoot(
     return id;
   }
 
-  // `branches` are the tags on the transparent path from this element's parent
-  // down to it; its own children start a fresh branch context.
+  // `branches` are the tags on the transparent path down to this element; its
+  // own children start a fresh branch context.
   function buildNode(
     current: TSESTree.JSXElement,
     branches: Branch[],
@@ -545,16 +536,13 @@ export function collectSubtreeRoot(
 
           const init = resolveConstantInit(sourceCode, leaf);
 
-          // An unresolvable identifier (a param, a reassigned or imported
-          // binding) may render anything, so it counts as unknown content.
           if (init === null) {
             target.push({ kind: "unknown" });
 
             return;
           }
 
-          // Resolve descends one level, so nested constants become further
-          // refs; the branch tags at this reference site ride along.
+          // Resolves one level, so nested constants become further refs.
           target.push({
             kind: "ref",
             initId: initIdOf(init),
@@ -571,8 +559,7 @@ export function collectSubtreeRoot(
           return;
         }
 
-        // Text and literals render no element; anything else (a call, a spread
-        // child, a member expression) is unresolvable content.
+        // Text and literals render no element.
         case AST_NODE_TYPES.JSXText:
         case AST_NODE_TYPES.Literal:
           return;
@@ -586,15 +573,11 @@ export function collectSubtreeRoot(
   return buildNode(element, []);
 }
 
-// -- ancestor facts ------------------------------------------------------------
-
-// The chain of JSX-element ancestors enclosing an element, innermost-first.
-// Containment is syntactic, matching the subtree facet's philosophy: an element
-// inside another's body children OR inside a JSX-valued prop is contained, since
-// both put the enclosing element on the parent chain. Namespaced ancestors (no
-// dotted name) can name no forbidden entry, so they are dropped. Hoisting is not
-// followed — a portal or a variable read into a forbidden ancestor is a
-// documented limitation of the whole plugin.
+/**
+ * The chain of JSX-element ancestors enclosing an element, innermost-first.
+ * Containment is syntactic: body children and JSX-valued props both count.
+ * Namespaced ancestors are dropped, and hoisting is not followed.
+ */
 export function collectAncestors(
   sourceCode: SourceCode,
   filename: string,
@@ -602,8 +585,7 @@ export function collectAncestors(
 ): AncestorFact[] {
   const ancestors: AncestorFact[] = [];
 
-  // `.parent` is typed non-nullable, so the walk terminates at the Program node
-  // (an ancestor of every JSX element) rather than on a nullish parent.
+  // `.parent` is typed non-nullable, so the walk terminates at Program.
   for (
     let current: TSESTree.Node = element.parent;
     ;
@@ -632,9 +614,6 @@ export function collectAncestors(
   return ancestors;
 }
 
-// -- slot placement facts ------------------------------------------------------
-
-// An element ancestor carries its name and provenance; anything else is null.
 function parentFact(
   sourceCode: SourceCode,
   filename: string,
@@ -660,9 +639,10 @@ function parentFact(
   };
 }
 
-// Direct placement is the nearest significant ancestor; a hoist reports the
-// ancestors of each read. A hoist through anything but a single-declaration
-// variable yields no reads, which the core treats as misplaced.
+/**
+ * Where a slot element sits: its nearest significant ancestor, or — when it is
+ * assigned to a variable — the ancestors of every read of that variable.
+ */
 export function collectPlacement(
   sourceCode: SourceCode,
   filename: string,

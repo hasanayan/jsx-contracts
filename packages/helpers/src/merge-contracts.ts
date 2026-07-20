@@ -1,6 +1,3 @@
-// Merging: several compiled contracts read as one rule table, and the one
-// duplicate guard anywhere. See CONTEXT.md for the terms.
-
 import type { CompiledContracts } from "./rule-table.js";
 import { makeContracts } from "./rule-table.js";
 
@@ -25,9 +22,6 @@ import { makeContracts } from "./rule-table.js";
 export function mergeContracts(
   ...contracts: CompiledContracts[]
 ): CompiledContracts {
-  // A component's own rows accumulate — a base row plus one per `when` is the
-  // normal case — so each argument's components are collapsed before being
-  // checked against the components covered by the arguments before it.
   const covered = new Set<string>();
 
   for (const entry of contracts) {

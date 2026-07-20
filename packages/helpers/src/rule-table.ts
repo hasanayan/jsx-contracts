@@ -1,8 +1,3 @@
-// Rule emission: the compiled rule table and the flat-config entries every
-// facet feature takes. The table's types live in @jsx-contracts/eslint-plugin,
-// the package that consumes them; they are imported type-only, so this package
-// keeps zero runtime dependencies. See CONTEXT.md for the terms.
-
 import type { ContractRows } from "@jsx-contracts/eslint-plugin";
 
 /** Severity of an emitted rule. */
@@ -94,9 +89,6 @@ export function makeContracts(rows: ContractRows): CompiledContracts {
     ): ReturnType<CompiledContracts["rules"]> {
       const facet = facetSeverities(severity);
 
-      // Every rule takes the identical table; they intern it by content, so
-      // the per-file analysis runs once across all thirteen. Severity is still
-      // per facet — that is what the grouping below is for.
       return {
         "@jsx-contracts/slots.children": [facet.slots, rows],
         "@jsx-contracts/slots.count": [facet.slots, rows],

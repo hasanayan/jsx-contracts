@@ -1,13 +1,8 @@
-// Shared caching for the facet rules and their granular variants, so enabling
-// all of them costs one analysis per file, not one per enabled rule.
-
 /**
  * Content-keyed interning. ESLint deep-clones rule options for every rule and
- * every file, so object identity can never key a shared cache. Interning maps
- * each clone with the same JSON content onto the first-seen instance, and the
- * weak caches below key on that canonical object. The map lives for the
- * process and holds one entry per distinct payload content — a handful for
- * any real config.
+ * every file, so object identity can never key a shared cache; this maps every
+ * clone with the same JSON content onto the first-seen instance. The map lives
+ * for the process, one entry per distinct payload content.
  */
 export function createInterner<Options extends object>(): (
   options: Options,
@@ -28,14 +23,10 @@ export function createInterner<Options extends object>(): (
   };
 }
 
-// Two-level weak memo: AST node → canonical options → result. Rule options
-// are interned above, so every granular variant of a facet lands on the same
-// second-level key and the per-element work runs once. Both levels are weakly
-// held: entries die with the AST and the canonical payload.
-
-// `Result` excludes `undefined` so the cache hit can be a plain `!== undefined`
-// check: a memo whose value could be `undefined` would recompute on every hit
-// instead of returning the cached value.
+/**
+ * A two-level weak memo: AST node → canonical options → result. `Result`
+ * excludes `undefined` so a cached value is never mistaken for a miss.
+ */
 export type NodeMemo<Result extends NonNullable<unknown>> = (
   node: object,
   options: object,

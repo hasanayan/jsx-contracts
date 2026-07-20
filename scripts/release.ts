@@ -1,12 +1,6 @@
-// Version bump for the published package. This script is the only thing that
-// writes the version, so a tag can never disagree with what ships.
-//
 // Usage: pnpm release <major|minor|patch>
-//
-// Bumps the published packages in lockstep, commits, and tags the commit
-// vX.Y.Z. It does not push — pushing the tag is what triggers the publish
-// workflow, so that stays a deliberate manual step (the command is printed at
-// the end).
+// Bumps the published packages in lockstep, commits, and tags vX.Y.Z. Does not
+// push; the push command is printed at the end.
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";

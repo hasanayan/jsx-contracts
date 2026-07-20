@@ -1,15 +1,4 @@
-// The JSON schema for the rule table, shared verbatim by all thirteen rules. A
-// discriminated union on `facet`, each arm rejecting unknown properties, so a
-// misspelled key fails when the config loads rather than matching nothing.
-//
-// The schema is data, so it is typed structurally rather than against ESLint's
-// own `JSONSchema4`: this directory imports nothing from eslint or
-// @typescript-eslint. The adapter is where the two meet.
-
-/**
- * A JSON Schema draft-4 document, as far as this file needs one. Deliberately
- * loose — its job is to keep the literals below honest, not to model the spec.
- */
+/** A JSON Schema draft-4 document, as far as this file needs one. */
 export interface JsonSchema {
   type?: string | string[];
   enum?: unknown[];
@@ -27,12 +16,8 @@ export interface JsonSchema {
   definitions?: Record<string, JsonSchema>;
 }
 
-// The when-condition is the one recursive shape in the table, so it is the one
-// place a `$ref` is needed. It carries an absolute id and is referenced by it
-// rather than by a JSON pointer: the pointer would have to reach through the
-// wrapper ESLint puts around a rule's option schemas, and would break the day
-// that wrapper changed. The definition below is written into the document
-// exactly once; the four row arms carry only the ref.
+// Recursive, so it is referenced by absolute id rather than by a JSON pointer
+// through ESLint's option-schema wrapper.
 const whenConditionId = "https://jsx-contracts.dev/schema/when-condition.json";
 
 const whenCondition: JsonSchema = { $ref: whenConditionId };
@@ -100,7 +85,6 @@ const groupPairs: JsonSchema = {
   },
 };
 
-// Every row carries the match key and the optional activation condition.
 const rowBase: Record<string, JsonSchema> = {
   component: { type: "string" },
   importPath: { type: "string" },

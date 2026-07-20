@@ -1,9 +1,3 @@
-// The ESLint side of the engine. It holds no contract semantics: it turns a
-// JSXElement into the lazy `ElementFacts` the pure pipeline consumes, memoizes
-// the result per element, and filters the violations down to one rule's message
-// ids. All thirteen rules are built here, from the same table and the same
-// per-element analysis — enabling all of them costs one analysis per file.
-
 import type { JSONSchema, TSESLint, TSESTree } from "@typescript-eslint/utils";
 import { ESLintUtils } from "@typescript-eslint/utils";
 
@@ -36,8 +30,7 @@ const createRule = ESLintUtils.RuleCreator(
 );
 
 // ESLint clones rule options per rule and per file; interning restores one
-// canonical instance per table content, so preparation and the per-element
-// analysis are shared by every one of the thirteen rules and across files.
+// canonical instance per table content.
 const intern = createInterner<ContractRows>();
 
 const tables = new WeakMap<ContractRows, PreparedTable>();
@@ -53,8 +46,7 @@ function tableFor(rows: ContractRows): PreparedTable {
   return table;
 }
 
-// The AST-derived facts about one element, computed at most once however many
-// facets and rules ask for them. Held weakly, so entries die with the AST.
+// AST-derived facts about one element, computed at most once.
 interface NodeCache {
   importSource: string | null;
   props?: PropFact[];
@@ -63,8 +55,7 @@ interface NodeCache {
   placement?: Placement;
   subtreeRoot?: SubtreeElement;
   ancestors?: AncestorFact[];
-  // Keyed by interned condition id. Held here rather than per facet so a
-  // condition two facets' rows share is evaluated once for this element.
+  // Keyed by interned condition id.
   conditions: Map<number, boolean>;
 }
 
@@ -94,15 +85,19 @@ function elementFacts(
 
   const facts = cache;
 
+  const props = (): PropFact[] =>
+    (facts.props ??= collectProps(sourceCode, node.openingElement));
+
+  const hasSpread = (): boolean =>
+    (facts.hasSpread ??= hasSpreadAttribute(node.openingElement));
+
   return {
     name,
     importSource: facts.importSource,
     elementRef: node,
     openingRef: node.openingElement,
-    props: () =>
-      (facts.props ??= collectProps(sourceCode, node.openingElement)),
-    hasSpread: () =>
-      (facts.hasSpread ??= hasSpreadAttribute(node.openingElement)),
+    props,
+    hasSpread,
     slotsRoot: () =>
       (facts.slotsRoot ??= collectContainerChildren(
         sourceCode,
@@ -115,20 +110,11 @@ function elementFacts(
       (facts.subtreeRoot ??= collectSubtreeRoot(sourceCode, filename, node)),
     ancestors: () =>
       (facts.ancestors ??= collectAncestors(sourceCode, filename, node)),
-    // Conditions are interned by content, so each distinct condition is
-    // evaluated once per element however many rows — on however many facets —
-    // carry it.
     holds(conditionId): boolean {
       let held = facts.conditions.get(conditionId);
 
       if (held === undefined) {
-        held = holdsAt(
-          table.pool,
-          conditionId,
-          (facts.props ??= collectProps(sourceCode, node.openingElement)),
-          // A negated tree reads absent evidence, so a spread deactivates it.
-          (facts.hasSpread ??= hasSpreadAttribute(node.openingElement)),
-        );
+        held = holdsAt(table.pool, conditionId, props(), hasSpread());
 
         facts.conditions.set(conditionId, held);
       }
@@ -138,9 +124,7 @@ function elementFacts(
   };
 }
 
-// One memo per facet, keyed element → table. Per-facet laziness is what keeps a
-// narrow adoption cheap: enabling only the props rules never triggers the
-// subtree facet's tree walk.
+// One memo per facet, keyed element → table.
 const memos: Record<
   Facet,
   ReturnType<typeof createNodeMemo<Violation<string>[]>>
@@ -173,8 +157,6 @@ export function facetRules<MessageId extends string>(
       meta: {
         type: "problem",
         docs: { description },
-        // The core types the schema structurally, since it may not import from
-        // @typescript-eslint; this is the one point where the two meet.
         schema: contractRowsSchema as JSONSchema.JSONSchema4[],
         messages,
       },

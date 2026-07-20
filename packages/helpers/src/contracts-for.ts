@@ -1,10 +1,3 @@
-// The binding: the entry point that takes the import gate — and the design
-// system's module type — and hands back the fluent builder together with the
-// condition constructors. It is the only way to reach a builder; the package
-// exports no unbound `contract`, so a gate is never written twice, and no
-// package-level `prop`/`allOf`/`anyOf`/`not` either, so those names stay the
-// consumer's to spend.
-
 import type { Gate } from "./compile.js";
 import type { ComponentNames } from "./component-names.js";
 import type { Condition, PropCondition } from "./condition.js";
@@ -26,11 +19,9 @@ interface BoundContract<Module> {
 /**
  * Bind a gate and a module's types once, and destructure what you need off the
  * result: the import gate is stated for the whole design system rather than
- * repeated per component, and component names are completed and checked
- * against the module's capitalized export paths, so a typo — or a component
- * renamed away in the design system — fails to compile.
- * `typeof import("...")` is type-only; the module is never loaded at runtime,
- * so the ESLint config stays free of the design system's runtime dependencies.
+ * repeated per component, and component names are completed and checked against
+ * the module's capitalized export paths, so a typo fails to compile.
+ * `typeof import("...")` is type-only; the module is never loaded at runtime.
  *
  * A component from another package needs its own binding; per-slot,
  * per-descendant, per-forbid and per-ancestor gates are unaffected.
@@ -46,10 +37,6 @@ interface BoundContract<Module> {
  * // eslint.config.js → rules: mergeContracts(tray, ...).rules()
  */
 export function contractsFor<Module>(from: Gate): BoundContracts<Module> {
-  // The starter closes over `from` rather than reading it off `this`, so
-  // destructuring it — the documented spelling — keeps the gate. Its two
-  // arities are one implementation, so the overloaded shape is stated once on
-  // `BoundContract` and asserted here rather than written out twice.
   const starter = (component?: string): unknown =>
     component === undefined ? contract() : contract(component, from);
 
@@ -69,9 +56,7 @@ export function contractsFor<Module>(from: Gate): BoundContracts<Module> {
 export interface BoundContracts<Module> {
   /**
    * Start one component's contract builder, gated by the binding — or, called
-   * with no name, a nameless contract for `when`. Declared as a property
-   * rather than a method because it is meant to be destructured off the
-   * binding — that is the only way to reach a builder. The component's name is
+   * with no name, a nameless contract for `when`. The component's name is
    * captured as a literal, and the module travels with it, so the builder can
    * check shorthand part names against the module's export paths.
    */

@@ -1,14 +1,3 @@
-// The unsatisfiability check: a build-time pass over a compiled contract that
-// reports where a component's rows combine into something no file could
-// satisfy. Authoring-side by necessity — the plugin holds the condition trees
-// as opaque payload and cannot tell a reachable combination of conditions from
-// an unreachable one, so it keeps its combination total and silent (ADR 0001).
-//
-// Scope is the narrowing the combination performs, because that is the only
-// place a contract can quietly weaken itself: the children facet, where a
-// conditional slot list intersects with the base one. The other facets union,
-// and a union cancels nothing.
-
 import type {
   ContractRows,
   SlotConfig,
@@ -65,13 +54,11 @@ export interface UnsatisfiableOptions {
   allow?: readonly string[];
 }
 
-// -- describing a condition ---------------------------------------------------
-
 function literal(value: string | number | boolean): string {
   return JSON.stringify(value);
 }
 
-// "a", "a or b", "a, b or c" — the message says which values activate the row.
+// "a", "a or b", "a, b or c".
 function values(list: (string | number | boolean)[]): string {
   const written = list.map(literal);
   const last = written.at(-1) ?? "";
@@ -91,18 +78,16 @@ function describe(when: NormalizedCondition): string {
   }
 
   if ("not" in when) {
-    // A composite already brings its own parentheses; an atom needs them.
     const inner = describe(when.not);
+    const parenthesized = inner.startsWith("(");
 
-    return inner.startsWith("(") ? `not ${inner}` : `not (${inner})`;
+    return parenthesized ? `not ${inner}` : `not (${inner})`;
   }
 
   return when.values === undefined
     ? `${when.prop} is present`
     : `${when.prop} is ${values(when.values)}`;
 }
-
-// -- preparation --------------------------------------------------------------
 
 interface PreparedSlot {
   name: string;
@@ -125,16 +110,14 @@ interface ComponentRows {
   rows: PreparedRow[];
 }
 
-// Count-bound defaults, as the combination reads them: neither bound means at
-// most one, `minCount` alone lifts the upper bound, `maxCount` alone keeps a
-// lower bound of nought.
 function prepareSlot(raw: string | SlotConfig): PreparedSlot {
   const slot = typeof raw === "string" ? { name: raw } : raw;
+  const defaultMax = slot.minCount === undefined ? 1 : Infinity;
 
   return {
     name: slot.name,
     min: slot.minCount ?? 0,
-    max: slot.maxCount ?? (slot.minCount === undefined ? 1 : Infinity),
+    max: slot.maxCount ?? defaultMax,
   };
 }
 
@@ -152,17 +135,7 @@ function prepareRow(row: SlotsRow, index: number): PreparedRow {
   };
 }
 
-/**
- * The slots rows, grouped by component. Grouping is by component name alone,
- * exactly as the engine groups: import gates are globs, so two rows naming one
- * component under different gates may both match one element. Two gates that
- * cannot overlap would make a pair unreachable, but deciding that is the same
- * kind of reasoning the check declines to do about conditions — so gates are
- * left out, in the co-satisfiable direction. A slot's own gate is left out for
- * the same reason: the combination intersects the two rows' gates for a slot
- * both declare, and whether the result can match anything is a question about
- * globs, not about the narrowing this check is scoped to.
- */
+/** The slots rows, grouped by component name alone, exactly as the engine groups. */
 function prepare(rows: ContractRows): ComponentRows[] {
   const groups = new Map<string, PreparedRow[]>();
 
@@ -183,8 +156,6 @@ function prepare(rows: ContractRows): ComponentRows[] {
   }));
 }
 
-// -- the analysis -------------------------------------------------------------
-
 function rowLabel(row: PreparedRow): string {
   return row.normalized === undefined
     ? `the unconditional row (rows[${row.index}])`
@@ -197,16 +168,15 @@ function conflicting(row: PreparedRow): ConflictingRow {
     : { index: row.index, when: row.when };
 }
 
-// The narrowings `other` performs on what `source` states. Called both ways
-// round for a pair, because every one of the three is directional.
+// The narrowings `other` performs on what `source` states. Directional: call it
+// both ways round for a pair.
 function pairNarrowings(
   component: string,
   source: PreparedRow,
   other: PreparedRow,
   report: (narrowing: Narrowing) => void,
 ): void {
-  // A row declaring no slots is the identity for the intersection: it says
-  // nothing about which children are allowed, so it narrows nothing.
+  // A row declaring no slots is the identity for the intersection.
   if (source.slots === undefined || other.slots === undefined) {
     return;
   }
@@ -248,8 +218,6 @@ function pairNarrowings(
       continue;
     }
 
-    // Tightening from both ends can cross the bounds over; the combination
-    // clamps the lower one down, which is where the requirement is lost.
     if (slot.min > counterpart.max) {
       narrowing(
         "crossedBounds",
@@ -264,10 +232,6 @@ function pairNarrowings(
   }
 
   for (const reference of source.requires) {
-    // The reference is dropped whenever either end fails to survive, but only
-    // a surviving referrer makes that a rule that stopped applying: where the
-    // referrer is excluded too, it cannot render at all and the requirement is
-    // enforced more strictly, not less.
     if (survives(reference.from) && !survives(reference.to)) {
       narrowing(
         "droppedReference",
@@ -282,8 +246,6 @@ function pairNarrowings(
 }
 
 function analyze(groups: ComponentRows[]): readonly Narrowing[] {
-  // One oracle for the whole table: a condition hoisted to a constant and
-  // shared across components is decided once.
   const exclusivity: Exclusivity = createExclusivity();
   const found: Narrowing[] = [];
   const seen = new Set<string>();
@@ -298,12 +260,14 @@ function analyze(groups: ComponentRows[]): readonly Narrowing[] {
   };
 
   for (const { component, rows } of groups) {
-    // Only pairs the check believes can be simultaneously active. Each of the
-    // three narrowings is caused by two rows interacting, so pairs are enough:
-    // a third row can neither create nor undo one.
     for (const [position, source] of rows.entries()) {
       for (const other of rows.slice(position + 1)) {
-        if (exclusivity(source.normalized, other.normalized)) {
+        const cannotBothBeActive = exclusivity(
+          source.normalized,
+          other.normalized,
+        );
+
+        if (cannotBothBeActive) {
           continue;
         }
 
@@ -316,15 +280,7 @@ function analyze(groups: ComponentRows[]): readonly Narrowing[] {
   return Object.freeze(found);
 }
 
-// Findings, keyed on the content of the rows they were computed from — never on
-// the identity of the contract object, so a table rebuilt from the same chain
-// hits the cache. The check is quadratic in a component's rows and runs over
-// every slot of every pair; a build tool that calls it per file would otherwise
-// pay for it every time.
-//
-// Bounded, because the process holding it may be a long-lived one checking many
-// tables: insertion order is eviction order, and the limit is well past the one
-// or two tables a project has.
+// Findings, keyed on row content. Insertion order is eviction order.
 const CACHE_LIMIT = 16;
 const cache = new Map<string, readonly Narrowing[]>();
 
@@ -345,17 +301,14 @@ function remember(key: string, found: readonly Narrowing[]): void {
  * applying with nothing to show for it.
  *
  * Opt-in and separate from `rules()`: it reports rather than throws, because
- * the narrowing it describes is legal and may be intended. Run it in a build
- * step or a test and decide there what a finding is worth.
+ * the narrowing it describes is legal and may be intended.
  *
- * Three narrowings are reported, all on the children facet — the only one whose
- * combination narrows rather than unions: a slot one row requires and another
- * excludes, count bounds tightening past each other, and a cross-slot reference
- * whose target did not survive the intersection.
+ * Three narrowings are reported, all on the children facet: a slot one row
+ * requires and another excludes, count bounds tightening past each other, and a
+ * cross-slot reference whose target did not survive the intersection.
  *
- * Only pairs of rows whose conditions the check believes can hold at once are
- * considered, so the widening idiom — every row conditional and mutually
- * exclusive — stays quiet. Exclusivity is decided syntactically; anything
+ * Only pairs of rows whose conditions can hold at once are considered, so the
+ * widening idiom stays quiet. Exclusivity is decided syntactically; anything
  * undecidable counts as co-satisfiable, so the check may miss a conflict but
  * never invents one.
  *
@@ -376,10 +329,6 @@ export function findUnsatisfiable(
   options: UnsatisfiableOptions = {},
 ): readonly Narrowing[] {
   const groups = prepare(contracts.rows);
-  // The canonical projection: normalized conditions, prepared bounds, no raw
-  // payload. Two tables that say the same thing key alike however they were
-  // written. `allow` stays out of it — it only filters the findings, so one
-  // analysis serves every list.
   const key = JSON.stringify(
     groups.map(({ component, rows }) => [
       component,

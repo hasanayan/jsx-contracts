@@ -1,15 +1,9 @@
-// When-conditions: the half of activation that reads the element's props. The
-// other half is the import gate (see import-matcher.ts); a row applies only
-// when both hold. Pure — the adapter hands over collected prop facts.
-
 import type { PropFact } from "./model.js";
 import type { ConditionValue, WhenCondition } from "./payload.js";
 
 /**
- * A condition tree with the string shorthand expanded, so the evaluator below
- * meets one shape per arm. Built fresh rather than reused, which is also what
- * makes the interning key canonical: every object's keys go in in a fixed
- * order.
+ * A condition tree with the string shorthand expanded, rebuilt with keys in a
+ * fixed order so the interning key is canonical.
  */
 type NormalizedWhen =
   | { prop: string; values?: ConditionValue[] }
@@ -39,8 +33,8 @@ function normalizeWhen(when: WhenCondition): NormalizedWhen {
     : { prop: when.prop, values: [...when.values] };
 }
 
-// A resolved literal matches by equality; a member expression or identifier
-// matches a string candidate by its dotted source text (e.g. "Size.large").
+// A literal matches by equality; a member expression or identifier by its
+// dotted source text (e.g. "Size.large").
 function propMatchesValues(prop: PropFact, values: ConditionValue[]): boolean {
   if (prop.value !== undefined && values.includes(prop.value)) {
     return true;
@@ -85,7 +79,6 @@ function treeHolds(when: NormalizedWhen, props: PropFact[]): boolean {
   return propHolds(when, props);
 }
 
-// Whether a tree negates anywhere below it.
 function negates(when: NormalizedWhen): boolean {
   if ("not" in when) {
     return true;
@@ -116,11 +109,8 @@ export interface PooledCondition {
 /**
  * Whether a condition holds against an element's props.
  *
- * A tree containing a negation is inactive on an element carrying a spread.
- * The consequence is sharp and deliberate: a spread on a component whose rows
- * are *all* conditional can leave no active row at all, and so leave that
- * component's facet unchecked. Under a spread we genuinely cannot tell which
- * branch we are in, and reporting either would risk a false positive. Absent a
+ * A tree containing a negation is inactive on an element carrying a spread,
+ * which can leave a facet unchecked when every row is conditional. Absent a
  * spread, a missing prop satisfies a negated test.
  */
 export function conditionHolds(
@@ -158,9 +148,6 @@ export function createConditionPool(): ConditionPool {
       }
 
       const normalized = normalizeWhen(when);
-      // Normalization rebuilds every object with its keys in a fixed order, so
-      // two conditions written differently but meaning the same thing — a bare
-      // prop name and `{ prop }` — hash alike.
       const key = JSON.stringify(normalized);
       const existing = ids.get(key);
 

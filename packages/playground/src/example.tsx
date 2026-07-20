@@ -6,8 +6,7 @@ import { Widget } from "./widget.js";
 export function Example(): JSX.Element {
   return (
     <section>
-      {/* Compact widget: the subtree ban is active (no Footer, no
-          data-analytics), and the Tray holds a Title plus one Action. */}
+      {/* Compact: the subtree ban is active — no Footer, no data-analytics. */}
       <Widget variant="compact">
         <Widget.Tray>
           <Widget.Tray.Title>Inbox</Widget.Tray.Title>
@@ -15,9 +14,7 @@ export function Example(): JSX.Element {
         </Widget.Tray>
       </Widget>
 
-      {/* Full widget: variant is not "compact", so the Footer is allowed. The
-          Tray holds a single Title (satisfying the min-1 count) and no Action,
-          so neither the requires nor the exclusive constraint is engaged. */}
+      {/* Not compact: the Footer is allowed. */}
       <Widget variant="full">
         <Widget.Tray>
           <Widget.Tray.Title>Archive</Widget.Tray.Title>

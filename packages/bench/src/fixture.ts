@@ -1,12 +1,3 @@
-// A synthetic TSX source generator. One knob per thing the collectors are
-// suspected to scale badly in: `depth` (how far `collectAncestors` has to walk
-// and how deep `collectSubtreeRoot` recurses), `breadth` (how many nodes each
-// walk covers), and `contracted` (what fraction of elements the name prefilter
-// lets through into the expensive path at all).
-//
-// Generation is deterministic — a seeded LCG, no Math.random — so two runs
-// measure the same file and a number is comparable across machines and dates.
-
 import { CONDITION_PROP, CONDITION_VALUE, CONTRACTED, GATE } from "./table.js";
 
 export interface FixtureSpec {
@@ -26,17 +17,11 @@ export interface FixtureSpec {
 export interface Fixture {
   /** The TSX module, ready to hand to the Linter. */
   source: string;
-  /**
-   * How many JSX elements `source` renders. Counted as it is generated rather
-   * than derived afterwards: a second pass would have to replay the same LCG
-   * draws in the same order, and would silently disagree the day one of them
-   * moved — taking the per-element column with it.
-   */
+  /** How many JSX elements `source` renders. */
   elements: number;
 }
 
-// A 32-bit LCG (Numerical Recipes' constants). Enough for "spread the
-// contracted elements around the tree", and it keeps the fixture reproducible.
+// A 32-bit LCG (Numerical Recipes' constants), seeded for reproducibility.
 function createRandom(seed: number): () => number {
   let state = seed >>> 0;
 
@@ -83,10 +68,7 @@ function renderNode(
     ].join("\n");
   }
 
-  // A contracted element is a well-formed container: the fixture measures the
-  // cost of analysing a tree, not the cost of reporting violations, so it puts
-  // the required prop on and wraps its children in the required slot. The
-  // wrapper is an element of its own, so it is counted.
+  // The required slot wrapper rendered below is an element of its own.
   cursor.elements++;
 
   const gate = spec.conditional

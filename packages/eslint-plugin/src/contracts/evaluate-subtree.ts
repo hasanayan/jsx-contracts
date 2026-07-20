@@ -1,11 +1,3 @@
-// Pure evaluation of a component's subtree facet: walk everything below the
-// element and check it against the effective contract. Forbid matches report
-// the first per path and stop descent there; descendant-count bounds tally
-// every matching occurrence, branch-aware, across the whole subtree.
-//
-// Activation — the row's import gate and its when-condition — is decided by the
-// engine before this runs, so an inactive row is simply absent from the combination.
-
 import {
   allPairwiseCoexist,
   minimumGuaranteedCount,
@@ -26,13 +18,11 @@ export type SubtreeMessageId =
 
 type SubtreeViolation = Violation<SubtreeMessageId>;
 
-// -- the subtree facet model ---------------------------------------------------
-
-// The subtree is a lazy tree of element, reference, and unknown nodes.
-// `resolve` reads the AST, so keeping it behind a callback is what lets this
-// directory import nothing from eslint. `branches` are the branch tags on the
-// transparent path from the parent element (or the activated root) down to this
-// node, so descendant counts stay branch-aware.
+/**
+ * One element in the lazy subtree. `branches` are the branch tags on the
+ * transparent path from the parent element down to this node, which is what
+ * keeps descendant counts branch-aware.
+ */
 export interface SubtreeElement {
   kind: "element";
   name: string;
@@ -44,8 +34,10 @@ export interface SubtreeElement {
   children: SubtreeNode[];
 }
 
-// `initId` is equal across every reference to the same constant, so the walk
-// can dedup by init.
+/**
+ * A reference to a JSX constant, resolved lazily. `initId` is equal across
+ * every reference to the same constant.
+ */
 export interface SubtreeRef {
   kind: "ref";
   initId: number;
@@ -53,17 +45,13 @@ export interface SubtreeRef {
   resolve: () => SubtreeNode[];
 }
 
-// Statically unresolvable content (a call, a param, a spread): it may render
-// anything, so its mere presence makes a `min` claim unprovable.
+// Statically unresolvable content: a call, a param, a spread.
 interface SubtreeUnknown {
   kind: "unknown";
 }
 
 export type SubtreeNode = SubtreeElement | SubtreeRef | SubtreeUnknown;
 
-// `importPath` is kept beside the compiled matcher because it — not the
-// function — is what two rows must share for their entries to be the same
-// statement rather than two.
 interface PreparedForbid {
   name: string;
   importPath?: string;
@@ -93,8 +81,6 @@ export interface CombinedSubtree {
   require: PreparedRequire[];
 }
 
-// A found descendant that counts toward a `require` bound, with the branch tags
-// that decide whether it coexists with the others.
 interface Occurrence {
   ref: Ref;
   branches: Branch[];
@@ -117,9 +103,6 @@ export function prepareSubtreeRow(row: SubtreeRow): PreparedSubtreeRow {
     return prepared;
   });
 
-  // Count-bound defaults mirror the slots facet exactly: neither bound means at
-  // most one; only min lifts the upper bound; only max keeps a lower bound of
-  // zero.
   const require: PreparedRequire[] = (row.require ?? []).map((entry) => {
     const prepared: PreparedRequire = {
       name: entry.name,
@@ -247,42 +230,23 @@ export function evaluateSubtree(
 ): SubtreeViolation[] {
   const violations: SubtreeViolation[] = [];
 
-  // Gates the forbid side only. A ref's init joins the set the first time the
-  // walk reaches and resolves it, so a ref blocked behind a forbidden element
-  // never claims its init and a later sibling reference is still free to
-  // report. Once an init is here, every later reference to the same constant
-  // re-walks with forbid reporting suppressed, so a single source element is
-  // reported once per ref chain. Never cleared.
+  // Inits whose forbid violations have already been reported.
   const visitedInits = new Set<number>();
 
-  // Gates the require side's recursion only. Require counting must tally an
-  // occurrence at every reference site, so an already-visited init is re-walked
-  // rather than skipped. That re-walk would not terminate for a self- or
-  // mutually-recursive constant, so an init is added on entry to its resolution
-  // and removed on exit; reaching an in-flight init stops. This counts a
-  // self-referential constant's occurrences once per outer reference site,
-  // which is the desired behavior.
+  // Inits currently being resolved; re-entering one would not terminate.
   const inFlight = new Set<number>();
 
-  // One occurrence bucket per require entry, filled during the walk.
   const buckets = prepared.require.map((entry) => ({
     entry,
     found: [] as Occurrence[],
   }));
 
-  // A statically unresolvable node anywhere in the activated subtree makes a
-  // `min` claim unprovable (the missing element may be produced dynamically);
-  // `max` is still checked on what is visible.
   let sawUnknown = false;
 
-  // `report` is false while re-walking an already-visited init: the walk still
-  // descends (so require counting sees this reference site) and still prunes
-  // below forbidden elements, but suppresses the forbid/forbidProps reports the
-  // first walk of that init already emitted.
   function visit(
     node: SubtreeNode,
     inherited: Branch[],
-    report: boolean,
+    reportForbid: boolean,
   ): void {
     if (node.kind === "unknown") {
       sawUnknown = true;
@@ -291,21 +255,15 @@ export function evaluateSubtree(
     }
 
     if (node.kind === "ref") {
-      // The first reference to reach this init reports its forbid violations;
-      // every later reference re-walks it for require counting with reporting
-      // suppressed.
       const firstVisit = !visitedInits.has(node.initId);
 
       visitedInits.add(node.initId);
 
-      // With nothing to count, a re-walk has no effect — skip it so a
-      // forbid-only contract keeps the walk linear in distinct constants.
+      // Nothing to count, so a re-walk has no effect.
       if (!firstVisit && prepared.require.length === 0) {
         return;
       }
 
-      // Terminate self- or mutually-recursive constants: an init already being
-      // resolved higher on the stack is not re-entered.
       if (inFlight.has(node.initId)) {
         return;
       }
@@ -315,7 +273,7 @@ export function evaluateSubtree(
       const branches = [...inherited, ...node.branches];
 
       for (const produced of node.resolve()) {
-        visit(produced, branches, report && firstVisit);
+        visit(produced, branches, reportForbid && firstVisit);
       }
 
       inFlight.delete(node.initId);
@@ -325,10 +283,9 @@ export function evaluateSubtree(
 
     const branches = [...inherited, ...node.branches];
 
-    // A forbidden element prunes the walk below it on every pass; only the
-    // first (reporting) pass records the violation.
+    // A forbidden element prunes the walk below it on every pass.
     if (matchesForbid(node, prepared)) {
-      if (report) {
+      if (reportForbid) {
         violations.push({
           ref: node.ref,
           messageId: "forbiddenDescendant",
@@ -342,7 +299,7 @@ export function evaluateSubtree(
     const prop = matchesForbidProps(node, prepared);
 
     if (prop !== undefined) {
-      if (report) {
+      if (reportForbid) {
         violations.push({
           ref: node.ref,
           messageId: "forbiddenPropDescendant",
@@ -353,22 +310,19 @@ export function evaluateSubtree(
       return;
     }
 
-    // Require counting is independent of `report`: every reference site counts,
-    // so a shared JSX constant referenced from several places is tallied once
-    // per site rather than deduped by init.
+    // Counted at every reference site, not deduped by init.
     for (const bucket of buckets) {
       if (matchesRequire(node, bucket.entry)) {
         bucket.found.push({ ref: node.ref, branches });
       }
     }
 
-    // Attribute-value JSX is walked before body children.
     for (const child of node.propChildren) {
-      visit(child, branches, report);
+      visit(child, branches, reportForbid);
     }
 
     for (const child of node.children) {
-      visit(child, branches, report);
+      visit(child, branches, reportForbid);
     }
   }
 
@@ -381,11 +335,9 @@ export function evaluateSubtree(
     visit(child, [], true);
   }
 
-  // A callback, not a `for…of`: `sawUnknown` is only ever set inside `visit`,
-  // which control-flow analysis does not follow through to the loop body.
+  // A callback, not `for...of`: a loop body narrows `sawUnknown` to `false`.
   buckets.forEach(({ entry, found }) => {
-    // Exceeds max N when some N coexisting earlier occurrences can all render
-    // alongside this one (opposite ternary branches never do).
+    // Exceeds max N when N earlier occurrences can all render alongside this one.
     if (entry.maxCount !== Infinity) {
       for (const [position, occurrence] of found.entries()) {
         const earlier = found.slice(0, position);

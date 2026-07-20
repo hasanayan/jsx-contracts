@@ -4,10 +4,6 @@ import { facetRules } from "./facet-rule.js";
 
 export type { SubtreeMessageId };
 
-// The messages describe the combined effective contract, not the row that
-// contributed a given entry: once rows accumulate there is no single row to
-// name. A conditional row's props are written on the element being reported and
-// so are visible in the source.
 const messages = {
   forbiddenDescendant: "<{{name}}> cannot appear inside a <{{component}}>.",
   forbiddenPropDescendant:

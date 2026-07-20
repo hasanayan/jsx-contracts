@@ -5,13 +5,8 @@ import { propsGranular } from "./rules/props.js";
 import { slotsGranular } from "./rules/slots.js";
 import { subtreeGranular } from "./rules/subtree.js";
 
-// The authoring API (contractsFor, the contract() builder it binds,
-// mergeContracts)
-// lives in @jsx-contracts/helpers; this plugin only enforces. But the plugin
-// owns its own input contract: these are the payload types every rule accepts,
-// published so a generated or hand-written table can be type-checked against
-// the real thing. @jsx-contracts/helpers imports them type-only and compiles
-// to them.
+// The payload types every rule accepts, published so a generated or
+// hand-written table can be type-checked against the real thing.
 export type {
   AncestorRow,
   ConditionValue,
@@ -40,8 +35,6 @@ export type { AncestorMessageId } from "./rules/ancestor.js";
  * switched off or targeted with an eslint-disable comment. Register them with
  * `contracts.rules()`.
  */
-// @typescript-eslint's rule type and eslint's RuleDefinition are structurally
-// close but not assignable; the cast bridges them.
 export const rules = {
   ...slotsGranular,
   ...subtreeGranular,

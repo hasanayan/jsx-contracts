@@ -1,9 +1,3 @@
-// Conditions: the values that gate any rule on any facet. They are constructed
-// rather than chained, so a condition used by several components is written
-// once and shared — and they are returned by the binding rather than exported
-// at package level, so `prop`, `allOf` and `anyOf` never occupy package-level
-// names. See CONTEXT.md for the terms.
-
 import type { WhenCondition } from "@jsx-contracts/eslint-plugin";
 
 import type { Literal } from "./compile.js";
@@ -33,8 +27,7 @@ export interface PropCondition {
 }
 
 /**
- * Name a prop to condition on. The name is a plain string: narrowing it to the
- * bound component's prop names is a later additive change.
+ * Name a prop to condition on.
  *
  * @example
  * prop("as").is("a", "button")
@@ -43,7 +36,6 @@ export interface PropCondition {
 export function prop(name: string): PropCondition {
   return {
     is(...values): Condition {
-      // The tuple type asks for one; this is what an untyped caller meets.
       if (values.length === 0) {
         throw new Error(`prop: is() on "${name}" needs at least one value.`);
       }
@@ -60,8 +52,6 @@ function composite(
   operator: "allOf" | "anyOf",
   conditions: Condition[],
 ): WhenCondition[] {
-  // The two positional parameters ask for two operands; dropping the absent
-  // ones is what an untyped caller passing fewer meets.
   const operands = conditions.filter(
     (condition: Condition | undefined) => condition !== undefined,
   );

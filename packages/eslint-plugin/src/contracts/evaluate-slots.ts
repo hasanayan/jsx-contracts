@@ -1,10 +1,3 @@
-// Pure evaluation of a container's children facet. Check order is significant:
-// it fixes which violation is reported first.
-//
-// A row is prepared once, at intern time; the active rows for one element are
-// combined into one effective config and evaluated once, so a violation is
-// reported once and its message describes what the combined state allows.
-
 import { formatList } from "./format.js";
 import type { ImportMatcher } from "./import-matcher.js";
 import { createImportMatcher, matchesGate } from "./import-matcher.js";
@@ -40,8 +33,7 @@ export interface PreparedSlot {
 
 /** One slots row, prepared. Combined with the other active rows before use. */
 export interface PreparedSlotsRow {
-  // `undefined` when the row declares no slots: it says nothing about which
-  // children are allowed, so it sits out the intersection.
+  /** `undefined` when the row declares no slots: it sits out the intersection. */
   slots: Map<string, PreparedSlot> | undefined;
   requires: Record<string, string> | undefined;
   exclusive: [string[], string[]][] | undefined;
@@ -51,20 +43,15 @@ export interface PreparedSlotsRow {
 /** The effective children contract for one element: the combination of its active rows. */
 export interface CombinedSlots {
   container: string;
-  // `undefined` when no active row declared a slot list. That is not the same
-  // as an empty one: nothing is an invalid child, because nothing said what a
-  // valid child is.
+  /** `undefined` when no active row declared a slot list — not the same as an empty one. */
   slots: Map<string, PreparedSlot> | undefined;
   slotList: string;
-  // A slot may require more than one other slot once rows accumulate, so the
-  // combined form is a list where a single row's payload holds one name.
+  /** Slot → the slots it requires; accumulation can leave more than one. */
   requires: Map<string, string[]>;
   exclusive: [string[], string[]][];
   strict: boolean;
 }
 
-// Count-bound defaults: neither bound means at most one; only minCount lifts
-// the upper bound; only maxCount keeps a lower bound of zero.
 export function prepareSlotsRow(row: SlotsRow): PreparedSlotsRow {
   const containerMatcher = createImportMatcher(row.importPath);
   const slots =
@@ -94,7 +81,6 @@ export function prepareSlotsRow(row: SlotsRow): PreparedSlotsRow {
   };
 }
 
-// Two rows both declaring a slot narrow it: the slot must satisfy both gates.
 function bothGates(a: ImportMatcher, b: ImportMatcher): ImportMatcher {
   return (specifier): boolean => a(specifier) && b(specifier);
 }
@@ -145,8 +131,7 @@ export function combineSlots(
     }
 
     if (!dropped) {
-      // Tightening from both ends can cross the bounds over; clamping the
-      // lower one keeps the combination total rather than unsatisfiable.
+      // Tightening from both ends can cross the bounds over.
       slots?.set(name, {
         ...combined,
         minCount: Math.min(combined.minCount, combined.maxCount),
@@ -158,8 +143,7 @@ export function combineSlots(
 
   for (const row of rows) {
     for (const [from, to] of Object.entries(row.requires ?? {})) {
-      // A reference whose target the intersection removed would be
-      // unsatisfiable; drop it instead.
+      // Drop a reference whose target the intersection removed.
       if (slots === undefined || !slots.has(from) || !slots.has(to)) {
         continue;
       }
@@ -207,8 +191,6 @@ function countWord(count: number): string {
   return count === 1 ? "one" : String(count);
 }
 
-// Exponential, but occurrence counts are tiny. Shared with the subtree facet's
-// descendant-count check.
 export function subsetsOfSize<T>(items: T[], size: number): T[][] {
   const result: T[][] = [];
 
@@ -243,9 +225,7 @@ function sideOf(branch: Branch): "consequent" | "alternate" {
   return branch.endsWith("consequent") ? "consequent" : "alternate";
 }
 
-// The count guaranteed on every render path: each referenced conditional is a
-// binary branch point, so enumerate every assignment and take the smallest
-// surviving count.
+/** The count guaranteed on every render path, over every branch assignment. */
 export function minimumGuaranteedCount(occurrences: Branched[]): number {
   const branchPoints = [
     ...new Set(
@@ -281,8 +261,7 @@ export function minimumGuaranteedCount(occurrences: Branched[]): number {
   return minimum === Infinity ? 0 : minimum;
 }
 
-// A hoisted placement needs at least one read, and every read's parent must be
-// the container.
+/** A hoisted placement needs at least one read, every read's parent the container. */
 export function isPlacedInContainer(
   placement: Placement,
   container: string,
@@ -303,7 +282,7 @@ export function isPlacedInContainer(
   return placement.parents.length > 0 && placement.parents.every(isContainer);
 }
 
-// `containerRef` is the node a tooFew violation reports on.
+/** `containerRef` is the node a `tooFew` violation reports on. */
 export function evaluateSlots(
   prepared: CombinedSlots,
   root: RenderedNode,
@@ -322,10 +301,7 @@ export function evaluateSlots(
     }
   };
 
-  // No active row declared a slot list, so nothing here is an invalid child —
-  // nothing said what a valid one is — and the count and cross-slot checks have
-  // no slot to attach to. Strictness is independent of the list, so a row that
-  // only turned it on still applies.
+  // No slot list, so nothing is an invalid child. Strictness still applies.
   if (slots === undefined) {
     if (prepared.strict) {
       reportUnresolvable();
@@ -339,8 +315,6 @@ export function evaluateSlots(
   const found: { name: string; maxCount: number; element: RenderedNode }[] = [];
 
   for (const child of root.children) {
-    // A name match is only a slot if the tag also passes the slot's gate;
-    // otherwise it is foreign and reported like any invalid child.
     const slot = slots.get(child.name);
 
     if (slot === undefined || !matchesGate(slot.matcher, child.importSource)) {
@@ -369,7 +343,7 @@ export function evaluateSlots(
   }
 
   // Exceeds maxCount N when N earlier same-name occurrences can all render
-  // alongside it and one another (opposite ternary branches never do).
+  // alongside it and one another.
   for (const [index, slot] of found.entries()) {
     const bound = slot.maxCount;
 
@@ -395,8 +369,6 @@ export function evaluateSlots(
     }
   }
 
-  // Both slots are statically present, so exclusivity holds regardless of any
-  // unresolvable content elsewhere.
   for (const [groupA, groupB] of prepared.exclusive) {
     const groupBNames = new Set(groupB);
     const others = formatList(groupB.map((name) => `<${name}>`));
@@ -429,8 +401,6 @@ export function evaluateSlots(
     return violations;
   }
 
-  // One violation per unmet requirement: accumulation can leave a slot
-  // requiring more than one other.
   for (const slot of found) {
     for (const required of prepared.requires.get(slot.name) ?? []) {
       const satisfied = found.some(
@@ -448,8 +418,7 @@ export function evaluateSlots(
     }
   }
 
-  // minCount is a presence claim on every render path, so like requires it
-  // shares the unknown-content gate above.
+  // A presence claim on every render path, so it shares the gate above.
   for (const preparedSlot of slots.values()) {
     if (preparedSlot.minCount === 0) {
       continue;

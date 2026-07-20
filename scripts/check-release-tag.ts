@@ -1,5 +1,4 @@
-// Release-workflow guard: the pushed tag must match the version the published
-// package carries, so a stale or hand-made tag cannot publish the wrong code.
+// Release-workflow guard: the pushed tag must match the published version.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";

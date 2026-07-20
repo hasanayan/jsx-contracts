@@ -1,13 +1,3 @@
-// Syntactic mutual exclusivity over condition trees: whether two rows can be
-// active on the same element at once. This is what separates a contract that is
-// unsatisfiable as written from a combination of rows that can never arise —
-// the widening idiom, where mutual exclusivity is the whole design.
-//
-// Syntactic, not a solver: two `prop(p).is(...)` tests on one prop with
-// disjoint value sets are exclusive, `c` and `not(c)` are, and `allOf`/`anyOf`
-// distribute over those. Anything it cannot decide is **co-satisfiable**, which
-// is the safe direction — the check may miss a conflict, never invent one.
-
 import type { WhenCondition } from "@jsx-contracts/eslint-plugin";
 
 import type { Literal } from "./compile.js";
@@ -15,8 +5,7 @@ import type { Literal } from "./compile.js";
 /**
  * A condition tree with the string shorthand expanded and every object's keys
  * written in a fixed order, so two conditions that mean the same thing hash
- * alike. Mirrors the core's own normalization — the two packages share no
- * runtime code, only the payload shape.
+ * alike. Mirrors the core's own normalization.
  */
 export type NormalizedCondition =
   | { prop: string; values?: Literal[] }
@@ -51,18 +40,12 @@ function conditionKey(when: NormalizedCondition): string {
   return JSON.stringify(when);
 }
 
-// A prop fact carries either a resolved literal or the dotted source text of a
-// member expression, never both, so one prop matches exactly one token. Two
-// value sets sharing no literal therefore cannot both match. `includes` is what
-// the evaluator uses, so equality means what it means there.
 function disjoint(left: Literal[], right: Literal[]): boolean {
   return !left.some((value) => right.includes(value));
 }
 
-// The values a value test matches on a prop the model nonetheless counts as
-// absent — `as={false}` and `as={undefined}`, whose facts carry the literal
-// `false` and the source text `"undefined"` respectively while `present` is
-// false. See `PropFact` in the core's model.
+// Values a test matches on a prop the model counts as absent: `as={false}` and
+// `as={undefined}`.
 function matchesWhileAbsent(value: Literal): boolean {
   return value === false || value === "undefined";
 }
@@ -80,9 +63,7 @@ function implies(
     return true;
   }
 
-  // The two exact steps first — a conjunction is implied exactly when each of
-  // its conjuncts is, and a disjunction implies exactly what every disjunct
-  // implies. Decomposing the other side is sound but lossy, so it comes after.
+  // The exact steps first; the lossy decompositions after.
   if ("all" in conclusion) {
     return conclusion.all.every((operand) => implies(premise, operand));
   }
@@ -91,8 +72,6 @@ function implies(
     return premise.any.every((operand) => implies(operand, conclusion));
   }
 
-  // A conjunction implies whatever one of its conjuncts implies; a disjunction
-  // is implied by whatever implies one of its disjuncts.
   if ("all" in premise) {
     return premise.all.some((operand) => implies(operand, conclusion));
   }
@@ -116,17 +95,12 @@ function implies(
 
   const wider = conclusion.values;
 
-  // A value test implies the presence test it narrows — except for the two
-  // values a prop can carry while the model still counts it *absent*
-  // (`present` is false for a literal `false`, `null` or `undefined`). A value
-  // test matches those all the same: `false` as the resolved literal,
-  // `"undefined"` as the identifier's source text. A set carrying either
-  // implies nothing about presence.
+  // A value test implies the presence test it narrows, unless it matches while
+  // absent.
   if (wider === undefined) {
     return premise.values?.some(matchesWhileAbsent) !== true;
   }
 
-  // A narrower value set implies a wider one.
   return premise.values?.every((value) => wider.includes(value)) === true;
 }
 
@@ -134,8 +108,7 @@ function exclusive(
   left: NormalizedCondition,
   right: NormalizedCondition,
 ): boolean {
-  // Negation first: `not` needs the *whole* other tree to decide, so
-  // decomposing that tree first would throw away the implication.
+  // Negation first: `not` needs the whole other tree to decide.
   if ("not" in left) {
     return implies(right, left.not);
   }
@@ -144,8 +117,6 @@ function exclusive(
     return implies(left, right.not);
   }
 
-  // One contradicted conjunct is enough to contradict a conjunction; a
-  // disjunction needs every disjunct contradicted.
   if ("all" in left) {
     return left.all.some((operand) => exclusive(operand, right));
   }
@@ -162,8 +133,7 @@ function exclusive(
     return right.any.every((operand) => exclusive(left, operand));
   }
 
-  // Two prop tests. Presence overlaps every value, and two props are
-  // independent, so only disjoint value sets on one prop decide anything.
+  // Two prop tests: only disjoint value sets on one prop decide anything.
   return (
     left.prop === right.prop &&
     left.values !== undefined &&
@@ -183,9 +153,8 @@ export type Exclusivity = (
 
 /**
  * The exclusivity test, with its answers memoized. Pairs are keyed by content,
- * never by object identity: one condition hoisted to a constant and shared
- * across components is the same condition as one written out twice, so a pair
- * is decided once however many row pairs carry it.
+ * never by object identity, so a pair is decided once however many row pairs
+ * carry it.
  */
 export function createExclusivity(): Exclusivity {
   const answers = new Map<string, boolean>();

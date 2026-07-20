@@ -1,8 +1,3 @@
-// The bench entry: each scenario linted twice — once with all thirteen rules
-// carrying the table, once with none — so what is reported is the delta, with
-// parse and scope-analysis cost subtracted out. That delta is the plugin's
-// price, and the only number an optimisation should be judged against.
-
 import * as tsParser from "@typescript-eslint/parser";
 import type { Linter as LinterTypes } from "eslint";
 import { Linter } from "eslint";
@@ -56,10 +51,6 @@ const languageOptions: LinterTypes.Config["languageOptions"] = {
   parserOptions: { ecmaFeatures: { jsx: true }, sourceType: "module" },
 };
 
-// Every one of the thirteen rules on, all carrying the same table — the way a
-// consumer who adopted the whole plugin runs. The table object is shared across
-// iterations on purpose: preparation is once-per-table by design, and folding
-// it into every iteration would price something no consumer pays per file.
 const enabled: LinterTypes.RulesRecord = Object.fromEntries(
   Object.keys(contractRules).map((name) => [
     `@jsx-contracts/${name}`,
@@ -67,8 +58,7 @@ const enabled: LinterTypes.RulesRecord = Object.fromEntries(
   ]),
 );
 
-// A flat config only applies to a file its `files` glob matches — without one
-// the Linter reports "no matching configuration" and measures nothing.
+// Must match the configs' `files` glob, or nothing is linted.
 const FILENAME = "fixture.tsx";
 
 const withRules: LinterTypes.Config[] = [
@@ -153,9 +143,6 @@ function main(): void {
   for (const scenario of scenarios) {
     const { source, elements } = generateFixture(scenario.spec);
 
-    // With no rules on, anything reported means the file never reached them —
-    // an unmatched config or a parse failure, both of which would make the
-    // whole run measure nothing at all.
     const noise = lint(linter, source, baseline);
 
     if (noise !== 0) {

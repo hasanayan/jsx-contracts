@@ -1,5 +1,4 @@
-// Import-gate matching: a literal specifier or a `*`-glob. Pure.
-
+/** Matches an import specifier against a literal path or a `*`-glob. */
 export type ImportMatcher = (specifier: string) => boolean;
 
 export function createImportMatcher(importPath: string): ImportMatcher {
@@ -16,7 +15,7 @@ export function createImportMatcher(importPath: string): ImportMatcher {
   return (specifier): boolean => regExp.test(specifier);
 }
 
-// A null source (not an import) matches any gate — the lenient case.
+/** A null source (not an import) matches any gate. */
 export function matchesGate(
   matcher: ImportMatcher,
   importSource: string | null,

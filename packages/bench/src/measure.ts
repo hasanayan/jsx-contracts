@@ -1,10 +1,3 @@
-// Timing. `performance.now()` throughout — a monotonic clock in fractional
-// milliseconds; `Date.now()` is both coarser and non-monotonic, and has no
-// place in a hot loop.
-//
-// Reported as median and p95 rather than a mean: a JIT warming up and a GC
-// pause both produce outliers that a mean quietly folds into the answer.
-
 export interface Summary {
   /** How many timed iterations went into this summary. */
   iterations: number;
@@ -29,6 +22,10 @@ export function summarize(durations: readonly number[]): Summary {
 
   const sorted = [...durations].sort((left, right) => left - right);
   const middle = sorted.length >> 1;
+  const nearestRank95 = Math.min(
+    sorted.length - 1,
+    Math.ceil(0.95 * sorted.length) - 1,
+  );
 
   return {
     iterations: sorted.length,
@@ -36,12 +33,7 @@ export function summarize(durations: readonly number[]): Summary {
       sorted.length % 2 === 1
         ? (sorted[middle] ?? 0)
         : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2,
-    // Nearest-rank: the smallest value at or above which 95% of the samples
-    // sit. Exact on small sample counts, where interpolation invents precision.
-    p95:
-      sorted[
-        Math.min(sorted.length - 1, Math.ceil(0.95 * sorted.length) - 1)
-      ] ?? 0,
+    p95: sorted[nearestRank95] ?? 0,
   };
 }
 

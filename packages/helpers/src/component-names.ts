@@ -1,11 +1,5 @@
-// Component names typed against the design system's module: the type-level
-// half of the binding, so a typo — or a component renamed away — fails to
-// compile.
-
-// Dotted capitalized export paths of a module: "Widget", "Widget.Tray",
-// "Widget.Tray.Title". JSX only renders capitalized identifiers, so lowercase
-// exports (helpers, constants) never name a contract. Three segments deep —
-// as deep as compound components realistically nest.
+// Dotted capitalized export paths, three segments deep: "Widget",
+// "Widget.Tray", "Widget.Tray.Title".
 type ComponentPaths<Module> = ModulePaths<Module, [0, 0]>;
 
 type ModulePaths<Owner, Depth extends readonly unknown[]> = Owner extends object
@@ -21,18 +15,16 @@ type ModulePaths<Owner, Depth extends readonly unknown[]> = Owner extends object
     }[keyof Owner & string]
   : never;
 
-// Without a module type argument the names degrade to unconstrained strings
-// instead of rejecting everything.
+// Without a module type argument, unconstrained strings.
 export type ComponentNames<Module> = unknown extends Module
   ? string
   : ComponentPaths<Module>;
 
 /**
  * What a binding carries into a builder's types: the design system's module,
- * referenced type-only, and the component's own name as a literal. Every
- * part-name check needs both, so they travel as one. The type itself is the
- * unbound case — an unknown module and an unnarrowed component name — which is
- * what makes it the default a builder degrades to.
+ * referenced type-only, and the component's own name as a literal. The type
+ * itself is the unbound case — an unknown module and an unnarrowed component
+ * name — which is the default a builder degrades to.
  */
 export interface Binding {
   module: unknown;
@@ -42,12 +34,9 @@ export interface Binding {
 /**
  * A part name as a slot or descendant declaration takes it, checked against the
  * bound module. A leading dot is shorthand for the container's name followed by
- * the given segments, so the expansion is what has to be an export path; any
- * other name is accepted as written, since narrowing full component names is a
- * later additive change. Where the module resolves nothing at the expansion's
- * depth — the container is a leaf, or the shorthand reaches past the levels
- * `ComponentNames` walks — the name is accepted unchecked, so the shorthand
- * stays usable where the module's types cannot confirm it.
+ * the given segments, and the expansion is what has to be an export path; any
+ * other name is accepted as written. Where the module resolves nothing at the
+ * expansion's depth, the name is accepted unchecked.
  */
 export type PartName<
   Name extends string,
@@ -68,12 +57,10 @@ export type PartName<
  */
 export type PartNames<Bound extends Binding> =
   | Shorthand<ComponentNames<Bound["module"]>, Bound["component"]>
-  // The `{}` intersection is what keeps the union open: every other string
-  // stays assignable, so the module's parts complete without constraining.
+  // The `{}` intersection keeps the union open to every other string.
   | (string & {});
 
-// One export path read back as a shorthand: the container's name dropped from
-// the front, the leading dot kept. Distributes over the union of paths.
+// One export path read back as a shorthand, with the container's name dropped.
 type Shorthand<
   Path,
   Component extends string,
@@ -81,16 +68,13 @@ type Shorthand<
   ? Rest
   : never;
 
-// The failure arm's message. It is spelled as a key of an otherwise
-// unsatisfiable `Record` because that is what an editor prints: intersected
-// with the argument's own literal type it makes the call a type error, and the
-// reported type reads as the sentence.
+// The failure arm's message, spelled as a key of an unsatisfiable `Record` so
+// the reported type reads as the sentence.
 type NotAPart<Expanded extends string> =
   `${Expanded} is not an export path of the bound module`;
 
 // Whether the module resolves any export path as deep below the container as
-// the shorthand reaches. False is what the degrade-to-unchecked arm keys off:
-// the module's types say nothing at that depth, so neither do we.
+// the shorthand reaches.
 type ResolvesAtDepth<Bound extends Binding, Name extends string> = [
   Extract<
     ComponentNames<Bound["module"]>,
@@ -100,9 +84,8 @@ type ResolvesAtDepth<Bound extends Binding, Name extends string> = [
   ? false
   : true;
 
-// A shorthand with every segment blanked: ".Title" → `.${string}`,
-// ".Title.Icon" → `.${string}.${string}`. Matching against it asks about depth
-// alone, leaving the name itself to the check proper.
+// A shorthand with every segment blanked, so matching asks about depth alone:
+// ".Title" → `.${string}`, ".Title.Icon" → `.${string}.${string}`.
 type Blanked<Name extends string> = Name extends `.${infer Segments}`
   ? Segments extends `${string}.${infer Rest}`
     ? `.${string}${Blanked<`.${Rest}`>}`

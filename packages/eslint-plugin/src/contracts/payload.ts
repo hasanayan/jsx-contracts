@@ -1,14 +1,3 @@
-// The rule table: the frozen JSON every rule takes as its sole option. The
-// plugin owns both halves of its own input contract — these shapes and the JSON
-// schema plus runtime validators beside them. @jsx-contracts/helpers imports
-// them type-only and compiles to them. See CONTEXT.md for the terms.
-//
-// A row is one statement about one component in one facet, optionally gated by
-// a when-condition. Many rows may name the same component: on each element the
-// engine works out which of that component's rows are active, combines them
-// into one effective config per facet, and evaluates once. Rows accumulate
-// rather than replace.
-
 /** A literal a when-condition can match a prop's value against. */
 export type ConditionValue = string | number | boolean;
 

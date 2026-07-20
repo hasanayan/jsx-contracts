@@ -1,13 +1,3 @@
-// The fluent builder surface: one component's contract, built by chaining. A
-// builder is already a compiled contract — it accumulates a runtime entry and
-// hands it to `compile` on first payload access.
-//
-// `contract()` with no name builds a *nameless* contract instead: the same
-// methods, no component, and no payload of its own. It exists to be handed to
-// `when`, which attaches it to a component and gates it on a condition. One
-// method surface serves both, so a rule never needs a second, value-shaped form
-// to be made conditional.
-
 import type { ContractRows } from "@jsx-contracts/eslint-plugin";
 
 import type {
@@ -262,13 +252,9 @@ export function contract<Bound extends Binding = Binding>(
   from: Gate,
 ): ContractBuilder<never, Bound>;
 export function contract(component?: string, from?: Gate): AnyBuilder {
-  // The impl works with plain string slot keys; the generic facets narrow it.
   return makeBuilder(component, component === undefined ? {} : { from });
 }
 
-// The untyped view of a builder: every method the surface can offer, with the
-// type-state's narrowing gone. A nameless contract's `rows`/`rules` sit here
-// too — they throw, which is what an untyped caller reaching for them meets.
 interface AnyBuilder extends CompiledContracts {
   hasSlot: (name: string, from?: Gate) => AnyBuilder;
   atLeast: (count: number) => AnyBuilder;
@@ -306,12 +292,7 @@ interface PendingPart {
   readonly name: string;
 }
 
-// Every *nameless* contract's accumulated entry, held beside the builder rather
-// than on it: `when` has to read the rules out of one, and this is how it does
-// so without putting an internal key on the public surface. Named builders stay
-// out, which is also what makes them rejected where a nameless one is asked
-// for — the two are structurally alike, so nothing at the type level separates
-// them.
+// Keyed off the builder object so `when` can read a nameless contract's rules.
 const namelessEntries = new WeakMap<object, RuntimeEntry>();
 
 function makeBuilder(
@@ -319,12 +300,8 @@ function makeBuilder(
   entry: RuntimeEntry,
   pendingPart?: PendingPart,
 ): AnyBuilder {
-  // Builders are immutable, so the compilation is computed once and reused by
-  // every payload access (`rows`, `rules()`).
   let compiled: CompiledContracts | undefined;
 
-  // Every message names its subject, so an author reading one knows which
-  // chain — a component's, or a nameless contract's — it came from.
   const subject =
     component === undefined ? "nameless contract" : `component "${component}"`;
 
@@ -360,8 +337,6 @@ function makeBuilder(
     [partsKey[kind]]: { ...entry[partsKey[kind]], [name]: spec },
   });
 
-  // One part declared into `slots` or `descendants`, refusing a name the
-  // contract already declares as that kind.
   const declarePart = (
     kind: PartKind,
     name: string,
@@ -376,8 +351,6 @@ function makeBuilder(
     return next(withPart(kind, name, spec), { kind, name });
   };
 
-  // A count bound on the part just declared. The type-state only surfaces
-  // `atLeast`/`atMost` there, so the throw is for untyped callers.
   const boundPart = (bound: "min" | "max", count: number): AnyBuilder => {
     if (pendingPart === undefined) {
       throw new Error(
@@ -387,7 +360,6 @@ function makeBuilder(
     }
 
     const { kind, name } = pendingPart;
-    // A pending part was written by `declarePart`, so its spec is always there.
     const spec: RuntimeSlotSpec = entry[partsKey[kind]]?.[name] ?? {};
 
     return next(
@@ -523,8 +495,6 @@ function makeBuilder(
     when(condition, rules): AnyBuilder {
       const gated = namelessEntries.get(rules);
 
-      // The type demands a nameless contract; this is what an untyped caller
-      // handing over anything else meets.
       if (gated === undefined) {
         throw new Error(
           `contract: ${subject} calls when() with something other than a ` +
@@ -532,9 +502,6 @@ function makeBuilder(
         );
       }
 
-      // Likewise for the condition. Left unchecked, a missing tree would emit
-      // the gated rows *unconditionally* — the loudest possible failure, and
-      // the opposite of what the call says.
       if (condition?.when === undefined) {
         throw new Error(
           `contract: ${subject} calls when() with something other than a ` +
