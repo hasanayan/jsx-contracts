@@ -5,7 +5,7 @@ Status: accepted — 2026-07-19
 Specified in full in issues #2 (the rule table and the engine), #3 (the
 authoring surface) and #4 (conditions, on both sides), in that order. The
 build-time unsatisfiability check this decision assigns to the authoring side is
-issue #5, which follows them.
+issue #5, which follows them and shipped as `findUnsatisfiable`.
 
 ## Decision
 
@@ -133,6 +133,17 @@ a reachable combination of conditions from an unreachable one without solving
 over the condition trees, and reporting a config error for an unreachable
 combination is worse than narrowing quietly. Such a check belongs here, on the
 authoring side, at build time, where the trees are visible.
+
+It ships as `findUnsatisfiable(contracts, { allow })` — a separate entry point,
+not part of `rules()`, reporting rather than throwing, because the narrowing it
+describes is legal and may be intended. Scope is the children facet's
+intersection, the only combination that can cancel a rule: a required slot
+excluded, count bounds crossed, a cross-slot reference dropped. Only pairs of
+rows whose conditions can hold at once are considered, decided **syntactically**
+— disjoint value sets on one prop, `c` against `not(c)`, `allOf`/`anyOf`
+distributing over those — with anything undecidable treated as co-satisfiable.
+That is the safe direction: the check may miss a conflict, never invents one,
+and the widening idiom below stays quiet. No lint result changes.
 
 ### Output
 
@@ -308,11 +319,12 @@ Deleted with the map form: `ComponentEntry`, `PropsEntry`, `SlotKeys`,
 brand traps. The traps existed only because `T & ContractsInput<T>` defeats
 excess-property checking — a problem the builder does not have.
 
-Package exports: `contractsFor` and `mergeContracts`. The constructors come from
+Package exports: `contractsFor`, `mergeContracts` and `findUnsatisfiable`. The constructors come from
 the binding rather than the package, so `prop`, `allOf` and `anyOf` never occupy
 package-level names.
 
 Public types: `BoundContracts`, `ContractBuilder`, `ContractMethods`,
+`Narrowing`, `NarrowingKind`, `ConflictingRow`, `UnsatisfiableOptions`,
 `SlotBuilder`, `PendingCount`, `Condition`, `PropCondition`, and `Fragment` —
 the type `contract()` returns when given no name. The term appears only in the
 types; the API has no separate constructor for it. `ContractMethods` is the

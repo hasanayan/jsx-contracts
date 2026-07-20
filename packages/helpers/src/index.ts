@@ -13,6 +13,16 @@ export { contractsFor } from "./contracts-for.js";
 export type { BoundContracts } from "./contracts-for.js";
 export { mergeContracts } from "./merge-contracts.js";
 export type { CompiledContracts, Severity } from "./rule-table.js";
+// The unsatisfiability check: opt-in, separate from `rules()`, and reporting
+// rather than throwing — the narrowing it describes is legal and may be
+// intended. See ADR 0001 for why it lives here rather than in the plugin.
+export { findUnsatisfiable } from "./unsatisfiable.js";
+export type {
+  ConflictingRow,
+  Narrowing,
+  NarrowingKind,
+  UnsatisfiableOptions,
+} from "./unsatisfiable.js";
 // The rule table's own types live in @jsx-contracts/eslint-plugin, the package
 // that consumes them. Re-exported so `CompiledContracts["rows"]` is nameable
 // without a second import.

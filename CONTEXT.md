@@ -93,6 +93,25 @@ and commits.
   offered — a wrapper may render the part standalone, which no single file can
   disprove.
 
+- **Narrowing** — what a conditional row does to the children facet: its slot
+  list intersects with the base one. The only combination that can _cancel_ a
+  rule — every other facet unions — so it is the whole scope of the check below.
+  Most narrowings are intended; the reported ones are those that cancel a rule,
+  and a reported one is what the type `Narrowing` names.
+- **Unsatisfiability check** — `findUnsatisfiable`, the authoring side's
+  build-time pass over a compiled contract: it reports the rules a component's
+  rows cancel between them (a required slot excluded, count bounds crossed, a
+  cross-slot reference dropped), one finding per component per facet per slot
+  per kind. Opt-in, separate from `rules()`, and reporting
+  rather than throwing — the narrowing is legal and may be intended. Not a lint
+  rule: the plugin's combination stays total and silent, because it cannot tell
+  a reachable combination of conditions from an unreachable one.
+- **Syntactic exclusivity** — how the check decides two rows can never be active
+  at once: disjoint value sets on one prop, `c` against `not(c)`, with
+  `allOf`/`anyOf` distributing over those. Not a solver — anything undecidable
+  is treated as **co-satisfiable**, the safe direction, so the check may miss a
+  conflict but never invents one. This is what keeps the widening idiom quiet.
+
 ## Analysis model (implementation)
 
 - **Rendered tree** — pure data the adapter collects, the core evaluates against.
@@ -115,8 +134,9 @@ Two published packages, split by side of the contract:
   DSL (the `contractsFor` binding, the fluent `contract()` builder it hands
   back, `mergeContracts`) that
   compiles to the rule table, and the owner of consumer-facing type safety.
-  Imports the payload types type-only. Zero runtime dependencies;
-  Vitest-tested.
+  Also the home of the unsatisfiability check, which needs the condition trees
+  the plugin only sees as payload. Imports the payload types type-only. Zero
+  runtime dependencies; Vitest-tested.
 - **Core** (`packages/eslint-plugin/src/contracts/`) — pure: rendered-tree
   model, activation, combination, evaluation, gate matching, and the payload
   types, JSON schema and runtime validators — the single source of truth for

@@ -14,7 +14,8 @@ npm i -D @jsx-contracts/eslint-plugin @jsx-contracts/helpers
 
 `@jsx-contracts/eslint-plugin` enforces the contracts; `@jsx-contracts/helpers`
 is the type-safe authoring layer (`contractsFor`, the fluent `contract()`
-builder, `mergeContracts`). Requires ESLint 9+ (flat config).
+builder, `mergeContracts`, and the build-time `findUnsatisfiable` check).
+Requires ESLint 9+ (flat config).
 
 ## Usage
 
@@ -269,6 +270,60 @@ Keeping an unconditional base row avoids it entirely — that row stays active
 whatever the spread carries. Absent a spread, a missing prop satisfies a negated
 test as you would expect.
 
+#### Checking a contract is satisfiable
+
+Narrowing has a failure mode worth knowing about: a conditional row can cancel a
+rule the base row states. Here `.Title` is required by the base row and
+intersected away by the conditional one, so while `variant="compact"` holds it is
+neither allowed nor required — the requirement silently stops applying, and no
+file fails:
+
+```ts
+const tray = contract("Widget.Tray")
+  .hasSlot(".Title")
+  .atLeast(1)
+  .when(compact, contract().hasSlot(".Action"));
+```
+
+`findUnsatisfiable` reports that, at build time, where the condition trees are
+visible. It is opt-in and separate from `rules()` — run it in a build step or a
+test — and it reports rather than throws, because the narrowing it describes is
+legal and may be intended:
+
+```ts
+import { findUnsatisfiable, mergeContracts } from "@jsx-contracts/helpers";
+
+const contracts = mergeContracts(tray, button);
+const found = findUnsatisfiable(contracts, {
+  // ids of narrowings you meant, so an intended exception is not a permanent
+  // warning
+  allow: ["excludedSlot/Widget.Tray/Widget.Tray.Title"],
+});
+
+if (found.length > 0) {
+  throw new Error(found.map((narrowing) => narrowing.message).join("\n"));
+}
+```
+
+Each finding is data — `id`, `kind`, `component`, `facet`, `slot`, the two
+`rows` in conflict and a ready-to-print `message`. Three narrowings are
+reported, all on the children facet, the only one whose combination narrows
+rather than unions:
+
+| `kind`             |                                                                 |
+| ------------------ | --------------------------------------------------------------- |
+| `excludedSlot`     | A slot one row requires, intersected away by another.           |
+| `crossedBounds`    | A `.atLeast(n)` clamped down by another row's smaller `atMost`. |
+| `droppedReference` | A `slotRequires` whose target did not survive the intersection. |
+
+Only pairs of rows whose conditions can hold at once are considered, so the
+widening idiom above — every row conditional and mutually exclusive — stays
+quiet. Exclusivity is decided **syntactically**, not by a solver: two
+`prop(p).is(...)` tests on one prop with disjoint values are exclusive, `c` and
+`not(c)` are, and `allOf`/`anyOf` distribute over those. Anything undecidable
+counts as co-satisfiable, so the check may miss a conflict but never invents
+one.
+
 ### Colocating contracts with components
 
 Because a builder is already a compiled contract, a component's contract can
@@ -457,6 +512,7 @@ model from the AST. The plugin owns both halves of its own input contract: the
 rule table's TypeScript shapes, and the JSON schema plus runtime validators
 beside them. `packages/helpers` is the authoring layer
 (`@jsx-contracts/helpers`) — `contractsFor`, which binds the import gate and
-the design system's types, and the fluent `contract()` builder it hands back —
-which imports those types type-only and compiles to them, so it keeps zero runtime dependencies. `packages/playground` is a manual
+the design system's types, the fluent `contract()` builder it hands back, and
+the `findUnsatisfiable` check, which reasons over the condition trees the plugin
+only ever sees as payload — which imports those types type-only and compiles to them, so it keeps zero runtime dependencies. `packages/playground` is a manual
 smoke-check only; behaviour is verified by tests.
