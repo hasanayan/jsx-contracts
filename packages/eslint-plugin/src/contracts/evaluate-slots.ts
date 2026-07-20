@@ -1,13 +1,9 @@
+import type { ParentFact, Placement, Ref, RenderedNode } from "./facts.js";
 import { countWord, formatList } from "./format.js";
 import type { ImportMatcher } from "./import-matcher.js";
 import { createImportMatcher, matchesGate } from "./import-matcher.js";
-import type { Ref, RenderedNode, Violation } from "./model.js";
-import {
-  allPairwiseCoexist,
-  canCoexist,
-  minimumGuaranteedCount,
-  subsetsOfSize,
-} from "./model.js";
+import type { CountVerdict, Violation } from "./model.js";
+import { canCoexist, checkCountBounds, resolveBounds } from "./model.js";
 import type { SlotsRow } from "./payload.js";
 import { normalizeSlot } from "./validate.js";
 
@@ -58,13 +54,10 @@ export function prepareSlotsRow(row: SlotsRow): PreparedSlotsRow {
 
   for (const rawSlot of row.slots ?? []) {
     const slot = normalizeSlot(rawSlot);
-    const maxCount =
-      slot.maxCount ?? (slot.minCount !== undefined ? Infinity : 1);
 
     slots?.set(slot.name, {
       name: slot.name,
-      minCount: slot.minCount ?? 0,
-      maxCount,
+      ...resolveBounds(slot.minCount, slot.maxCount),
       matcher:
         slot.importPath !== undefined
           ? createImportMatcher(slot.importPath)
@@ -179,12 +172,6 @@ export function combineSlots(
     strict: rows.some((row) => row.strict === true),
   };
 }
-
-export type ParentFact = { name: string; importSource: string | null } | null;
-
-export type Placement =
-  | { kind: "direct"; parent: ParentFact }
-  | { kind: "hoisted"; parents: ParentFact[] };
 
 /** A hoisted placement needs at least one read, every read's parent the container. */
 export function isPlacedInContainer(
@@ -329,7 +316,7 @@ export function evaluateSlots(
 
   const hasUnknownContent = root.unknownRefs.length > 0;
 
-  const found: { name: string; maxCount: number; element: RenderedNode }[] = [];
+  const found: { name: string; element: RenderedNode }[] = [];
 
   for (const child of root.children) {
     const slot = slots.get(child.name);
@@ -344,11 +331,7 @@ export function evaluateSlots(
       continue;
     }
 
-    found.push({
-      name: child.name,
-      maxCount: slot.maxCount,
-      element: child,
-    });
+    found.push({ name: child.name, element: child });
   }
 
   for (const textRef of root.textRefs) {
@@ -359,29 +342,31 @@ export function evaluateSlots(
     });
   }
 
-  // Exceeds maxCount N when N earlier same-name occurrences can all render
-  // alongside it and one another.
-  for (const [index, slot] of found.entries()) {
-    const bound = slot.maxCount;
+  // One count check per declared slot, over its own occurrences. Strictness
+  // reports unresolvable content rather than excusing it, so the presence half
+  // still runs.
+  const counts = new Map<string, CountVerdict<RenderedNode>>();
 
-    if (bound === Infinity) {
-      continue;
-    }
-
-    const earlierSameName = found
-      .slice(0, index)
-      .filter((other) => other.name === slot.name)
-      .map((other) => other.element);
-
-    const exceeds = subsetsOfSize(earlierSameName, bound).some((subset) =>
-      allPairwiseCoexist([...subset, slot.element]),
+  for (const slot of slots.values()) {
+    const verdict = checkCountBounds(
+      found
+        .filter((other) => other.name === slot.name)
+        .map((other) => other.element),
+      slot,
+      { hasUnresolvableContent: hasUnknownContent && !prepared.strict },
     );
 
-    if (exceeds) {
+    counts.set(slot.name, verdict);
+
+    for (const element of verdict.tooMany) {
       violations.push({
-        ref: slot.element.ref,
+        ref: element.ref,
         messageId: "tooMany",
-        data: { container, name: slot.name, maxCount: countWord(bound) },
+        data: {
+          container,
+          name: slot.name,
+          maxCount: countWord(slot.maxCount),
+        },
       });
     }
   }
@@ -437,15 +422,7 @@ export function evaluateSlots(
 
   // A presence claim on every render path, so it shares the gate above.
   for (const preparedSlot of slots.values()) {
-    if (preparedSlot.minCount === 0) {
-      continue;
-    }
-
-    const occurrences = found
-      .filter((slot) => slot.name === preparedSlot.name)
-      .map((slot) => slot.element);
-
-    if (minimumGuaranteedCount(occurrences) < preparedSlot.minCount) {
+    if (counts.get(preparedSlot.name)?.tooFew === true) {
       violations.push({
         ref: containerRef,
         messageId: "tooFew",

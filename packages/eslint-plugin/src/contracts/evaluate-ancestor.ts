@@ -1,6 +1,7 @@
+import type { AncestorFact, Ref } from "./facts.js";
 import type { ImportMatcher } from "./import-matcher.js";
 import { createImportMatcher, gateKey, matchesGate } from "./import-matcher.js";
-import type { Ref, Violation } from "./model.js";
+import type { Violation } from "./model.js";
 import type { AncestorRow } from "./payload.js";
 import { normalizeForbid } from "./validate.js";
 
@@ -8,15 +9,6 @@ import { normalizeForbid } from "./validate.js";
 export type AncestorMessageId = "forbiddenAncestor";
 
 type AncestorViolation = Violation<AncestorMessageId>;
-
-/**
- * One enclosing JSX element: its dotted tag and the module its root identifier
- * resolves to, `null` for a non-import (matched by any gate).
- */
-export interface AncestorFact {
-  name: string;
-  importSource: string | null;
-}
 
 interface PreparedForbiddenAncestor {
   name: string;

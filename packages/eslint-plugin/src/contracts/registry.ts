@@ -1,7 +1,6 @@
 import type { ConditionPool } from "./condition.js";
-import { conditionHolds } from "./condition.js";
+import { createConditionPool } from "./condition.js";
 import type {
-  AncestorFact,
   CombinedAncestor,
   PreparedAncestorRow,
 } from "./evaluate-ancestor.js";
@@ -16,11 +15,7 @@ import {
   evaluateProps,
   preparePropsRow,
 } from "./evaluate-props.js";
-import type {
-  CombinedSlots,
-  Placement,
-  PreparedSlotsRow,
-} from "./evaluate-slots.js";
+import type { CombinedSlots, PreparedSlotsRow } from "./evaluate-slots.js";
 import {
   buildPlacementIndex,
   combineSlots,
@@ -30,39 +25,17 @@ import {
 import type {
   CombinedSubtree,
   PreparedSubtreeRow,
-  SubtreeElement,
 } from "./evaluate-subtree.js";
 import {
   combineSubtree,
   evaluateSubtree,
   prepareSubtreeRow,
 } from "./evaluate-subtree.js";
+import type { ElementFacts } from "./facts.js";
 import type { ImportMatcher } from "./import-matcher.js";
 import { createImportMatcher, matchesGate } from "./import-matcher.js";
-import type { PropFact, Ref, RenderedNode, Violation } from "./model.js";
+import type { Violation } from "./model.js";
 import type { ContractRow, ContractRows, Facet } from "./payload.js";
-
-/**
- * One element, as the adapter presents it. Every accessor beyond `name` and
- * `importSource` is a thunk the adapter memoizes: the pipeline calls only the
- * ones the active rows actually need.
- */
-export interface ElementFacts {
-  name: string;
-  importSource: string | null;
-  /** The whole element — where a container's `tooFew` and a misplaced slot report. */
-  elementRef: Ref;
-  /** The opening element — where prop- and element-level violations report. */
-  openingRef: Ref;
-  props: () => PropFact[];
-  hasSpread: () => boolean;
-  slotsRoot: () => RenderedNode;
-  placement: () => Placement;
-  subtreeRoot: () => SubtreeElement;
-  ancestors: () => AncestorFact[];
-  /** Whether the interned condition holds here. Memoized per element. */
-  holds: (conditionId: number) => boolean;
-}
 
 interface FacetIndex {
   /**
@@ -149,7 +122,8 @@ function buildIndex<Row extends ContractRow, Prepared, Combined>(
       for (const entry of group.entries) {
         const on =
           matchesGate(entry.matcher, element.importSource) &&
-          (entry.condition === undefined || element.holds(entry.condition));
+          (entry.condition === undefined ||
+            pool.holdsAt(element, entry.condition));
 
         mask += on ? "1" : "0";
 
@@ -198,15 +172,14 @@ type AncestorRowType = Extract<ContractRow, { facet: "ancestor" }>;
 /** A rule table, prepared once: matchers compiled, slot maps built, conditions interned. */
 export interface PreparedTable {
   facets: Record<Facet, FacetIndex>;
-  pool: ConditionPool;
 }
 
-export function prepareTable(
-  rows: ContractRows,
-  pool: ConditionPool,
-): PreparedTable {
+// One table, one pool: condition ids are indices into the pool that interned
+// them, so a pool never outlives the table whose rows it was built from.
+export function prepareTable(rows: ContractRows): PreparedTable {
+  const pool = createConditionPool();
+
   return {
-    pool,
     facets: {
       slots: buildIndex<SlotsRowType, PreparedSlotsRow, CombinedSlots>(
         "slots",
@@ -259,19 +232,4 @@ export function prepareTable(
       }),
     },
   };
-}
-
-/**
- * Evaluate one interned condition against an element's props. `hasSpread` is
- * what deactivates a tree containing a negation — see `conditionHolds`.
- */
-export function holdsAt(
-  pool: ConditionPool,
-  conditionId: number,
-  props: PropFact[],
-  hasSpread: boolean,
-): boolean {
-  const condition = pool.conditions[conditionId];
-
-  return condition !== undefined && conditionHolds(condition, props, hasSpread);
 }

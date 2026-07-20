@@ -3,15 +3,17 @@ import { posix } from "node:path";
 import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 
-import type { AncestorFact } from "../contracts/evaluate-ancestor.js";
-import type { ParentFact, Placement } from "../contracts/evaluate-slots.js";
 import type {
+  AncestorFact,
+  Branch,
+  ParentFact,
+  Placement,
+  PropFact,
+  RenderedNode,
   SubtreeElement,
   SubtreeNode,
-} from "../contracts/evaluate-subtree.js";
-import type { Branch, PropFact, RenderedNode } from "../contracts/model.js";
-
-import { memoized } from "./memo.js";
+} from "../contracts/facts.js";
+import { memoized } from "../memo.js";
 
 type SourceCode = Readonly<TSESLint.SourceCode>;
 

@@ -6,7 +6,9 @@
 // unchecked.
 
 import { RuleTester } from "@typescript-eslint/rule-tester";
-import { afterAll, describe, it } from "vitest";
+import type { ESLint, Linter as LinterTypes } from "eslint";
+import { Linter } from "eslint";
+import { afterAll, describe, expect, it } from "vitest";
 
 import type { ContractRows } from "../contracts/payload.js";
 
@@ -241,4 +243,89 @@ ruleTester.run("all-conditional rows", slotsGranular["slots.children"], {
       ],
     },
   ],
+});
+
+// -- two tables, one file ------------------------------------------------------
+
+// Condition ids are indices into the pool that interned them, and a table gets
+// its own pool: two rules configured with different tables both number their
+// first condition 0 while meaning different trees. Nothing forbids that config —
+// every rule takes its own options — so it is checked here, through the Linter
+// rather than the RuleTester, which runs one rule at a time and so hands every
+// rule the same table.
+const denseForbidsFooter: ContractRows = [
+  {
+    facet: "subtree",
+    importPath: "@acme/ds",
+    component: "Widget",
+    when: "dense",
+    forbid: ["Widget.Footer"],
+  },
+];
+
+const compactAllowsHeaderOnly: ContractRows = [
+  {
+    facet: "slots",
+    importPath: "@acme/ds",
+    component: "Widget",
+    when: "compact",
+    slots: ["Widget.Header"],
+  },
+];
+
+// The two rules as one plugin. The cast is the one `index.ts` makes: the rule
+// modules are typed by @typescript-eslint, registered through eslint's own types.
+const pair = {
+  rules: {
+    forbid: subtreeGranular["subtree.forbid"],
+    children: slotsGranular["slots.children"],
+  },
+} as unknown as ESLint.Plugin;
+
+const linter = new Linter();
+
+// The two rules run over one file, so both consult the same element — the
+// crossing point, if any id were shared between their pools.
+function ruleIdsFor(code: string): (string | null)[] {
+  const config: LinterTypes.Config = {
+    languageOptions: {
+      parserOptions: { ecmaFeatures: { jsx: true }, sourceType: "module" },
+    },
+    plugins: { pair },
+    rules: {
+      "pair/forbid": ["error", denseForbidsFooter],
+      "pair/children": ["error", compactAllowsHeaderOnly],
+    },
+  };
+
+  return linter.verify(code, config).map((message) => message.ruleId);
+}
+
+describe("two rules, two tables, one element", () => {
+  it("reports only the rule whose own table activates", () => {
+    const code = `
+      import { Widget } from "@acme/ds";
+      const view = <Widget dense><Widget.Footer /></Widget>;
+    `;
+
+    expect(ruleIdsFor(code)).toEqual(["pair/forbid"]);
+  });
+
+  it("reports the other one when the other table's condition is what holds", () => {
+    const code = `
+      import { Widget } from "@acme/ds";
+      const view = <Widget compact><Widget.Footer /></Widget>;
+    `;
+
+    expect(ruleIdsFor(code)).toEqual(["pair/children"]);
+  });
+
+  it("reports neither when neither table's condition holds", () => {
+    const code = `
+      import { Widget } from "@acme/ds";
+      const view = <Widget><Widget.Footer /></Widget>;
+    `;
+
+    expect(ruleIdsFor(code)).toEqual([]);
+  });
 });

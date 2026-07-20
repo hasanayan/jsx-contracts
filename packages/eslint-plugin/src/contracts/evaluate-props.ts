@@ -1,5 +1,6 @@
+import type { PropFact, Ref } from "./facts.js";
 import { formatList } from "./format.js";
-import type { PropFact, Ref, Violation } from "./model.js";
+import type { Violation } from "./model.js";
 import type { PropsRow } from "./payload.js";
 
 /** Message ids reported by `@jsx-contracts/props`. */

@@ -4,12 +4,22 @@
 
 import { describe, expect, it } from "vitest";
 
-import { conditionHolds, createConditionPool } from "./condition.js";
-import type { PropFact } from "./model.js";
+import type { ConditionSubject } from "./condition.js";
+import { createConditionPool } from "./condition.js";
+import type { PropFact } from "./facts.js";
 import type { WhenCondition } from "./payload.js";
 
-// The pool is the only way to a `PooledCondition`, so it is also how a test
-// reaches the evaluator: intern the tree, read it back.
+// The element the pool reads a condition against: identity plus the two prop
+// facts. Every subject gets a fresh `elementRef`, so no test shares a cache slot
+// with another.
+const subject = (props: PropFact[], hasSpread = false): ConditionSubject => ({
+  elementRef: {},
+  props: () => props,
+  hasSpread: () => hasSpread,
+});
+
+// The pool is the only way to evaluate a condition, so it is also how a test
+// reaches the evaluator: intern the tree, spend the id it hands back.
 function holds(
   when: WhenCondition,
   props: PropFact[],
@@ -17,13 +27,12 @@ function holds(
 ): boolean {
   const pool = createConditionPool();
   const id = pool.intern(when);
-  const condition = pool.conditions[id ?? -1];
 
-  if (condition === undefined) {
+  if (id === undefined) {
     throw new Error("condition was not interned");
   }
 
-  return conditionHolds(condition, props, hasSpread);
+  return pool.holdsAt(subject(props, hasSpread), id);
 }
 
 const prop = (name: string, value?: string | number | boolean): PropFact => ({
@@ -158,7 +167,8 @@ describe("interning", () => {
     });
 
     expect(a).toBe(b);
-    expect(pool.conditions).toHaveLength(1);
+    // Nothing was pushed for the second: the next distinct tree takes id 1.
+    expect(pool.intern("dense")).toBe(1);
   });
 
   it("keys the bare string and its object form alike", () => {
@@ -180,11 +190,69 @@ describe("interning", () => {
   });
 
   it("marks a tree containing a negation, and only such a tree", () => {
+    // The mark is observable as the spread rule: only a marked tree is
+    // deactivated by one.
     const pool = createConditionPool();
     const negated = pool.intern({ any: ["a", { all: [{ not: "b" }] }] }) ?? -1;
     const plain = pool.intern({ any: ["a", { all: ["b"] }] }) ?? -1;
+    const spread = subject([prop("a")], true);
 
-    expect(pool.conditions[negated]?.negates).toBe(true);
-    expect(pool.conditions[plain]?.negates).toBe(false);
+    expect(pool.holdsAt(spread, negated)).toBe(false);
+    expect(pool.holdsAt(spread, plain)).toBe(true);
+  });
+});
+
+describe("per-element evaluation", () => {
+  it("evaluates one condition at most once per element", () => {
+    const pool = createConditionPool();
+    const id = pool.intern({ any: ["dense", "tight"] }) ?? -1;
+
+    let reads = 0;
+    const element: ConditionSubject = {
+      elementRef: {},
+      props: () => {
+        reads += 1;
+
+        return [prop("dense")];
+      },
+      hasSpread: () => false,
+    };
+
+    expect(pool.holdsAt(element, id)).toBe(true);
+    expect(pool.holdsAt(element, id)).toBe(true);
+    expect(reads).toBe(1);
+  });
+
+  it("caches a false verdict too", () => {
+    const pool = createConditionPool();
+    const id = pool.intern("dense") ?? -1;
+
+    let reads = 0;
+    const element: ConditionSubject = {
+      elementRef: {},
+      props: () => {
+        reads += 1;
+
+        return [];
+      },
+      hasSpread: () => false,
+    };
+
+    expect(pool.holdsAt(element, id)).toBe(false);
+    expect(pool.holdsAt(element, id)).toBe(false);
+    expect(reads).toBe(1);
+  });
+
+  it("keeps two pools' verdicts apart on one element", () => {
+    // Both pools number their first condition 0, and an id means nothing
+    // outside the pool that issued it: the element must get each pool's answer,
+    // not whichever asked first.
+    const dense = createConditionPool();
+    const tight = createConditionPool();
+    const element = subject([prop("dense")]);
+
+    expect(dense.intern("dense")).toBe(tight.intern("tight"));
+    expect(dense.holdsAt(element, 0)).toBe(true);
+    expect(tight.holdsAt(element, 0)).toBe(false);
   });
 });

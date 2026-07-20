@@ -1,12 +1,9 @@
+import type { Branch, Ref, SubtreeElement, SubtreeNode } from "./facts.js";
 import { countWord } from "./format.js";
 import type { ImportMatcher } from "./import-matcher.js";
 import { createImportMatcher, gateKey, matchesGate } from "./import-matcher.js";
-import type { Branch, PropFact, Ref, Violation } from "./model.js";
-import {
-  allPairwiseCoexist,
-  minimumGuaranteedCount,
-  subsetsOfSize,
-} from "./model.js";
+import type { Violation } from "./model.js";
+import { checkCountBounds, resolveBounds } from "./model.js";
 import type { SubtreeRow } from "./payload.js";
 import { normalizeForbid } from "./validate.js";
 
@@ -18,40 +15,6 @@ export type SubtreeMessageId =
   | "tooManyDescendants";
 
 type SubtreeViolation = Violation<SubtreeMessageId>;
-
-/**
- * One element in the lazy subtree. `branches` are the branch tags on the
- * transparent path from the parent element down to this node, which is what
- * keeps descendant counts branch-aware.
- */
-export interface SubtreeElement {
-  kind: "element";
-  name: string;
-  ref: Ref;
-  branches: Branch[];
-  importSource: string | null;
-  props: PropFact[];
-  propChildren: SubtreeNode[];
-  children: SubtreeNode[];
-}
-
-/**
- * A reference to a JSX constant, resolved lazily. `initId` is equal across
- * every reference to the same constant.
- */
-export interface SubtreeRef {
-  kind: "ref";
-  initId: number;
-  branches: Branch[];
-  resolve: () => SubtreeNode[];
-}
-
-// Statically unresolvable content: a call, a param, a spread.
-interface SubtreeUnknown {
-  kind: "unknown";
-}
-
-export type SubtreeNode = SubtreeElement | SubtreeRef | SubtreeUnknown;
 
 interface PreparedForbid {
   name: string;
@@ -103,8 +66,7 @@ export function prepareSubtreeRow(row: SubtreeRow): PreparedSubtreeRow {
   const require: PreparedRequire[] = (row.require ?? []).map((entry) => {
     const prepared: PreparedRequire = {
       name: entry.name,
-      minCount: entry.min ?? 0,
-      maxCount: entry.max ?? (entry.min !== undefined ? Infinity : 1),
+      ...resolveBounds(entry.min, entry.max),
     };
 
     if (entry.importPath !== undefined) {
@@ -330,35 +292,23 @@ export function evaluateSubtree(
 
   // A callback, not `for...of`: a loop body narrows `sawUnknown` to `false`.
   buckets.forEach(({ entry, found }) => {
-    // Exceeds max N when N earlier occurrences can all render alongside this one.
-    if (entry.maxCount !== Infinity) {
-      for (const [position, occurrence] of found.entries()) {
-        const earlier = found.slice(0, position);
+    const { tooMany, tooFew } = checkCountBounds(found, entry, {
+      hasUnresolvableContent: sawUnknown,
+    });
 
-        const exceeds = subsetsOfSize(earlier, entry.maxCount).some((subset) =>
-          allPairwiseCoexist([...subset, occurrence]),
-        );
-
-        if (exceeds) {
-          violations.push({
-            ref: occurrence.ref,
-            messageId: "tooManyDescendants",
-            data: {
-              component: prepared.component,
-              name: entry.name,
-              max: countWord(entry.maxCount),
-            },
-          });
-        }
-      }
+    for (const occurrence of tooMany) {
+      violations.push({
+        ref: occurrence.ref,
+        messageId: "tooManyDescendants",
+        data: {
+          component: prepared.component,
+          name: entry.name,
+          max: countWord(entry.maxCount),
+        },
+      });
     }
 
-    // min is a presence claim on every render path, so unknown content skips it.
-    if (
-      entry.minCount > 0 &&
-      !sawUnknown &&
-      minimumGuaranteedCount(found) < entry.minCount
-    ) {
+    if (tooFew) {
       violations.push({
         ref: root.ref,
         messageId: "tooFewDescendants",

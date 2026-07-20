@@ -1,16 +1,21 @@
 import type { JSONSchema, TSESLint, TSESTree } from "@typescript-eslint/utils";
 import { ESLintUtils } from "@typescript-eslint/utils";
 
-import { createConditionPool } from "../contracts/condition.js";
-import type { AncestorFact } from "../contracts/evaluate-ancestor.js";
-import type { Placement } from "../contracts/evaluate-slots.js";
-import type { SubtreeElement } from "../contracts/evaluate-subtree.js";
-import type { PropFact, RenderedNode, Violation } from "../contracts/model.js";
+import type {
+  AncestorFact,
+  ElementFacts,
+  Placement,
+  PropFact,
+  RenderedNode,
+  SubtreeElement,
+} from "../contracts/facts.js";
+import type { Violation } from "../contracts/model.js";
 import type { ContractRows, Facet } from "../contracts/payload.js";
-import type { ElementFacts, PreparedTable } from "../contracts/registry.js";
-import { holdsAt, prepareTable } from "../contracts/registry.js";
+import type { PreparedTable } from "../contracts/registry.js";
+import { prepareTable } from "../contracts/registry.js";
 import { contractRowsSchema } from "../contracts/schema.js";
 import { validateContractRows } from "../contracts/validate.js";
+import { memoized } from "../memo.js";
 
 import {
   collectAncestors,
@@ -22,7 +27,7 @@ import {
   resolveImportSource,
   tagName,
 } from "./collect.js";
-import { createInterner, createNodeMemo, memoized } from "./memo.js";
+import { createInterner, createNodeMemo } from "./memo.js";
 
 // Every granular variant of a facet shares that facet's one doc file.
 const createRule = ESLintUtils.RuleCreator(
@@ -36,9 +41,7 @@ const intern = createInterner<ContractRows>();
 const tables = new WeakMap<ContractRows, PreparedTable>();
 
 function tableFor(rows: ContractRows): PreparedTable {
-  return memoized(tables, rows, () =>
-    prepareTable(rows, createConditionPool()),
-  );
+  return memoized(tables, rows, () => prepareTable(rows));
 }
 
 // AST-derived facts about one element, computed at most once.
@@ -50,8 +53,6 @@ interface NodeCache {
   placement?: Placement;
   subtreeRoot?: SubtreeElement;
   ancestors?: AncestorFact[];
-  // Keyed by interned condition id.
-  conditions: Map<number, boolean>;
 }
 
 const nodeCaches = new WeakMap<TSESTree.JSXElement, NodeCache>();
@@ -61,7 +62,6 @@ function elementFacts(
   filename: string,
   node: TSESTree.JSXElement,
   name: string,
-  table: PreparedTable,
 ): ElementFacts {
   const facts = memoized(nodeCaches, node, (): NodeCache => ({
     importSource: resolveImportSource(
@@ -69,22 +69,17 @@ function elementFacts(
       filename,
       node.openingElement.name,
     ),
-    conditions: new Map(),
   }));
-
-  const props = (): PropFact[] =>
-    (facts.props ??= collectProps(sourceCode, node.openingElement));
-
-  const hasSpread = (): boolean =>
-    (facts.hasSpread ??= hasSpreadAttribute(node.openingElement));
 
   return {
     name,
     importSource: facts.importSource,
     elementRef: node,
     openingRef: node.openingElement,
-    props,
-    hasSpread,
+    props: () =>
+      (facts.props ??= collectProps(sourceCode, node.openingElement)),
+    hasSpread: () =>
+      (facts.hasSpread ??= hasSpreadAttribute(node.openingElement)),
     slotsRoot: () =>
       (facts.slotsRoot ??= collectContainerChildren(
         sourceCode,
@@ -97,10 +92,6 @@ function elementFacts(
       (facts.subtreeRoot ??= collectSubtreeRoot(sourceCode, filename, node)),
     ancestors: () =>
       (facts.ancestors ??= collectAncestors(sourceCode, filename, node)),
-    holds: (conditionId): boolean =>
-      memoized(facts.conditions, conditionId, () =>
-        holdsAt(table.pool, conditionId, props(), hasSpread()),
-      ),
   };
 }
 
@@ -159,9 +150,7 @@ export function facetRules<MessageId extends string>(
             }
 
             const violations = memos[facet](node, rows, () =>
-              index.analyze(
-                elementFacts(sourceCode, filename, node, tag, table),
-              ),
+              index.analyze(elementFacts(sourceCode, filename, node, tag)),
             );
 
             for (const violation of violations) {

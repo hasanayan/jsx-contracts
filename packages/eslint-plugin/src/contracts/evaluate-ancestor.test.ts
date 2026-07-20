@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { AncestorFact, CombinedAncestor } from "./evaluate-ancestor.js";
+import type { CombinedAncestor } from "./evaluate-ancestor.js";
 import { evaluateAncestor, prepareAncestorRow } from "./evaluate-ancestor.js";
+import type { AncestorFact, Ref } from "./facts.js";
 import { createImportMatcher } from "./import-matcher.js";
-import type { Ref } from "./model.js";
 
 // A distinct element ref so the offending (inner) element can be matched by
 // identity.

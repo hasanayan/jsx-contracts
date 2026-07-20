@@ -1,18 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  CombinedSlots,
-  ParentFact,
-  PreparedSlot,
-} from "./evaluate-slots.js";
+import type { CombinedSlots, PreparedSlot } from "./evaluate-slots.js";
 import {
   combineSlots,
   evaluateSlots,
   isPlacedInContainer,
   prepareSlotsRow,
 } from "./evaluate-slots.js";
+import type { Branch, ParentFact, Ref, RenderedNode } from "./facts.js";
 import { createImportMatcher } from "./import-matcher.js";
-import type { Branch, RenderedNode } from "./model.js";
 import type { SlotsRow } from "./payload.js";
 
 // Preparing one row and merging it is what the engine does for a component
@@ -104,26 +100,32 @@ describe("isPlacedInContainer", () => {
   });
 });
 
+// The branch-aware decision itself is `checkCountBounds`, covered once in
+// model.test.ts. What is the facet's own is the ref each verdict reports on,
+// the wording it carries, and what strictness does to the presence half.
 describe("evaluateSlots count bounds", () => {
-  function prepared(slot: PreparedSlot): CombinedSlots {
+  function prepared(slot: PreparedSlot, strict = false): CombinedSlots {
     return {
       container: "Widget.Tray",
       slots: new Map([[slot.name, slot]]),
       slotList: `<${slot.name}>`,
       requires: new Map(),
       exclusive: [],
-      strict: false,
+      strict,
     };
   }
 
-  function container(children: RenderedNode[]): RenderedNode {
+  function container(
+    children: RenderedNode[],
+    unknownRefs: Ref[] = [],
+  ): RenderedNode {
     return {
       name: "Widget.Tray",
       ref: {},
       branches: [],
       importSource: null,
       children,
-      unknownRefs: [],
+      unknownRefs,
       textRefs: [],
     };
   }
@@ -135,18 +137,19 @@ describe("evaluateSlots count bounds", () => {
     matcher: createImportMatcher("*/widget"),
   };
 
-  it("reports tooMany past an explicit maxCount", () => {
-    const root = container([element("Chip"), element("Chip")]);
-    const violations = evaluateSlots(prepared(chip), root, root.ref);
+  it("reports tooMany on the offending occurrence, with the bound worded", () => {
+    const second = element("Chip");
+    const root = container([element("Chip"), second]);
+    const [violation, ...rest] = evaluateSlots(prepared(chip), root, root.ref);
 
-    expect(violations.map((v) => v.messageId)).toEqual(["tooMany"]);
-  });
-
-  it("treats an Infinity maxCount as unbounded", () => {
-    const unbounded: PreparedSlot = { ...chip, maxCount: Infinity };
-    const root = container([element("Chip"), element("Chip"), element("Chip")]);
-
-    expect(evaluateSlots(prepared(unbounded), root, root.ref)).toHaveLength(0);
+    expect(rest).toHaveLength(0);
+    expect(violation?.messageId).toBe("tooMany");
+    expect(violation?.ref).toBe(second.ref);
+    expect(violation?.data).toEqual({
+      container: "Widget.Tray",
+      name: "Chip",
+      maxCount: "one",
+    });
   });
 
   it("reports tooFew below an explicit minCount, on the container ref", () => {
@@ -161,52 +164,50 @@ describe("evaluateSlots count bounds", () => {
     expect(rest).toHaveLength(0);
     expect(violation?.messageId).toBe("tooFew");
     expect(violation?.ref).toBe(root.ref);
+    expect(violation?.data).toEqual({
+      container: "Widget.Tray",
+      name: "Chip",
+      minCount: "2",
+    });
+  });
+
+  it("skips tooFew when unresolvable children could be supplying the slot", () => {
+    const required: PreparedSlot = { ...chip, minCount: 1 };
+    const root = container([], [{}]);
+
+    expect(evaluateSlots(prepared(required), root, root.ref)).toHaveLength(0);
+  });
+
+  it("still reports tooFew under strict, where unresolvable is a violation", () => {
+    const required: PreparedSlot = { ...chip, minCount: 1 };
+    const root = container([], [{}]);
+
+    expect(
+      evaluateSlots(prepared(required, true), root, root.ref).map(
+        (v) => v.messageId,
+      ),
+    ).toEqual(["unresolvableChild", "tooFew"]);
   });
 });
 
+// The default rule itself is `resolveBounds`, covered once in model.test.ts.
 describe("prepareContainer count defaults", () => {
-  function boundsOf(slot: NonNullable<SlotsRow["slots"]>[number]): {
-    minCount: number;
-    maxCount: number;
-  } {
+  it("carries the resolved bounds onto the prepared slot", () => {
     const prepared = prepareContainer({
       facet: "slots",
       importPath: "*/widget",
       component: "Widget.Tray",
-      slots: [slot],
+      slots: ["Chip", { name: "Tab", minCount: 2 }],
     });
 
-    const name = typeof slot === "string" ? slot : slot.name;
-    const preparedSlot = prepared.slots?.get(name);
+    expect(prepared.slots?.get("Chip")).toMatchObject({
+      minCount: 0,
+      maxCount: 1,
+    });
 
-    return {
-      minCount: preparedSlot?.minCount ?? Number.NaN,
-      maxCount: preparedSlot?.maxCount ?? Number.NaN,
-    };
-  }
-
-  it("defaults a bare slot to optional and at most one", () => {
-    expect(boundsOf("Chip")).toEqual({ minCount: 0, maxCount: 1 });
-  });
-
-  it("lifts the upper bound when only minCount is set", () => {
-    expect(boundsOf({ name: "Chip", minCount: 2 })).toEqual({
+    expect(prepared.slots?.get("Tab")).toMatchObject({
       minCount: 2,
       maxCount: Infinity,
-    });
-  });
-
-  it("keeps a lower bound of zero when only maxCount is set", () => {
-    expect(boundsOf({ name: "Chip", maxCount: 3 })).toEqual({
-      minCount: 0,
-      maxCount: 3,
-    });
-  });
-
-  it("uses both bounds when both are set", () => {
-    expect(boundsOf({ name: "Chip", minCount: 1, maxCount: 2 })).toEqual({
-      minCount: 1,
-      maxCount: 2,
     });
   });
 });

@@ -1,4 +1,6 @@
-import type { PropFact } from "./model.js";
+import { memoized } from "../memo.js";
+
+import type { PropFact, Ref } from "./facts.js";
 import type { ConditionValue, WhenCondition } from "./payload.js";
 
 /**
@@ -100,7 +102,7 @@ function negates(when: NormalizedWhen): boolean {
 }
 
 /** A normalized condition, with the one fact about it worth computing once. */
-export interface PooledCondition {
+interface PooledCondition {
   when: NormalizedWhen;
   /**
    * Whether the tree contains a `not`. A negation fires on absent evidence, so
@@ -117,7 +119,7 @@ export interface PooledCondition {
  * which can leave a facet unchecked when every row is conditional. Absent a
  * spread, a missing prop satisfies a negated test.
  */
-export function conditionHolds(
+function conditionHolds(
   condition: PooledCondition,
   props: PropFact[],
   hasSpread: boolean,
@@ -130,22 +132,36 @@ export function conditionHolds(
 }
 
 /**
- * Conditions interned by content: `intern` returns the id the activation mask
- * keys its per-element cache on, so a condition shared by several rows is
- * evaluated once per element however many rows carry it. A when-less row has no
- * id, and is always active for the matched component.
+ * What a condition is read against: the element's identity, which the pool's
+ * cache keys on, and the two prop facts the trees consult.
+ */
+export interface ConditionSubject {
+  elementRef: Ref;
+  props: () => PropFact[];
+  hasSpread: () => boolean;
+}
+
+/**
+ * Conditions interned by content, and evaluated only through the pool that
+ * interned them: `intern` returns the id the activation mask carries, `holdsAt`
+ * is the sole way to spend one. An id means nothing outside its own pool — two
+ * rule tables each number theirs from 0 — so the pool owns the per-element cache
+ * as well, which is what keeps one table's verdict off another table's element.
+ * A condition shared by several rows is evaluated once per element however many
+ * rows carry it; a when-less row has no id, and is always active for the matched
+ * component.
  */
 export interface ConditionPool {
-  conditions: PooledCondition[];
   intern: (when: WhenCondition | undefined) => number | undefined;
+  holdsAt: (element: ConditionSubject, conditionId: number) => boolean;
 }
 
 export function createConditionPool(): ConditionPool {
   const conditions: PooledCondition[] = [];
   const ids = new Map<string, number>();
+  const verdicts = new WeakMap<Ref, Map<number, boolean>>();
 
   return {
-    conditions,
     intern(when): number | undefined {
       if (when === undefined) {
         return undefined;
@@ -165,6 +181,29 @@ export function createConditionPool(): ConditionPool {
       ids.set(key, id);
 
       return id;
+    },
+    holdsAt(element, conditionId): boolean {
+      // Two levels — element, then condition — so two applications of the
+      // one-level memo. `false` caches: it is a verdict, not a miss.
+      return memoized(
+        memoized(
+          verdicts,
+          element.elementRef,
+          () => new Map<number, boolean>(),
+        ),
+        conditionId,
+        () => {
+          const condition = conditions[conditionId];
+
+          // Unreachable: an id only ever comes from this pool's own `intern`.
+          // False is the safe direction anyway — an unknown condition leaves
+          // its row inactive rather than enforcing an unknown rule.
+          return (
+            condition !== undefined &&
+            conditionHolds(condition, element.props(), element.hasSpread())
+          );
+        },
+      );
     },
   };
 }

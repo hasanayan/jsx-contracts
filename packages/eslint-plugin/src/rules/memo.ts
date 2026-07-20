@@ -1,31 +1,4 @@
-/** The `get`/`set` pair every memo here is built on — `Map` or `WeakMap` alike. */
-export interface Cache<Key, Value> {
-  get: (key: Key) => Value | undefined;
-  set: (key: Key, value: Value) => unknown;
-}
-
-/**
- * Get-or-create against one cache: the shape every memo in the plugin is made
- * of. `Value` excludes `undefined` so a stored value is never mistaken for a
- * miss — `null` caches, `undefined` does not.
- */
-export function memoized<Key, Value extends NonNullable<unknown> | null>(
-  cache: Cache<Key, Value>,
-  key: Key,
-  compute: () => Value,
-): Value {
-  const existing = cache.get(key);
-
-  if (existing !== undefined) {
-    return existing;
-  }
-
-  const value = compute();
-
-  cache.set(key, value);
-
-  return value;
-}
+import { memoized } from "../memo.js";
 
 /**
  * Content-keyed interning. ESLint deep-clones rule options for every rule and

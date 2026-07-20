@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CombinedProps } from "./evaluate-props.js";
 import { evaluateProps, preparePropsRow } from "./evaluate-props.js";
-import type { PropFact, Ref } from "./model.js";
+import type { PropFact, Ref } from "./facts.js";
 
 // A fresh `ref` per fact so an attribute-level violation can be matched back by
 // identity; `present` defaults to true, as for a written attribute.

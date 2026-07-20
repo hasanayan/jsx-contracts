@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 
+import type { CombinedSubtree } from "./evaluate-subtree.js";
+import { evaluateSubtree, prepareSubtreeRow } from "./evaluate-subtree.js";
 import type {
-  CombinedSubtree,
+  Branch,
+  PropFact,
   SubtreeElement,
   SubtreeNode,
   SubtreeRef,
-} from "./evaluate-subtree.js";
-import { evaluateSubtree, prepareSubtreeRow } from "./evaluate-subtree.js";
+} from "./facts.js";
 import { createImportMatcher } from "./import-matcher.js";
-import type { Branch, PropFact } from "./model.js";
 
 // A fresh `ref` per node so violations can be matched back by identity.
 function node(
@@ -227,6 +228,9 @@ describe("evaluateSubtree constant dedup", () => {
   });
 });
 
+// The branch-aware decision itself is `checkCountBounds`, covered once in
+// model.test.ts. What is the facet's own is the lazy walk that gathers the
+// occurrences, the per-entry gate, and the refs and wording of the reports.
 describe("evaluateSubtree descendant counts", () => {
   it("runs a when-less row unconditionally, satisfied by one match", () => {
     const root = tabsRoot([node("Tabs.List")]);
@@ -254,30 +258,6 @@ describe("evaluateSubtree descendant counts", () => {
     expect(evaluateSubtree(requireList(), root)).toHaveLength(0);
   });
 
-  it("guarantees the min across both branches of a ternary", () => {
-    const prepared = requireList({
-      require: [{ name: "Tabs.List", minCount: 1, maxCount: Infinity }],
-    });
-
-    const root = tabsRoot([
-      node("Tabs.List", { branches: ["1:consequent"] }),
-      node("Tabs.List", { branches: ["1:alternate"] }),
-    ]);
-
-    expect(evaluateSubtree(prepared, root)).toHaveLength(0);
-  });
-
-  it("does not count a single-branch occurrence toward the guaranteed min", () => {
-    const prepared = requireList({
-      require: [{ name: "Tabs.List", minCount: 1, maxCount: Infinity }],
-    });
-
-    const root = tabsRoot([node("Tabs.List", { branches: ["1:consequent"] })]);
-    const [violation] = evaluateSubtree(prepared, root);
-
-    expect(violation?.messageId).toBe("tooFewDescendants");
-  });
-
   it("reports tooMany when coexisting occurrences exceed the max", () => {
     const prepared = requireList({
       require: [{ name: "Tabs.List", minCount: 0, maxCount: 1 }],
@@ -295,19 +275,6 @@ describe("evaluateSubtree descendant counts", () => {
       name: "Tabs.List",
       max: "one",
     });
-  });
-
-  it("does not count occurrences in opposite branches toward the max", () => {
-    const prepared = requireList({
-      require: [{ name: "Tabs.List", minCount: 0, maxCount: 1 }],
-    });
-
-    const root = tabsRoot([
-      node("Tabs.List", { branches: ["1:consequent"] }),
-      node("Tabs.List", { branches: ["1:alternate"] }),
-    ]);
-
-    expect(evaluateSubtree(prepared, root)).toHaveLength(0);
   });
 
   it("skips the min check when the subtree holds unresolvable content", () => {
@@ -430,26 +397,17 @@ describe("prepareSubtreeRow", () => {
     expect(prepared.forbidProps).toEqual(["onClick", "onKeyDown"]);
   });
 
-  it("defaults an unbounded require entry to at most one", () => {
+  // The default rule itself is `resolveBounds`, covered once in model.test.ts.
+  it("carries the resolved bounds onto the prepared entry", () => {
     const prepared = prepareSubtreeRow({
       facet: "subtree",
       importPath: "*/tabs",
       component: "Tabs.Root",
-      require: [{ name: "Tabs.List" }],
+      require: [{ name: "Tabs.List" }, { name: "Tabs.Panel", min: 2 }],
     });
 
     expect(prepared.require[0]).toMatchObject({ minCount: 0, maxCount: 1 });
-  });
-
-  it("lifts the upper bound when only min is set", () => {
-    const prepared = prepareSubtreeRow({
-      facet: "subtree",
-      importPath: "*/tabs",
-      component: "Tabs.Root",
-      require: [{ name: "Tabs.List", min: 2 }],
-    });
-
-    expect(prepared.require[0]).toMatchObject({
+    expect(prepared.require[1]).toMatchObject({
       minCount: 2,
       maxCount: Infinity,
     });

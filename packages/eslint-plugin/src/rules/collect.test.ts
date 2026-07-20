@@ -1,92 +1,27 @@
-// Drives the collectors with a live SourceCode (a flat Linter running a capture
-// rule) and asserts the JSX -> RenderedNode model directly.
+// Drives the collectors through the `analyze` harness (a live SourceCode) and
+// asserts the JSX -> RenderedNode model directly.
 
-import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
-import { Linter } from "eslint";
-import tseslint from "typescript-eslint";
+import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import { describe, expect, it } from "vitest";
 
 import type {
+  PropFact,
   SubtreeElement,
   SubtreeNode,
   SubtreeRef,
-} from "../contracts/evaluate-subtree.js";
+} from "../contracts/facts.js";
 
+import { analyze, elementNamed } from "./analyze.js";
 import {
+  collectAncestors,
   collectContainerChildren,
   collectPlacement,
+  collectProps,
   collectSubtreeRoot,
+  hasSpreadAttribute,
+  isAttributePresent,
   resolveImportSource,
-  tagName,
 } from "./collect.js";
-
-type SourceCode = Readonly<TSESLint.SourceCode>;
-
-interface Analysis {
-  sourceCode: SourceCode;
-  filename: string;
-  elements: TSESTree.JSXElement[];
-}
-
-// Runs `compute` inside a rule, where scope analysis is live.
-function analyze<T>(
-  code: string,
-  compute: (analysis: Analysis) => T,
-  filename = "src/app.tsx",
-): T {
-  const linter = new Linter();
-  const elements: TSESTree.JSXElement[] = [];
-  // An array, not a scalar: TS doesn't track assignments inside the closure.
-  const captured: T[] = [];
-
-  linter.verify(
-    code,
-    {
-      // Without a `files` pattern, `.ts`/`.tsx` match no flat config.
-      files: ["**/*.ts", "**/*.tsx"],
-      languageOptions: {
-        parser: tseslint.parser,
-        parserOptions: { ecmaFeatures: { jsx: true } },
-      },
-      plugins: {
-        probe: {
-          rules: {
-            capture: {
-              create(context) {
-                const sourceCode = context.sourceCode as unknown as SourceCode;
-
-                return {
-                  JSXElement(node: TSESTree.JSXElement): void {
-                    elements.push(node);
-                  },
-                  "Program:exit"(): void {
-                    captured.push(
-                      compute({
-                        sourceCode,
-                        filename: context.filename,
-                        elements,
-                      }),
-                    );
-                  },
-                };
-              },
-            },
-          },
-        },
-      },
-      rules: { "probe/capture": "error" },
-    },
-    filename,
-  );
-
-  const [result] = captured;
-
-  if (result === undefined) {
-    throw new Error("capture rule did not run");
-  }
-
-  return result;
-}
 
 // Narrowing helpers that throw, so tests read without conditional assertions.
 function asElement(node: SubtreeNode | undefined): SubtreeElement {
@@ -103,21 +38,6 @@ function asRef(node: SubtreeNode | undefined): SubtreeRef {
   }
 
   return node;
-}
-
-function elementNamed(
-  elements: TSESTree.JSXElement[],
-  name: string,
-): TSESTree.JSXElement {
-  const found = elements.find(
-    (element) => tagName(element.openingElement.name) === name,
-  );
-
-  if (found === undefined) {
-    throw new Error(`no <${name}> in fixture`);
-  }
-
-  return found;
 }
 
 describe("resolveImportSource", () => {
@@ -170,6 +90,105 @@ describe("resolveImportSource", () => {
     expect(
       sourceOf("const Widget = () => null;\nconst x = <Widget />;", "Widget"),
     ).toBeNull();
+  });
+});
+
+describe("isAttributePresent", () => {
+  function presenceOf(attribute: string): boolean {
+    return analyze(`const x = <Widget ${attribute} />;`, ({ elements }) => {
+      const [written] = elementNamed(elements, "Widget").openingElement
+        .attributes;
+
+      if (written?.type !== AST_NODE_TYPES.JSXAttribute) {
+        throw new Error("expected a written attribute");
+      }
+
+      return isAttributePresent(written.value);
+    });
+  }
+
+  it("counts a bare, string-valued or truthy attribute as present", () => {
+    expect(presenceOf("open")).toBe(true);
+    expect(presenceOf('label="hi"')).toBe(true);
+    expect(presenceOf("open={true}")).toBe(true);
+    expect(presenceOf("count={0}")).toBe(true);
+  });
+
+  it("counts only false, null and undefined as absent", () => {
+    expect(presenceOf("open={false}")).toBe(false);
+    expect(presenceOf("open={null}")).toBe(false);
+    expect(presenceOf("open={undefined}")).toBe(false);
+  });
+
+  it("counts an unresolvable expression as present", () => {
+    expect(presenceOf("open={maybe}")).toBe(true);
+  });
+});
+
+describe("collectProps", () => {
+  function factsOf(attributes: string): Map<string, PropFact> {
+    return analyze(
+      `const x = <Widget ${attributes} />;`,
+      ({ sourceCode, elements }) =>
+        new Map(
+          collectProps(
+            sourceCode,
+            elementNamed(elements, "Widget").openingElement,
+          ).map((fact) => [fact.name, fact]),
+        ),
+    );
+  }
+
+  it("resolves the literal arms: string, number and boolean", () => {
+    const facts = factsOf('label="hi" size={2} open={true} shut={false}');
+
+    expect(facts.get("label")?.value).toBe("hi");
+    expect(facts.get("size")?.value).toBe(2);
+    expect(facts.get("open")?.value).toBe(true);
+    expect(facts.get("shut")?.value).toBe(false);
+  });
+
+  it("resolves a template literal with no substitutions", () => {
+    const facts = factsOf("label={`hi`}");
+
+    expect(facts.get("label")?.value).toBe("hi");
+  });
+
+  it("leaves a substituted template literal unresolved", () => {
+    // The `${` is split, so this file's own lint does not read the fixture as
+    // a mis-quoted template.
+    const facts = factsOf("label={`hi $" + "{who}`}");
+
+    expect(facts.get("label")?.value).toBeUndefined();
+    expect(facts.get("label")?.source).toBeUndefined();
+    expect(facts.get("label")?.present).toBe(true);
+  });
+
+  it("records an identifier or member expression as source text", () => {
+    const facts = factsOf("size={Size.large} tone={tone}");
+
+    expect(facts.get("size")?.source).toBe("Size.large");
+    expect(facts.get("tone")?.source).toBe("tone");
+  });
+
+  it("skips spreads and namespaced attribute names", () => {
+    const facts = factsOf("{...rest} xlink:href='#a' label='hi'");
+
+    expect([...facts.keys()]).toEqual(["label"]);
+  });
+});
+
+describe("hasSpreadAttribute", () => {
+  function spreadOn(attributes: string): boolean {
+    return analyze(`const x = <Widget ${attributes} />;`, ({ elements }) =>
+      hasSpreadAttribute(elementNamed(elements, "Widget").openingElement),
+    );
+  }
+
+  it("is true only when the element carries a spread", () => {
+    expect(spreadOn("{...rest}")).toBe(true);
+    expect(spreadOn('label="hi" {...rest}')).toBe(true);
+    expect(spreadOn('label="hi"')).toBe(false);
   });
 });
 
@@ -364,6 +383,60 @@ describe("collectSubtreeRoot", () => {
     // Same constant, so same initId; resolving yields its content on demand.
     expect(refs[0]?.initId).toBe(refs[1]?.initId);
     expect(asElement(asRef(refs[0]).resolve()[0]).name).toBe("A");
+  });
+});
+
+describe("collectAncestors", () => {
+  function ancestorsOf(
+    code: string,
+    tag: string,
+  ): { name: string; importSource: string | null }[] {
+    return analyze(code, ({ sourceCode, filename, elements }) =>
+      collectAncestors(sourceCode, filename, elementNamed(elements, tag)),
+    );
+  }
+
+  it("walks the enclosing elements innermost-first", () => {
+    expect(
+      ancestorsOf("const x = <A><B><C /></B></A>;", "C").map(
+        (ancestor) => ancestor.name,
+      ),
+    ).toEqual(["B", "A"]);
+  });
+
+  it("counts a JSX-valued prop as containment", () => {
+    expect(
+      ancestorsOf("const x = <A header={<B><C /></B>} />;", "C").map(
+        (ancestor) => ancestor.name,
+      ),
+    ).toEqual(["B", "A"]);
+  });
+
+  it("carries each ancestor's import source", () => {
+    const [nearest] = ancestorsOf(
+      'import { A } from "@acme/ds";\nconst x = <A><C /></A>;',
+      "C",
+    );
+
+    expect(nearest).toEqual({ name: "A", importSource: "@acme/ds" });
+  });
+
+  it("drops a namespaced ancestor rather than naming it", () => {
+    expect(
+      ancestorsOf("const x = <A><svg:g><C /></svg:g></A>;", "C").map(
+        (ancestor) => ancestor.name,
+      ),
+    ).toEqual(["A"]);
+  });
+
+  it("does not follow hoisting: a hoisted element has no ancestors", () => {
+    expect(ancestorsOf("const c = <C />;\nconst x = <A>{c}</A>;", "C")).toEqual(
+      [],
+    );
+  });
+
+  it("returns an empty chain for a top-level element", () => {
+    expect(ancestorsOf("const x = <C />;", "C")).toEqual([]);
   });
 });
 
