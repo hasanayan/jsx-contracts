@@ -27,4 +27,11 @@ export type {
   SlotsMap,
   SlotsMapOf,
 } from "./define-contracts.js";
+export { findUnsatisfiable } from "./find-unsatisfiable.js";
+export type {
+  Conflict,
+  ConflictingBranch,
+  ConflictKind,
+  UnsatisfiableOptions,
+} from "./find-unsatisfiable.js";
 export { mergeContracts } from "./merge-contracts.js";
