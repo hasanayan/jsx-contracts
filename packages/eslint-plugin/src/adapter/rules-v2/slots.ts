@@ -6,6 +6,7 @@
 import type { JSONSchema, TSESTree } from "@typescript-eslint/utils";
 import { ESLintUtils } from "@typescript-eslint/utils";
 
+import { createConditionPool } from "../../contracts/activation/when-condition-pool.js";
 import type {
   BoundsMessageId,
   PreparedBounds,
@@ -19,11 +20,16 @@ import type {
   PreparedClosure,
 } from "../../contracts/rule-table-v2/closure.js";
 import {
+  closureOf,
   evaluateClosure,
   prepareClosure,
 } from "../../contracts/rule-table-v2/closure.js";
+import { computeEffectiveVocabulary } from "../../contracts/rule-table-v2/effective-vocabulary.js";
 import { contractRowsV2Schema } from "../../contracts/rule-table-v2/rows-v2-schema.js";
-import type { ContractRowsV2 } from "../../contracts/rule-table-v2/rows-v2.js";
+import type {
+  ContractRowsV2,
+  SlotsRowV2,
+} from "../../contracts/rule-table-v2/rows-v2.js";
 import { displayName } from "../../contracts/rule-table-v2/rows-v2.js";
 import { validateContractRowsV2 } from "../../contracts/rule-table-v2/validate-rows-v2.js";
 import { tagName } from "../collect/index.js";
@@ -41,6 +47,10 @@ const messages = {
   closure:
     "<{{child}}> is not in <{{container}}>'s declared children — add it to " +
     "the contract or remove it.{{because}}",
+  forbiddenSlot:
+    "<{{child}}> is not allowed in <{{container}}> when {{witness}}.{{because}}",
+  conditionalClosure:
+    "<{{child}}> is only allowed in <{{container}}> when {{condition}}.{{because}}",
   tooMany: "<{{container}}> allows at most {{maxCount}} <{{name}}>.",
   tooFew: "<{{container}}> requires at least {{minCount}} <{{name}}>.",
   requiresSlot: "<{{name}}> in <{{container}}> requires <{{required}}>.",
@@ -48,8 +58,17 @@ const messages = {
     "<{{name}}> in <{{container}}> cannot appear with {{others}}.",
 } as const;
 
-/** One container's prepared slots facet: closure and bounds together. */
+/**
+ * One container's prepared slots facet. A branchless row prepares its closure
+ * and bounds once; a branched row keeps the row and a per-container condition
+ * pool so the effective vocabulary can be folded per element.
+ */
 interface PreparedSlotsV2 {
+  row: SlotsRowV2;
+  /** Interned branch condition ids, aligned with `row.branches`; empty for none. */
+  branchIds: number[];
+  pool: ReturnType<typeof createConditionPool>;
+  /** The static closure/bounds, valid only when the row has no branches. */
   closure: PreparedClosure;
   bounds: PreparedBounds;
 }
@@ -59,7 +78,22 @@ function indexSlots(rows: ContractRowsV2): Map<string, PreparedSlotsV2> {
   const index = new Map<string, PreparedSlotsV2>();
 
   for (const row of rows) {
+    const pool = createConditionPool();
+    const branchIds = (row.branches ?? []).map((branch): number => {
+      const id = pool.intern(branch.when);
+
+      // A branch always carries a condition, so interning yields an id.
+      if (id === undefined) {
+        throw new Error("contracts: a v2 branch carried no condition.");
+      }
+
+      return id;
+    });
+
     index.set(displayName(row.match), {
+      row,
+      branchIds,
+      pool,
       closure: prepareClosure(row),
       bounds: prepareBounds(row),
     });
@@ -103,21 +137,37 @@ export const slotsClosureRule = createRule<[ContractRowsV2], SlotsV2MessageId>({
         const facts = elementFacts(sourceCode, filename, node, tag);
         const root = facts.slotsRoot();
 
-        for (const violation of evaluateClosure(prepared.closure, root)) {
-          const because = violation.data["because"] ?? "";
+        // A branchless row uses its static preparation; a branched one folds
+        // the effective vocabulary against this element's props first.
+        let closure = prepared.closure;
+        let bounds = prepared.bounds;
 
+        if (prepared.branchIds.length > 0) {
+          const subject = {
+            elementRef: node,
+            props: facts.props,
+            hasSpread: facts.hasSpread,
+          };
+
+          const vocab = computeEffectiveVocabulary(prepared.row, (index) => {
+            const id = prepared.branchIds[index];
+
+            return id !== undefined && prepared.pool.holdsAt(subject, id);
+          });
+
+          closure = closureOf(vocab);
+          bounds = prepareBounds({ ...prepared.row, slots: vocab.slots });
+        }
+
+        for (const violation of evaluateClosure(closure, root)) {
           context.report({
             node: violation.ref as TSESTree.Node,
             messageId: violation.messageId,
-            data: {
-              child: violation.data["child"] ?? "",
-              container: violation.data["container"] ?? "",
-              because: because === "" ? "" : ` ${because}`,
-            },
+            data: violation.data,
           });
         }
 
-        for (const violation of evaluateBounds(prepared.bounds, root)) {
+        for (const violation of evaluateBounds(bounds, root)) {
           context.report({
             node: violation.ref as TSESTree.Node,
             messageId: violation.messageId,

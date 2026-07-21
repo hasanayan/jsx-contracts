@@ -34,10 +34,14 @@ export type {
   ContractRowV2,
   CountV2,
   FacetV2,
+  ConditionValueV2,
   MatchKey,
   NameMatch,
+  SlotBranchV2,
   SlotsRowV2,
   SlotV2,
+  WhenPropV2,
+  WhenV2,
 } from "./contracts/rule-table-v2/rows-v2.js";
 export type {
   ClosureMessageId,

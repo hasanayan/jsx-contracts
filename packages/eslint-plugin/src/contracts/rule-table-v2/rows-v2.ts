@@ -72,6 +72,49 @@ export interface SlotV2 {
   excludes?: string[];
 }
 
+/** One literal a v2 prop test matches against. */
+export type ConditionValueV2 = string | number | boolean;
+
+/** A prop test: presence when `values` is absent, one of `values` otherwise. */
+export interface WhenPropV2 {
+  prop: string;
+  values?: ConditionValueV2[];
+}
+
+/**
+ * A condition gating a branch: a prop test, or `all`/`any`/`not` over those,
+ * nested freely. The v2 authoring surface builds these from
+ * `prop().is()/.isPresent()`, `allOf`, `anyOf`, `not`. There is no bare-string
+ * shorthand — v2 conditions are always objects — but the tree is otherwise a
+ * subset of the engine WhenCondition, so the engine's canonical condition
+ * normalization (`when-condition-pool`) reads it and one implementation serves
+ * both surfaces (see docs/adr/0002-*).
+ */
+export type WhenV2 =
+  WhenPropV2 | { all: WhenV2[] } | { any: WhenV2[] } | { not: WhenV2 };
+
+/**
+ * One conditional branch over a container's children: a delta applied only
+ * while its condition holds on the matched element. Branches are independent
+ * facts — declaration order never matters, and the engine folds them into the
+ * effective vocabulary by one formula (base ∪ active extends − active forbids).
+ */
+export interface SlotBranchV2 {
+  /** The condition that activates this branch, read against the element's props. */
+  when: WhenV2;
+  /** The author's intent for this branch, appended to a violation it drives. */
+  because?: string;
+  /**
+   * Slots this branch adds or re-declares while active. An entry re-declaring a
+   * base alias replaces its spec; a new alias widens the vocabulary.
+   */
+  extend?: SlotV2[];
+  /** Base aliases this branch forbids while active. Forbid wins over any extend. */
+  forbidSlots?: string[];
+  /** Base aliases whose minimum this branch raises to at least one while active. */
+  requireSlots?: string[];
+}
+
 /** One statement about a container's direct children, v2. */
 export interface SlotsRowV2 {
   facet: "slots";
@@ -86,6 +129,8 @@ export interface SlotsRowV2 {
   closed: boolean;
   /** The author's static intent, appended to a violation message. */
   because?: string;
+  /** Conditional branches over the children facet; empty or absent for none. */
+  branches?: SlotBranchV2[];
 }
 
 /** One row of the v2 rule table. A discriminated union as facets are added. */

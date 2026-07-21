@@ -72,6 +72,95 @@ const boundedRows: ContractRowsV2 = [
   },
 ];
 
+const branchedRows: ContractRowsV2 = [
+  {
+    facet: "slots",
+    match: { kind: "name", name: "Card" },
+    closed: true,
+    slots: [
+      { alias: ".Body", match: { kind: "name", name: "Card.Body" } },
+      { alias: ".Footer", match: { kind: "name", name: "Card.Footer" } },
+    ],
+    branches: [
+      {
+        when: { prop: "onClick" },
+        because: "A clickable card has no footer.",
+        forbidSlots: [".Footer"],
+      },
+      {
+        when: { prop: "variant", values: ["rich"] },
+        extend: [
+          { alias: ".Media", match: { kind: "name", name: "Card.Media" } },
+        ],
+      },
+      {
+        when: { prop: "loading" },
+        requireSlots: [".Body"],
+      },
+    ],
+  },
+];
+
+ruleTester.run("slots.closure branches", slotsClosureRule, {
+  valid: [
+    {
+      name: "a footer is fine when the card is not clickable",
+      code: "<Card><Card.Body /><Card.Footer /></Card>",
+      options: [branchedRows],
+    },
+    {
+      name: "an extend slot is allowed when its branch is active",
+      code: '<Card variant="rich"><Card.Body /><Card.Media /></Card>',
+      options: [branchedRows],
+    },
+    {
+      name: "requireSlot is satisfied when the required slot is present",
+      code: "<Card loading><Card.Body /></Card>",
+      options: [branchedRows],
+    },
+  ],
+  invalid: [
+    {
+      name: "an active forbid bars the slot, naming the witness and because",
+      code: "<Card onClick={go}><Card.Footer /></Card>",
+      options: [branchedRows],
+      errors: [
+        {
+          messageId: "forbiddenSlot",
+          data: {
+            child: "Card.Footer",
+            container: "Card",
+            witness: "`Card` has `onClick`",
+            because: " A clickable card has no footer.",
+          },
+        },
+      ],
+    },
+    {
+      name: "a conditionally-allowed slot names its condition when the branch is inactive",
+      code: "<Card><Card.Body /><Card.Media /></Card>",
+      options: [branchedRows],
+      errors: [
+        {
+          messageId: "conditionalClosure",
+          data: {
+            child: "Card.Media",
+            container: "Card",
+            condition: "`Card`'s `variant` is `rich`",
+            because: "",
+          },
+        },
+      ],
+    },
+    {
+      name: "requireSlot raises the minimum: a loading card missing its body",
+      code: "<Card loading><Card.Footer /></Card>",
+      options: [branchedRows],
+      errors: [{ messageId: "tooFew" }],
+    },
+  ],
+});
+
 ruleTester.run("slots.closure", slotsClosureRule, {
   valid: [
     {

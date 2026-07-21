@@ -173,4 +173,60 @@ describe("validateContractRowsV2", () => {
       validateContractRowsV2(rows);
     }).toThrow(/unknown facet/);
   });
+
+  it("accepts a well-formed branch", () => {
+    const rows: ContractRowsV2 = [
+      {
+        facet: "slots",
+        match: { kind: "name", name: "Card" },
+        closed: true,
+        slots: [
+          { alias: ".Footer", match: { kind: "name", name: "Card.Footer" } },
+        ],
+        branches: [
+          {
+            when: { all: [{ prop: "onClick" }, { not: { prop: "flat" } }] },
+            because: "clickable cards have no footer",
+            forbidSlots: [".Footer"],
+          },
+        ],
+      },
+    ];
+
+    expect(() => {
+      validateContractRowsV2(rows);
+    }).not.toThrow();
+  });
+
+  it("rejects a branch condition that names no prop", () => {
+    const rows = [
+      {
+        facet: "slots",
+        match: { kind: "name", name: "Card" },
+        closed: true,
+        slots: [],
+        branches: [{ when: {} }],
+      },
+    ] as unknown as ContractRowsV2;
+
+    expect(() => {
+      validateContractRowsV2(rows);
+    }).toThrow(/condition must name a prop/);
+  });
+
+  it("rejects a branch forbidding an undeclared slot", () => {
+    const rows = [
+      {
+        facet: "slots",
+        match: { kind: "name", name: "Card" },
+        closed: true,
+        slots: [],
+        branches: [{ when: { prop: "x" }, forbidSlots: [".Ghost"] }],
+      },
+    ] as unknown as ContractRowsV2;
+
+    expect(() => {
+      validateContractRowsV2(rows);
+    }).toThrow(/forbidSlots names "\.Ghost", not a declared slot/);
+  });
 });

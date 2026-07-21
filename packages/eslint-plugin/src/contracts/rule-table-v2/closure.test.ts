@@ -56,7 +56,7 @@ describe("evaluateClosure", () => {
     expect(violations[0]?.data).toMatchObject({
       child: "Tooltip",
       container: "Card.Heading",
-      because: "A heading is text with an optional icon.",
+      because: " A heading is text with an optional icon.",
     });
   });
 

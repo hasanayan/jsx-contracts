@@ -4,8 +4,13 @@
  * meanwhile so the old package entry stays untouched.
  */
 
+export { allOf, anyOf, not, prop } from "./conditions.js";
+export type { Condition, PropCondition } from "./conditions.js";
 export { defineContracts, makeRuleSet } from "./define-contracts.js";
 export type {
+  BranchDelta,
+  BranchDeltaBuilder,
+  BranchOptions,
   CollectorContext,
   ContractBuilderV2,
   RuleSetV2,

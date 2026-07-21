@@ -10,9 +10,12 @@
 
 import type {
   ContractRowsV2,
+  SlotBranchV2,
   SlotV2,
   SlotsRowV2,
 } from "@jsx-contracts/eslint-plugin";
+
+import type { Condition } from "./conditions.js";
 
 /** Severity of an emitted rule. */
 export type Severity = "error" | "warn";
@@ -72,6 +75,30 @@ interface ContractState {
   readonly from: string;
   slots: SlotV2[] | undefined;
   loose: boolean;
+  branches: SlotBranchV2[];
+}
+
+/**
+ * The delta builder a `when` branch receives: the verbs that change the
+ * children facet while the condition holds. Every verb records into the branch
+ * and chains, so a delta reads as `(c) => c.forbidSlot(".Footer")`.
+ */
+export interface BranchDeltaBuilder {
+  /** Forbid a base slot while the branch holds; forbid wins over any extend. */
+  forbidSlot: (alias: string) => BranchDeltaBuilder;
+  /** Raise a base slot's minimum to at least one while the branch holds. */
+  requireSlot: (alias: string) => BranchDeltaBuilder;
+  /** Add or re-declare slots while the branch holds; a redeclared alias replaces. */
+  extend: (map: SlotsMap) => BranchDeltaBuilder;
+}
+
+/** A branch delta: the callback given the {@link BranchDeltaBuilder}. */
+export type BranchDelta = (delta: BranchDeltaBuilder) => BranchDeltaBuilder;
+
+/** Options a branch carries beyond its condition and delta. */
+export interface BranchOptions {
+  /** The author's intent, appended to any violation this branch drives. */
+  because?: string;
 }
 
 /** The chainable builder a `contract()` call returns. */
@@ -86,6 +113,22 @@ export interface ContractBuilderV2 {
   slots: <K extends string>(map: SlotsMapOf<K>) => ContractBuilderV2;
   /** Opt out of closure: undeclared children stop being violations. */
   loose: () => ContractBuilderV2;
+  /**
+   * Add a conditional branch: a delta over the children facet applied only
+   * while `condition` holds on the matched element. Branches are independent
+   * facts — declaration order never matters. `because` carries the author's
+   * intent into any violation the branch drives.
+   *
+   * @example
+   * .when(prop("onClick").isPresent(), (c) => c.forbidSlot(".Footer"), {
+   *   because: "A clickable card has no footer.",
+   * })
+   */
+  when: (
+    condition: Condition,
+    delta: BranchDelta,
+    options?: BranchOptions,
+  ) => ContractBuilderV2;
 }
 
 /** What the collector callback is handed. */
@@ -265,21 +308,72 @@ function parseSlots(map: SlotsMap, subject: string): SlotV2[] {
   );
 }
 
+/** A recording delta builder: every verb writes to `branch` and chains. */
+function deltaRecorder(
+  branch: SlotBranchV2,
+  subject: string,
+): BranchDeltaBuilder {
+  const builder: BranchDeltaBuilder = {
+    forbidSlot(alias): BranchDeltaBuilder {
+      (branch.forbidSlots ??= []).push(alias);
+
+      return builder;
+    },
+    requireSlot(alias): BranchDeltaBuilder {
+      (branch.requireSlots ??= []).push(alias);
+
+      return builder;
+    },
+    extend(map): BranchDeltaBuilder {
+      (branch.extend ??= []).push(...parseSlots(map, subject));
+
+      return builder;
+    },
+  };
+
+  return builder;
+}
+
+/** Compile one `when` call into a branch row, its shorthand expanded on `subject`. */
+function buildBranch(
+  condition: Condition,
+  delta: BranchDelta,
+  options: BranchOptions | undefined,
+  subject: string,
+): SlotBranchV2 {
+  const branch: SlotBranchV2 = { when: condition.when };
+
+  if (options?.because !== undefined) {
+    branch.because = options.because;
+  }
+
+  delta(deltaRecorder(branch, subject));
+
+  return branch;
+}
+
 function compileStates(states: ContractState[]): ContractRowsV2 {
   const rows: SlotsRowV2[] = [];
 
   for (const state of states) {
-    // A contract with no children map declares no children facet — no row.
-    if (state.slots === undefined) {
+    // A contract with neither a children map nor a branch declares no children
+    // facet — no row.
+    if (state.slots === undefined && state.branches.length === 0) {
       continue;
     }
 
-    rows.push({
+    const row: SlotsRowV2 = {
       facet: "slots",
       match: { kind: "name", name: state.name },
-      slots: state.slots,
+      slots: state.slots ?? [],
       closed: !state.loose,
-    });
+    };
+
+    if (state.branches.length > 0) {
+      row.branches = state.branches;
+    }
+
+    rows.push(row);
   }
 
   return rows;
@@ -332,6 +426,12 @@ function makeBuilder(
 
       return builder;
     },
+    when(condition, delta, options): ContractBuilderV2 {
+      guard();
+      state.branches.push(buildBranch(condition, delta, options, state.name));
+
+      return builder;
+    },
   };
 
   return builder;
@@ -373,6 +473,7 @@ export function defineContracts(
       from,
       slots: undefined,
       loose: false,
+      branches: [],
     };
 
     states.set(name, state);

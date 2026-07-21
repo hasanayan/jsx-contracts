@@ -4,7 +4,13 @@
  * the whole engine keys off. Throws on the first malformed row.
  */
 
-import type { ContractRowsV2, MatchKey, SlotsRowV2 } from "./rows-v2.js";
+import type {
+  ContractRowsV2,
+  MatchKey,
+  SlotBranchV2,
+  SlotsRowV2,
+  WhenV2,
+} from "./rows-v2.js";
 
 /** Rejects the row under validation, naming its position. */
 type Fail = (problem: string) => never;
@@ -78,6 +84,89 @@ function validateReferences(
   }
 }
 
+/** A condition is a prop test or an `all`/`any`/`not` over conditions. */
+function validateWhen(when: unknown, subject: string, fail: Fail): void {
+  if (typeof when !== "object" || when === null) {
+    fail(`${subject} condition must be an object`);
+  }
+
+  const node = when as Partial<WhenV2> & Record<string, unknown>;
+
+  if ("all" in node || "any" in node) {
+    const operands = node.all ?? node.any;
+
+    if (!Array.isArray(operands) || operands.length === 0) {
+      fail(`${subject} all/any must be a non-empty array of conditions`);
+    }
+
+    for (const operand of operands as unknown[]) {
+      validateWhen(operand, subject, fail);
+    }
+
+    return;
+  }
+
+  if ("not" in node) {
+    validateWhen(node.not, subject, fail);
+
+    return;
+  }
+
+  if (typeof node.prop !== "string" || node.prop.length === 0) {
+    fail(`${subject} condition must name a prop`);
+  }
+
+  if (node.values !== undefined && !Array.isArray(node.values)) {
+    fail(`${subject} condition values must be an array`);
+  }
+}
+
+function validateBranch(
+  branch: SlotBranchV2,
+  label: string,
+  baseAliases: Set<string>,
+  fail: Fail,
+): void {
+  if (typeof branch !== "object") {
+    fail(`${label} must be an object`);
+  }
+
+  validateWhen(branch.when, label, fail);
+
+  if (branch.because !== undefined && typeof branch.because !== "string") {
+    fail(`${label} because must be a string`);
+  }
+
+  for (const relation of ["forbidSlots", "requireSlots"] as const) {
+    const refs = branch[relation];
+
+    if (refs === undefined) {
+      continue;
+    }
+
+    if (!Array.isArray(refs)) {
+      fail(`${label} ${relation} must be an array`);
+    }
+
+    for (const ref of refs as unknown[]) {
+      if (typeof ref !== "string" || !baseAliases.has(ref)) {
+        fail(
+          `${label} ${relation} names "${String(ref)}", not a declared slot`,
+        );
+      }
+    }
+  }
+
+  for (const slot of branch.extend ?? []) {
+    if (typeof slot.alias !== "string" || slot.alias.length === 0) {
+      fail(`${label} extend slot must carry a non-empty alias`);
+    }
+
+    validateMatch(slot.match, `${label} extend slot "${slot.alias}"`, fail);
+    validateCount(slot.count, slot.alias, fail);
+  }
+}
+
 function validateSlotsRow(row: SlotsRowV2, fail: Fail): void {
   if (typeof row.closed !== "boolean") {
     fail("closed must be a boolean");
@@ -108,6 +197,16 @@ function validateSlotsRow(row: SlotsRowV2, fail: Fail): void {
   for (const slot of row.slots) {
     validateReferences(slot.requires, "requires", slot.alias, aliases, fail);
     validateReferences(slot.excludes, "excludes", slot.alias, aliases, fail);
+  }
+
+  if (row.branches !== undefined) {
+    if (!Array.isArray(row.branches)) {
+      fail("branches must be an array");
+    }
+
+    row.branches.forEach((branch, index) => {
+      validateBranch(branch, `branch ${String(index)}`, aliases, fail);
+    });
   }
 }
 

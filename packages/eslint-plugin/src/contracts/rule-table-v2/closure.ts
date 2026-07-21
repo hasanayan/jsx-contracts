@@ -7,15 +7,21 @@
 import type { RenderedNode } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
 
+import type { EffectiveVocabulary } from "./effective-vocabulary.js";
 import type { SlotsRowV2 } from "./rows-v2.js";
 import { displayName } from "./rows-v2.js";
 
-/** The one message this facet reports. */
-export type ClosureMessageId = "closure";
+/**
+ * The closure messages. `closure` is the plain undeclared-child prompt;
+ * `forbiddenSlot` and `conditionalClosure` are the branch-aware forms — a slot
+ * an active branch bars, and one only an inactive branch would allow.
+ */
+export type ClosureMessageId =
+  "closure" | "forbiddenSlot" | "conditionalClosure";
 
 type ClosureViolation = Violation<ClosureMessageId>;
 
-/** One slots row, prepared for closure checks: the container and its vocabulary. */
+/** One container's children facet, prepared for closure checks. */
 export interface PreparedClosure {
   /** The container's display name, e.g. `"Card.Heading"`. */
   container: string;
@@ -25,33 +31,94 @@ export interface PreparedClosure {
   vocabulary: Set<string>;
   /** The author's static intent, if any. */
   because: string | undefined;
+  /** Display name → the branch witness that bars it, when an active forbid did. */
+  forbidden: Map<string, { witness: string; because?: string }>;
+  /** Display name → the condition an inactive branch would allow it under. */
+  conditional: Map<string, { condition: string; because?: string }>;
 }
 
+/** Prepare a static (branchless) row's closure facet. */
 export function prepareClosure(row: SlotsRowV2): PreparedClosure {
   return {
     container: displayName(row.match),
     closed: row.closed,
     vocabulary: new Set(row.slots.map((slot) => displayName(slot.match))),
     because: row.because,
+    forbidden: new Map(),
+    conditional: new Map(),
   };
 }
 
+/** Prepare closure from a per-element effective vocabulary, branches folded in. */
+export function closureOf(vocab: EffectiveVocabulary): PreparedClosure {
+  return {
+    container: vocab.container,
+    closed: vocab.closed,
+    vocabulary: new Set(vocab.slots.map((slot) => displayName(slot.match))),
+    because: vocab.because,
+    forbidden: vocab.forbidden,
+    conditional: vocab.conditional,
+  };
+}
+
+/** Append the author's intent to a message, as its own sentence, or blank. */
+function trailing(because: string | undefined): string {
+  return because === undefined || because === "" ? "" : ` ${because}`;
+}
+
 /**
- * The closure verdict for one container element. Every direct child outside the
- * declared vocabulary is a violation; a loose container reports nothing.
+ * The closure verdict for one container element. A child an active branch
+ * forbids, or one only an inactive branch would allow, is reported whatever the
+ * closure setting; every other undeclared child is reported only when closed.
  */
 export function evaluateClosure(
   prepared: PreparedClosure,
   root: RenderedNode,
 ): ClosureViolation[] {
-  if (!prepared.closed) {
-    return [];
-  }
-
   const violations: ClosureViolation[] = [];
 
   for (const child of root.children) {
     if (prepared.vocabulary.has(child.name)) {
+      continue;
+    }
+
+    const barred = prepared.forbidden.get(child.name);
+
+    if (barred !== undefined) {
+      violations.push({
+        ref: child.ref,
+        messageId: "forbiddenSlot",
+        data: {
+          child: child.name,
+          container: prepared.container,
+          witness: barred.witness,
+          because: trailing(barred.because),
+        },
+      });
+
+      continue;
+    }
+
+    // A conditionally-allowed slot is only interesting where closure applies:
+    // a loose container admits it anyway.
+    if (!prepared.closed) {
+      continue;
+    }
+
+    const gated = prepared.conditional.get(child.name);
+
+    if (gated !== undefined) {
+      violations.push({
+        ref: child.ref,
+        messageId: "conditionalClosure",
+        data: {
+          child: child.name,
+          container: prepared.container,
+          condition: gated.condition,
+          because: trailing(gated.because),
+        },
+      });
+
       continue;
     }
 
@@ -61,7 +128,7 @@ export function evaluateClosure(
       data: {
         child: child.name,
         container: prepared.container,
-        because: prepared.because ?? "",
+        because: trailing(prepared.because),
       },
     });
   }

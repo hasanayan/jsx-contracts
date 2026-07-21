@@ -45,6 +45,23 @@ const slot: JsonSchema = {
   additionalProperties: false,
 };
 
+// A condition tree: a prop test, or `all`/`any`/`not` over conditions. Kept
+// permissive here — the runtime validator enforces the exact tree shape.
+const when: JsonSchema = { type: "object" };
+
+const branch: JsonSchema = {
+  type: "object",
+  properties: {
+    when,
+    because: { type: "string" },
+    extend: { type: "array", items: slot },
+    forbidSlots: { type: "array", items: { type: "string" } },
+    requireSlots: { type: "array", items: { type: "string" } },
+  },
+  required: ["when"],
+  additionalProperties: false,
+};
+
 export const contractRowsV2Schema: JsonSchema[] = [
   {
     type: "array",
@@ -58,6 +75,7 @@ export const contractRowsV2Schema: JsonSchema[] = [
             slots: { type: "array", items: slot },
             closed: { type: "boolean" },
             because: { type: "string" },
+            branches: { type: "array", items: branch },
           },
           required: ["facet", "match", "slots", "closed"],
           additionalProperties: false,
