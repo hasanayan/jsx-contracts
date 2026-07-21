@@ -236,7 +236,7 @@ function buildSlot(alias: string, spec: SlotSpec, subject: string): SlotV2 {
       );
     }
 
-    return assembleSlot(alias, `${subject}${alias}`, undefined, draft);
+    return assembleSlot(alias, resolveName(alias, subject), undefined, draft);
   }
 
   if (draft.isCalled) {
