@@ -2,9 +2,9 @@
 
 ## Open issues
 
-!`gh issue list --state open --label Sandcastle --search '-label:blocked sort:created-asc' --limit 100 --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'`
+!`KEEP=$(for n in $(gh issue list --state open --label Sandcastle --search 'sort:created-asc' --limit 100 --json number --jq '.[].number'); do [ "$(gh api repos/{owner}/{repo}/issues/$n/dependencies/blocked_by --jq '[.[] | select(.state == "open")] | length' 2>/dev/null || echo 0)" = "0" ] && printf '%s ' "$n"; done); gh issue list --state open --label Sandcastle --search 'sort:created-asc' --limit 100 --json number,title,body,labels,comments | jq --arg keep "$KEEP" '[.[] | select(.number as $n | $keep | split(" ") | index($n | tostring)) | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'`
 
-The list above has already been filtered to unblocked, `Sandcastle` issues, oldest first, and is the sole source of truth for what work exists. Do not run your own unfiltered query to find more issues — if the list is empty, there is nothing to do.
+The list above has already been filtered to unblocked, `Sandcastle` issues, oldest first, and is the sole source of truth for what work exists. Blocking is read from GitHub's native issue-dependency graph — an issue is excluded when any of its `blocked_by` issues is still open. Do not run your own unfiltered query to find more issues — if the list is empty, there is nothing to do.
 
 ## Recent RALPH commits (last 10)
 

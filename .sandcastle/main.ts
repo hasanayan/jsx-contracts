@@ -6,6 +6,9 @@
 //                        completion.
 //   Phase 2 (Review):    A second sonnet agent reviews the branch diff and either
 //                        approves it or makes corrections directly on the branch.
+//   Phase 3 (Integrate): The host repo fast-forwards its current branch onto the
+//                        reviewed branch, so the next iteration starts from it.
+//                        Local only — nothing is pushed.
 //
 // Both phases share a single sandbox created via createSandbox(), so the
 // implementer and reviewer work on the same explicit branch.
@@ -21,6 +24,7 @@
 // Or add to package.json:
 //   "scripts": { "sandcastle": "npx tsx .sandcastle/main.ts" }
 
+import { execFileSync } from "node:child_process";
 import * as sandcastle from "@ai-hero/sandcastle";
 import { noSandbox } from "@ai-hero/sandcastle/sandboxes/no-sandbox";
 
@@ -47,6 +51,15 @@ const copyToWorktree = ["node_modules"];
 // Main loop
 // ---------------------------------------------------------------------------
 
+const git = (...args: string[]) =>
+  execFileSync("git", args, { encoding: "utf8" }).trim();
+
+// The branch the host repo is sitting on — every reviewed iteration is merged
+// into it. Captured once so a stray checkout mid-run cannot retarget the merge.
+const integrationBranch = git("rev-parse", "--abbrev-ref", "HEAD");
+
+console.log(`Integrating into: ${integrationBranch} (local only, never pushed)`);
+
 for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   console.log(`\n=== Iteration ${iteration}/${MAX_ITERATIONS} ===\n`);
 
@@ -55,6 +68,8 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
 
   // Create a single sandbox that both the implementer and reviewer share.
   // This gives both agents a real, named branch that persists across phases.
+  // Forks from HEAD, which is the integration branch — and which has already
+  // absorbed every prior iteration, so issue N+1 starts from issue N's code.
   const sandbox = await sandcastle.createSandbox({
     branch,
     sandbox: noSandbox(),
@@ -107,12 +122,41 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
       promptFile: "./.sandcastle/review-prompt.md",
       promptArgs: {
         BRANCH: branch,
+        // The fork point to diff against. Not the built-in {{TARGET_BRANCH}}:
+        // on the createSandbox path that is hardcoded to the worktree's own
+        // branch, so `diff TARGET_BRANCH...BRANCH` is a branch against itself
+        // and always empty. Built-ins also cannot be overridden via promptArgs.
+        BASE_BRANCH: integrationBranch,
       },
     });
 
     console.log("\nReview complete.");
   } finally {
     await sandbox.close();
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase 3: Integrate
+  //
+  // Fast-forward the reviewed branch — implementation plus any corrections the
+  // reviewer committed on top — into the integration branch, so the next
+  // iteration's fork from HEAD contains it. Local only: nothing is pushed.
+  //
+  // Runs after sandbox.close() removes the worktree; git refuses to merge a
+  // branch that is still checked out elsewhere. --ff-only is deliberate — the
+  // branch was forked from this same tip, so anything other than a
+  // fast-forward means the host branch moved underneath the run, and building
+  // the next issue on a silently diverged tree is worse than stopping.
+  // -------------------------------------------------------------------------
+  try {
+    git("merge", "--ff-only", branch);
+    console.log(`Merged ${branch} into ${integrationBranch}: ${git("rev-parse", "--short", "HEAD")}`);
+  } catch (error) {
+    console.error(
+      `Could not fast-forward ${integrationBranch} to ${branch}. The work is safe on that branch; merge it by hand. Stopping.`,
+    );
+    console.error(error instanceof Error ? error.message : error);
+    break;
   }
 }
 
