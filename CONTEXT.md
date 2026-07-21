@@ -1,197 +1,238 @@
 # Domain glossary
 
 The ubiquitous language of jsx-contracts. Use these terms in code, tests, docs,
-and commits.
+and commits. The authoring surface is ADR 0003's; the engine invariants and
+architecture hold on both sides of that change.
 
 ## Contract language (authoring)
 
-- **Contract** — all jsx-contracts enforces about one component: import gate +
-  facets. Authored as a `contract()` chain, one per component; compiles to one
-  **row** per facet per condition.
-- **Binding** — `contractsFor(gate)`, optionally given the bound module's type:
-  it states the import gate once for that whole module and
-  hands back the `contract` starter — the only way to reach a builder — together
-  with the condition constructors (`prop`, `allOf`, `anyOf`, `not`), so those
-  names never occupy package-level exports. The module is referenced type-only,
-  so component names are checked against its capitalized export paths without
-  the bound module ever being loaded. A component from another package needs
-  its own binding.
-- **Condition** — a value that gates a rule: `prop(name).is(...)` /
-  `.isPresent()`, composed with `allOf`, `anyOf` and `not`, nested freely.
-  Because it is a value, one used by several components is written once and
-  shared. Compiles to a row's **when-condition**.
-- **Nameless contract** — `contract()` with no component: every builder method,
-  no name, and so no rule table of its own. `.when(condition, rules)` attaches
-  one to a component, expands its shorthand part names against that component
-  and gates its rows on the condition; a `when` nested inside conjoins with the
-  outer one. A value too, so a recurring set of conditional rules is written
-  once. Named `Fragment` in the types.
-- **Row** — the payload's unit: one statement about one component in one facet,
-  optionally gated by a when-condition. A component's rows **accumulate** — every
-  active row applies at once, so they are combined into one effective config per
-  facet before evaluating, and a violation is reported once against the combined
-  result.
-- **Facet** — one enforceable aspect. Four of them, each a rule: **children**
-  (`@jsx-contracts/slots`, direct children), **subtree**
-  (`@jsx-contracts/subtree`, anywhere below), **props**
-  (`@jsx-contracts/props`, the element's own props), and **ancestor**
-  (`@jsx-contracts/ancestor`, anywhere above). New capabilities land as additive
-  optional keys.
-- **Import gate** — module a component must be imported from for its contract to
-  apply. Literal or `*` glob (`*/ds/widget`). Written `from`. Slots inherit the
-  container's gate; forbidden elements don't (name-only unless self-gated).
-- **Container** — component with a children facet; accepts only its slots as
-  direct children.
-- **Slot** — a component allowed as a direct child, with count bounds
-  (`count: { min?, max? }` — omitted = at most one; `min` only = unbounded above;
-  `max` only = optional up to max) and optional own gate. Must render as a direct
-  child (directly, or hoisted into a variable whose every read lands in one) —
-  elsewhere it's **misplaced**.
-- **Part** — a slot or a descendant: what one `hasSlot`/`hasDescendant` call
-  declares under its container. The two differ in facet and in reach, but are
-  declared, gated and bounded alike, so what holds of both is said of a part.
-- **Shorthand** — a part name starting with `.`, standing for the container's
-  name followed by the given segments (`.Title` under `Widget.Tray` →
-  `Widget.Tray.Title`). Expanded when the contract compiles, so the row carries
-  the full name; checked at authoring time against the bound module's export
-  paths, and accepted unchecked where the module resolves nothing that deep.
-- **Requires / exclusive** — cross-slot, within one container: a slot that must
-  co-render with another; slot groups that may not co-render.
-- **Strict** — children-facet modifier: unresolvable children are violations,
-  presence checks always run.
-- **When-condition** — activates a row on any facet: prop presence, prop value
-  among listed literals (strings also match dotted member text like `Size.large`),
-  or `all`/`any`/`not` over those, nested freely. Read against the props of the
-  element the row names. Optional — a when-less row is always active for the
-  matched component. A component carries as many conditional rows as it needs.
-  A tree containing a `not` is inactive on an element with a spread, which may
-  carry the very prop being negated.
-- **Activation** — whether a row applies to an element: its import gate matches
-  **and** its when-condition holds. No active row for a facet leaves that facet
-  unchecked.
-- **Subtree ban** — subtree facet's unit: under an activated component, listed
-  elements (`forbid`) and elements carrying listed props (`forbidProps`) barred
-  anywhere below. When-less, it bans full stop ("never nest X under Y").
-- **Descendant count** — subtree facet's other unit (`require`): an element that
-  must appear within count bounds (`min`/`max`, same defaults as a slot)
-  _anywhere_ below the activated component, closing the gap the direct-child
-  slots facet leaves when wrappers sit between a root and its parts. Branch-aware
-  like slot counts; `min` uses the guaranteed count and is skipped when the
-  subtree holds unresolvable content, `max` always runs on what is visible.
-- **Prop contract** — props facet's unit on one component's own element:
-  `required` props (an inner group means at-least-one-of), `exclusive` prop
-  groups that may not co-occur, and `deprecated` props or a `deprecated`
-  component. A spread on the element makes absence unprovable, so it skips the
-  required checks; exclusive and deprecated report only what is written.
-- **Forbidden ancestor** — ancestor facet's unit (`notInside`): a component may
-  not render anywhere below a listed enclosing element (syntactic containment,
-  the subtree facet's philosophy read upward — body child or JSX-valued prop
-  both count). Name-only unless the entry self-gates. One violation per matched
-  entry, reported on the inner element for the nearest matching ancestor. Only
-  the forbidden direction ships: an illegal nesting visible in a file is
-  definitely wrong (sound per-file). _Requiring_ an ancestor is deliberately not
-  offered — a wrapper may render the part standalone, which no single file can
-  disprove.
-
-- **Narrowing** — what a conditional row does to the children facet: its slot
-  list intersects with the base one. The only combination that can _cancel_ a
-  rule — every other facet unions — so it is the whole scope of the check below.
-  Most narrowings are intended; the reported ones are those that cancel a rule,
-  and a reported one is what the type `Narrowing` names.
+- **Contract** — all jsx-contracts enforces about one component: identity +
+  facets. Authored as `contract(ComponentRef)` inside a collector, one per
+  component; compiles to one **row** per facet per condition.
+- **Collector** — `defineContracts((ctx) => { … })`: injects the `contract`
+  factory and gathers everything defined through it. A contract registers when
+  `contract()` is called — no return needed; builders accumulate in place, and
+  the rule set freezes when the callback returns (later use throws). A
+  duplicate component name is an immediate error; nothing authored can
+  silently fail to ship. Sharing a
+  gate or module type across a family is plain partial application of
+  `contract`, not API. `mergeContracts` combines rule sets across files;
+  `.rules(severity?)` yields the flat-config entries.
+- **Slots map** — the schema of a container's direct children:
+  `.slots({ ".Icon": (s) => s.excludes(".Avatar"), ".Badge": true })`.
+  Every entry is a triple — **alias key, identity, spec** — and the identity
+  always comes from `is()`; the rest is contraction. Dotted key = alias +
+  implied `is()` of that member of the subject; bare capitalized key = alias
+  that must call `is(Ref)`; bare lowercase key = intrinsic, no identity;
+  `true` ≡ `(s) => s.is("<key>")`. Aliases are authoring-scoped — sibling
+  references and deltas name the stable alias — while messages derive from
+  the identity. **Closed by default** — children outside the effective
+  vocabulary are violations; `.loose()` opts out.
+- **Spec** — a slot's constraints, local to its map entry: `is(Ref)`
+  (identity, exactly once, position free), `min` / `max` / `exactly`
+  (counts; a bare slot is 0–∞), `requires(...siblings)`,
+  `excludes(...siblings)`. Sibling references are typed against the map's
+  own keys.
+- **Exclusivity** — per-slot `excludes` is the entire surface. Symmetry is
+  computed (one direction declares the relation); groups are written on each
+  member; messages reconstruct the clique ("alternatives — use one").
+- **Branch** — `when(condition, delta, { because? })`. Branches are
+  **independent facts**: declaration order never matters, each reads in
+  isolation. The delta callback receives a builder derived from the contract
+  (subject and keys in its type), so relative names resolve immediately and
+  arguments are key-checked. Delta verbs: `forbidSlot`, `requireSlot`,
+  `extend({ … })`, `forbidDescendants`, `forbidDescendantProps`, and the props
+  verbs.
+- **Effective vocabulary** — what the children facet checks an element
+  against: base map ∪ active `extend`s − active `forbidSlot`s. The base is
+  always active; an `extend` re-declaring a slot replaces its spec; a
+  forbidden slot is out, no branch re-allows it. Branches that can hold at
+  once and disagree are authoring-time findings, never silently merged.
+- **Condition** — a data value gating a branch: `prop(name).is(...)` /
+  `.isPresent()`, composed with `allOf` / `anyOf` / `not`, nested freely.
+  Free package-level imports. Props-only; no opaque predicates — the AST is
+  what makes messages and the unsatisfiability check possible. Compiles to a
+  row's **when-condition**.
+- **Identity** (ADR 0004) — how components match: `contract(Card)` declares
+  the component by reference; a JSX tag matches when its symbol resolves to
+  the same identity via TS symbol resolution (`getAliasedSymbol`), so renamed
+  imports, barrels and namespace access are covered. The only component
+  matcher — import gates and specifier globs are deleted; intrinsics (`"a"`,
+  `"button"`) are bare names and the only string-matched elements. Two keys,
+  chosen by where the reference resolves: in-repo `(workspace-relative
+  declaration path, export, members)`; published `(package name, export,
+  members)` — the public coordinate, produced by shipped contracts
+  self-importing their own package.
+- **Typed linting** — a plugin requirement, not a mode: parser services
+  (`projectService`) or a loud startup error. A file the TS program does not
+  cover degrades per file — unknown facts, unmatched identities, an opt-in
+  once-per-file diagnostic — and that degradation is the only fallback
+  layer.
+- **Contract loader** — `collectContracts(glob, { external })`: executes
+  `*.contract.ts` files at config load, intercepting every import except
+  `@jsx-contracts/*` and the `external` allowlist with a recording proxy —
+  component modules never run; a proxy used as data throws, naming the import
+  and the fix. Lint-side resolution sits behind one seam,
+  `resolveTagIdentity(tag)`, per import per file, so the TS backend is
+  swappable (TS 7 moves the compiler API out of process).
+- **Container** — component with a children facet.
+- **Slot** — a component allowed as a direct child, with count bounds and
+  optional own gate. Must render as a direct child (directly, or hoisted into
+  a variable whose every read lands in one) — elsewhere it's **misplaced**.
+- **Part** — a slot or a descendant: one slots-map or descendants-map entry
+  under its container. The two differ in facet and reach, but are declared
+  and bounded alike — same triple model, same key rules, same `is()`.
+- **Shorthand** — a dotted key or part name, standing for the container
+  followed by the given segments (`.Title` under `Widget.Tray` →
+  `Widget.Tray.Title`): the contraction that binds a member of the subject's
+  identity without an explicit `is()`. Expanded when the contract compiles —
+  in every facet, forbid lists included; checked at authoring time against
+  the bound module's types, and accepted unchecked where the module resolves
+  nothing that deep.
+- **Closure** — whether undeclared children are violations (the slots map's
+  closed/loose axis). Orthogonal to analysis strictness.
+- **Analysis strictness** — `.strictAnalysis()`: what happens where the
+  linter cannot see (`{props.children}`, `{items.map(…)}`, `{...rest}`).
+  Default is assume-fine. Strict errors when — and only when — an opaque
+  region intersects a rule it could break, naming both. One contract-level
+  switch; findings are classified internally by cause.
+- **Props map** — `.props({ href: (p) => p.excludes("onClick"), … })`, same
+  spec-callback shape: `required()`, `requires(...)`, `excludes(...)`,
+  `deprecated(useInstead?)`. **Always loose** — no closing toggle, no `true`
+  values; an entry must constrain something. The contract closes what the
+  type system cannot: children are opaque `ReactNode`, so slot vocabulary
+  lives in the contract; allowed props are the props type, enforced by the
+  compiler already. `requiresAnyOf(...props)` (at-least-one-of) is the one
+  contract-level group verb. Unknown facts skip required checks;
+  exclusive and deprecated report only what is proven.
+- **Descendants map** — `.descendants({ … })`: elements required anywhere
+  below, same spec shape for bounds. Branch-aware; `min` uses the guaranteed
+  count, `max` runs on what is visible.
+- **Subtree ban** — under an activated component, listed elements
+  (`forbidDescendants`) and elements carrying listed props
+  (`forbidDescendantProps`) barred anywhere below.
+- **Forbidden ancestor** — `notInside(...ancestors)`: a component may not
+  render anywhere below a listed enclosing element (body child or JSX-valued
+  prop both count). One violation per matched entry, reported on the inner
+  element. Only the forbidden direction ships — requiring an ancestor is
+  deliberately not offered, since a wrapper may render the part standalone,
+  which no single file can disprove. `deprecated(useInstead?)` marks the
+  component itself.
+- **Message** — assembled mechanically: the rule's **fact** ("expects exactly
+  1 `<Card.Heading.Text>`, found 3"), the **witness** — the condition facts that actually
+  held on this element ("because this Card has `onClick`"; a
+  conditionally-allowed slot names its condition) — and the author's static
+  **`because`**, appended. Closure violations prompt: "add it to the contract
+  or remove it."
+- **Description IR** (ADR 0006) — `describeContract(rows) → ContractDescription`:
+  a public data tree in authoring, derived from compiled rows, that renderers
+  (the `@jsx-contracts/storybook` doc block, prose helpers) consume. Base
+  section plus branches as deltas; identity appears only as display strings.
+  Display-name and condition-to-prose rendering is one shared layer, used by
+  both lint messages and the IR's prose helper.
 - **Unsatisfiability check** — `findUnsatisfiable`, the authoring side's
-  build-time pass over a compiled contract: it reports the rules a component's
-  rows cancel between them (a required slot excluded, count bounds crossed, a
-  cross-slot reference dropped), one finding per component per facet per slot
-  per kind. Opt-in, separate from `rules()`, and reporting
-  rather than throwing — the narrowing is legal and may be intended. Not a lint
-  rule: the plugin's combination stays total and silent, because it cannot tell
-  a reachable combination of conditions from an unreachable one.
-- **Syntactic exclusivity** — how the check decides two rows can never be active
-  at once: disjoint value sets on one prop, `c` against `not(c)`, with
+  build-time pass: reports branches that can hold at once and disagree — one
+  extends what another forbids, two override one slot differently, a required
+  slot forbidden. Opt-in, separate from `rules()`, reporting rather than
+  throwing.
+- **Syntactic exclusivity** — how the check decides two branches can never be
+  active at once: disjoint value sets on one prop, `c` against `not(c)`, with
   `allOf`/`anyOf` distributing over those. Not a solver — anything undecidable
-  is treated as **co-satisfiable**, the safe direction, so the check may miss a
-  conflict but never invents one. This is what keeps the widening idiom quiet.
+  is **co-satisfiable**, the safe direction: the check may miss a conflict,
+  never invents one.
+
+## Engine invariants
+
+- **Row** — the payload's unit: one statement about one component in one
+  facet, optionally gated by a when-condition. Row grain is facet, not
+  feature: features within a facet are interdependent and combine in one
+  operation.
+- **Facet** — one enforceable aspect, each a rule: **children**
+  (`@jsx-contracts/slots`), **subtree** (`@jsx-contracts/subtree`), **props**
+  (`@jsx-contracts/props`), **ancestor** (`@jsx-contracts/ancestor`). New
+  capabilities land as additive optional keys.
+- **Activation** — match ∧ condition, computed once per element and shared by
+  every rule: identity for components, bare name for intrinsics, then the
+  row's when-condition. No active row for a facet leaves it unchecked.
+- **Combination** — a component's active rows are combined into one effective
+  config per facet before evaluating (children: the effective-vocabulary
+  formula; forbids and exclusions union), so a violation is reported once,
+  against the combined result. Combined configs are immutable and shareable.
+- **Evaluation target** — a condition is read against the props of the element
+  the row names: the container for children, the activated root for subtree,
+  the constrained element for props and ancestor.
+- **Fact** (ADR 0005) — every prop fact is **present**, **absent** or
+  **unknown**: written attributes first, the checker where syntax stops. A
+  spread's type testifies per prop — no declared property means absent, a
+  required one means present, optional means unknown; prop values testify
+  the same way against `is()`. `isPresent()` means *provably provided*.
+  Trust is total (facts are as true as the program's types), with `any`,
+  index signatures and error types demoting to unknown — `any` never reads
+  as absence.
+- **Proof or silence** — a violation requires proof; `unknown` never
+  violates, it produces a `strictAnalysis` finding where it intersects a
+  rule. A `when` whose condition evaluates unknown is inactive and
+  reportable. `not()` under a spread is inactive only when the spread's type
+  actually allows the negated prop — per-prop precision, not a blanket rule.
+  The base children map is unconditional, so it stays checked regardless.
+- **Facet registry** — the core's one facet-specific seam: per facet, its
+  prepare, combine and evaluate functions. Everything above it — grouping,
+  activation, dispatch — is generic over rows.
 
 ## Analysis model (implementation)
 
-- **Rendered tree** — pure data the adapter collects, the core evaluates against.
-  Each node: dotted tag name, branch tags, import provenance, prop facts,
-  children (body vs. JSX-through-props, distinguished). Its whole vocabulary is
-  one module, `contracts/rendered-tree/rendered-tree.ts`: the per-facet views
-  (the slots tree, the lazy subtree, a slot's placement, the ancestor chain) and
-  `ElementFacts`, the seam itself — one element as the adapter presents it,
-  every accessor beyond its name and import source a thunk, so the pipeline
-  collects only what the active rows need. Both sides import it; neither evaluator exports a type the
-  adapter must produce. A fifth facet's facts land there.
+- **Rendered tree** — pure data the adapter collects, the core evaluates
+  against. Each node: dotted tag name, branch tags, import provenance, prop
+  facts, children (body vs. JSX-through-props, distinguished). Its vocabulary
+  is one module, `contracts/rendered-tree/rendered-tree.ts`: the per-facet
+  views and `ElementFacts`, the seam — one element as the adapter presents
+  it, every accessor beyond name and import source a thunk, so the pipeline
+  collects only what the active rows need.
 - **Transparent node** — renders no element, collection descends through:
-  fragments, expression containers, ternaries (both sides), logical (`&&` drops
-  its condition), constant JSX-valued identifiers (cycle-guarded).
-- **Branch** — which side of which ternary an element sits in. Two elements
-  **coexist** unless one sits opposite the other; count and exclusivity checks
-  are branch-aware.
-- **Unresolvable content** — children not statically resolvable (calls, params,
-  reassigned variables). Non-strict skips presence checks; strict reports.
+  fragments, expression containers, ternaries (both sides), logical (`&&`
+  drops its condition), constant JSX-valued identifiers (cycle-guarded).
+- **Branch (analysis)** — which side of which ternary an element sits in. Two
+  elements **coexist** unless one sits opposite the other; count and
+  exclusivity checks are branch-aware.
+- **Unresolvable content** — children not statically resolvable (calls,
+  params, reassigned variables). Unknown facts: assumed fine by default,
+  reported under `strictAnalysis` where it intersects a rule. Children
+  counting stays syntactic — JSX types are opaque about which element and
+  how many, so the checker does not help here.
 
 ## Architecture
 
 Two published packages, split by side of the contract:
 
 - **Authoring** (`packages/authoring`, `@jsx-contracts/authoring`) — the
-  type-safe DSL, the owner of consumer-facing type safety, laid out by the four
-  jobs it does. `authoring/` is the DSL itself: the `contractsFor` binding
-  (`binding.ts`), the fluent `contract()` builder it hands back (`builder.ts`),
-  the condition constructors (`conditions.ts`), the type-level names checked
-  against the bound module (`bound-names.ts`) and `merge-contracts.ts`.
-  `compile/` turns a chain into the rule table: `entry.ts` is the type
-  vocabulary a chain accumulates, `emit-rows.ts` the shorthand expansion,
-  when-conjunction and facet fan-out, `compiled-contracts.ts` the frozen result
-  and its `rules()`. `check/` is the unsatisfiability check —
-  `find-unsatisfiable.ts` and the syntactic `exclusivity.ts` it decides pairs
-  with. `pinned/` holds the ADR-0002 mirrors, each beside the agreement test
-  that pins it to the core's copy: `condition-semantics.ts` and
-  `count-bounds.ts`. `integration/` holds the cross-package tests that drive a
-  real linter. `index.ts` stays at the root — the public seam, three values plus
-  types. Imports the payload types type-only; zero runtime dependencies.
-  Vitest-tested.
-- **Core** (`packages/eslint-plugin/src/contracts/`) — pure, and laid out by
-  subject. `rendered-tree/` holds the facts the adapter owes it
-  (`rendered-tree.ts`) and the semantics read off them (`coexistence.ts`,
-  `count-bounds.ts`). `rule-table/` holds the row types (`rows.ts`), the JSON
-  schema (`rows-schema.ts`), the runtime validator (`validate-rows.ts`) and the
-  shorthand normalizers (`shorthand.ts`) — the single source of truth for what
-  the plugin accepts. `activation/` holds the two halves of activation, the
-  import gate (`import-gate.ts`) and the when-condition pool
-  (`when-condition-pool.ts`). `facets/` holds one module per facet — its
-  prepare, combine and evaluate — plus the slots facet's placement pass
-  (`slot-placement.ts`). At the top sit `facet-registry.ts`, the entry point
-  that groups, activates and dispatches; `violation.ts`, what every evaluator
-  returns; and `message-text.ts`, the wording helpers. The row's three encodings
-  are pinned to agree: a shared corpus of row fixtures, typed against the rows,
-  asserts the schema rejects malformed shape and the validator catches what the
-  schema deliberately lets through, and no field escapes both. No ESLint
-  imports in shipped code — `rows-schema.test.ts` drives a `Linter` to prove
-  what ESLint itself accepts, which a test may do where the core may not.
-  Vitest-tested.
+  type-safe DSL, owner of consumer-facing type safety. `authoring/` is the
+  DSL: the collector, the `contract` builder with its children/props/
+  descendants maps and branch deltas, the condition constructors, and the
+  type-level names checked against the bound module. `compile/` turns
+  contracts into the rule table — shorthand expansion, when-conjunction,
+  facet fan-out, the frozen result and its `rules()`. `check/` is the
+  unsatisfiability check and the syntactic exclusivity it decides pairs with.
+  `pinned/` holds the ADR-0002 mirrors, each beside the agreement test that
+  pins it to the core's copy. `integration/` drives a real linter.
+  `index.ts` is the public seam. Zero runtime dependencies. Vitest-tested.
+- **Core** (`packages/eslint-plugin/src/contracts/`) — pure, laid out by
+  subject. `rendered-tree/` holds the facts the adapter owes it and the
+  semantics read off them. `rule-table/` holds the row types, JSON schema,
+  runtime validator and shorthand normalizers — the single source of truth
+  for what the plugin accepts; the row's three encodings are pinned to agree
+  by a shared fixture corpus. `activation/` holds the import gate and the
+  when-condition pool (conditions interned by content, evaluated once per
+  element). `facets/` holds one module per facet — prepare, combine,
+  evaluate — plus the slots facet's placement pass. At the top:
+  `facet-registry.ts` (groups, activates, dispatches), `violation.ts`,
+  `message-text.ts`. No ESLint imports in shipped code. Vitest-tested.
 - **Adapter** (`packages/eslint-plugin/src/adapter/`) — ESLint side: collects
-  the tree via scope analysis, feeds the core, reports. `rules/` holds nothing
-  but the thirteen rule definitions, one file per facet; everything they share
-  sits above them. `facet-rule.ts` is the shared pipeline — the rule factory,
-  the `JSXElement` listener and the reporting — and `element-facts.ts` is the
-  adapter's side of the rendered-tree seam, assembling one element's
-  `ElementFacts` out of lazy thunks over a per-node cache. `collect/` holds the
-  collectors themselves, one module per subject (`tag-name.ts`,
-  `resolution.ts`, `props.ts`, `transparent.ts`, then `slots.ts`,
-  `subtree.ts` and `ancestors.ts`, one per facet's view), re-exported through
-  the directory's `index.ts` — the only barrel below the package entry.
-  `caches.ts` holds the
-  option interner and the per-node memo, and `testing/analyze.ts` the
-  live-`SourceCode` harness the collector tests drive. RuleTester-tested.
+  the tree via scope analysis, feeds the core, reports. `rules/` holds
+  nothing but the rule definitions, one file per facet; `facet-rule.ts` is
+  the shared pipeline and `element-facts.ts` the adapter's side of the
+  rendered-tree seam, lazy thunks over a per-node cache. `collect/` holds the
+  collectors, one module per subject. RuleTester-tested.
 - **Rule table** — frozen JSON every rule takes as its option: a flat list of
   facet-discriminated rows, emitted by the builder, also hand-writable. Type
   safety at this boundary is deliberately loose (a row's component is a plain
   string); the guarantee here is the runtime one.
-- **Facet registry** — the core's one facet-specific seam: per facet, its
-  prepare, combine and evaluate functions, plus an optional supplementary index
-  the slots facet alone uses for its placement pass (the `misplaced` check keys
-  off the slot element, not the container). Everything above it — grouping,
-  activation, dispatch — is generic over rows.
