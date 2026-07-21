@@ -1,10 +1,7 @@
 import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 
-import type {
-  OpaqueCause,
-  Ref,
-} from "../../contracts/rendered-tree/rendered-tree.js";
+import type { OpaqueRegion } from "../../contracts/rendered-tree/rendered-tree.js";
 
 type SourceCode = Readonly<TSESLint.SourceCode>;
 
@@ -29,7 +26,7 @@ function abbreviate(text: string): string {
 export function classifyOpaqueRegion(
   sourceCode: SourceCode,
   node: TSESTree.Node,
-): { ref: Ref; cause: OpaqueCause; text: string } {
+): OpaqueRegion {
   if (node.type === AST_NODE_TYPES.CallExpression) {
     const callee = abbreviate(sourceCode.getText(node.callee));
     const inner = node.arguments.length > 0 ? `${callee}(…)` : `${callee}()`;
@@ -37,20 +34,17 @@ export function classifyOpaqueRegion(
     return { ref: node, cause: "dynamic-children", text: `{${inner}}` };
   }
 
-  if (
+  // A variable or member access is children handed through; anything else the
+  // collector cannot see through at all.
+  const cause =
     node.type === AST_NODE_TYPES.MemberExpression ||
     node.type === AST_NODE_TYPES.Identifier
-  ) {
-    return {
-      ref: node,
-      cause: "passthrough-children",
-      text: `{${abbreviate(sourceCode.getText(node))}}`,
-    };
-  }
+      ? "passthrough-children"
+      : "unresolvable";
 
   return {
     ref: node,
-    cause: "unresolvable",
+    cause,
     text: `{${abbreviate(sourceCode.getText(node))}}`,
   };
 }
