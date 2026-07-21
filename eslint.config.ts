@@ -97,6 +97,13 @@ export default defineConfig(
     },
   },
   {
+    // .sandcastle/ is a dev-only agent runner: it logs to the terminal by design.
+    files: [".sandcastle/**/*.ts"],
+    rules: {
+      "no-console": "off",
+    },
+  },
+  {
     files: ["packages/**/*.test.ts", "packages/**/*.test.tsx"],
     rules: {
       "@typescript-eslint/no-unsafe-assignment": "off",
@@ -161,6 +168,7 @@ export default defineConfig(
         "warn",
         {
           devDependencies: [
+            ".sandcastle/**/*.ts",
             "**/*.config.ts",
             "**/*.test.ts",
             "**/*.test.tsx",

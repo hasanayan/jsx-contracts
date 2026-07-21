@@ -20,7 +20,7 @@ attributes first, the checker where syntax stops:
   definitely matches `is("compact")`; a union is **unknown**; a type
   excluding the tested value definitely does not match.
 
-`isPresent()` therefore means *provably provided*: a required prop arriving
+`isPresent()` therefore means _provably provided_: a required prop arriving
 through a spread activates conditions without a visible attribute.
 
 ## Proof or silence

@@ -60,8 +60,8 @@ architecture hold on both sides of that change.
   matcher — import gates and specifier globs are deleted; intrinsics (`"a"`,
   `"button"`) are bare names and the only string-matched elements. Two keys,
   chosen by where the reference resolves: in-repo `(workspace-relative
-  declaration path, export, members)`; published `(package name, export,
-  members)` — the public coordinate, produced by shipped contracts
+declaration path, export, members)`; published `(package name, export,
+members)` — the public coordinate, produced by shipped contracts
   self-importing their own package.
 - **Typed linting** — a plugin requirement, not a mode: parser services
   (`projectService`) or a loud startup error. A file the TS program does not
@@ -165,7 +165,7 @@ architecture hold on both sides of that change.
   **unknown**: written attributes first, the checker where syntax stops. A
   spread's type testifies per prop — no declared property means absent, a
   required one means present, optional means unknown; prop values testify
-  the same way against `is()`. `isPresent()` means *provably provided*.
+  the same way against `is()`. `isPresent()` means _provably provided_.
   Trust is total (facts are as true as the program's types), with `any`,
   index signatures and error types demoting to unknown — `any` never reads
   as absence.

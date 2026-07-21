@@ -16,14 +16,19 @@ entries. Sharing
 a gate or module type across a family is plain partial application, not API:
 
 ```ts
-import { defineContracts, prop, anyOf, not, mergeContracts }
-  from "@jsx-contracts/authoring";
+import {
+  defineContracts,
+  prop,
+  anyOf,
+  not,
+  mergeContracts,
+} from "@jsx-contracts/authoring";
 
 export const cardRules = defineContracts(({ contract }) => {
   const cardContract = (name: string) =>
     contract<typeof import("~/components/Card")>(name, "~/components/Card.tsx");
 
-  cardContract("Card").slots({ /* … */ });
+  cardContract("Card").slots({/* … */});
 });
 ```
 
@@ -52,12 +57,12 @@ are violations; `.loose()` opts out.
 ```ts
 cardContract("Card.Heading")
   .slots({
-    ".Icon":      (s) => s.excludes(".Avatar"),
-    ".Avatar":    true,
-    ".Text":      (s) => s.exactly(1),
+    ".Icon": (s) => s.excludes(".Avatar"),
+    ".Avatar": true,
+    ".Text": (s) => s.exactly(1),
     ".Attribute": (s) => s.max(2),
-    ".Badge":     true,
-    ".Actions":   true,
+    ".Badge": true,
+    ".Actions": true,
   })
   .strictAnalysis();
 ```
@@ -77,13 +82,21 @@ resolve immediately and arguments are key-checked.
 
 ```ts
 cardContract("Card")
-  .slots({ ".Media": true, ".Heading": (s) => s.exactly(1),
-           ".Body": true, ".Footer": true })
-  .when(anyOf(prop("to").isPresent(), prop("onClick").isPresent()), (c) => c
-    .forbidSlot(".Footer")
-    .forbidDescendants("a", "button" /* … */)
-    .forbidDescendantProps("onClick", "to", "href"),
-    { because: "A card has one interaction mode." });
+  .slots({
+    ".Media": true,
+    ".Heading": (s) => s.exactly(1),
+    ".Body": true,
+    ".Footer": true,
+  })
+  .when(
+    anyOf(prop("to").isPresent(), prop("onClick").isPresent()),
+    (c) =>
+      c
+        .forbidSlot(".Footer")
+        .forbidDescendants("a", "button" /* … */)
+        .forbidDescendantProps("onClick", "to", "href"),
+    { because: "A card has one interaction mode." },
+  );
 ```
 
 Delta verbs: `forbidSlot`, `requireSlot`, `extend({ … })`,

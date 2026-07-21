@@ -34,8 +34,8 @@ config never lints differently across setups: it lints or it refuses.
 Two regimes, chosen automatically by where a reference resolves:
 
 - **In-repo** — `(declaration file path relative to the workspace root,
-  export name, member path)`: `("packages/ds/src/Card.tsx", "Card",
-  ["Heading"])`. Workspace-relative because rows are committed and shared.
+export name, member path)`: `("packages/ds/src/Card.tsx", "Card",
+["Heading"])`. Workspace-relative because rows are committed and shared.
   Moving a component file changes its key; rows regenerate from contracts at
   config load, so nothing is maintained by hand.
 - **Published** — `(package name, export name, member path)`: the public-API

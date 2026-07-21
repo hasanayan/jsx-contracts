@@ -8,7 +8,8 @@
     "eslint.config.ts",
     "knip.config.ts",
     "vitest.config.ts",
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    ".sandcastle/**/*.ts"
   ],
   "references": [
     { "path": "packages/bench" },
