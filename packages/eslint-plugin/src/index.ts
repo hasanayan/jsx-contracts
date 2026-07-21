@@ -4,6 +4,7 @@ import { ancestorGranular } from "./adapter/rules/ancestor.js";
 import { propsGranular } from "./adapter/rules/props.js";
 import { slotsGranular } from "./adapter/rules/slots.js";
 import { subtreeGranular } from "./adapter/rules/subtree.js";
+import { slotsV2Rules } from "./adapter/rules-v2/slots.js";
 
 // The payload types every rule accepts, published so a generated or
 // hand-written table can be type-checked against the real thing.
@@ -25,6 +26,19 @@ export type { SlotsMessageId } from "./adapter/rules/slots.js";
 export type { SubtreeMessageId } from "./adapter/rules/subtree.js";
 export type { PropsMessageId } from "./adapter/rules/props.js";
 export type { AncestorMessageId } from "./adapter/rules/ancestor.js";
+
+// Row schema v2 (ADR 0003). The authoring collector compiles to these; a
+// hand-written or generated v2 table can be type-checked against them.
+export type {
+  ContractRowsV2,
+  ContractRowV2,
+  FacetV2,
+  MatchKey,
+  NameMatch,
+  SlotsRowV2,
+  SlotV2,
+} from "./contracts/rule-table-v2/rows-v2.js";
+export type { ClosureMessageId } from "./adapter/rules-v2/slots.js";
 
 /**
  * The plugin's thirteen rules — one per facet feature: `slots.children`,
@@ -50,9 +64,13 @@ const granularRules = {
  */
 export type RuleId = keyof typeof granularRules;
 
-export const rules = granularRules as unknown as NonNullable<
-  ESLint.Plugin["rules"]
->;
+// The v2 children rule ships alongside the old surface (deleted in ADR 0003
+// T8). It stays out of `granularRules` — and so out of `RuleId` — so the old
+// flat-config id list is untouched; it is registered on the plugin all the same.
+export const rules = {
+  ...granularRules,
+  ...slotsV2Rules,
+} as unknown as NonNullable<ESLint.Plugin["rules"]>;
 
 /** The `@jsx-contracts` ESLint plugin. Register under that plugin name. */
 const plugin: ESLint.Plugin = {

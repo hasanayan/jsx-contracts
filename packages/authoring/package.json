@@ -21,7 +21,8 @@
   "homepage": "https://github.com/hasanayan/jsx-contracts#readme",
   "bugs": "https://github.com/hasanayan/jsx-contracts/issues",
   "exports": {
-    ".": "./build/index.js"
+    ".": "./build/index.js",
+    "./v2": "./build/v2/index.js"
   },
   "files": [
     "build/**/*.js",
