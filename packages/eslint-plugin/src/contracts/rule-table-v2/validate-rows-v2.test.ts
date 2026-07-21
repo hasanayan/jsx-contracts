@@ -166,7 +166,7 @@ describe("validateContractRowsV2", () => {
 
   it("rejects an unknown facet", () => {
     const rows = [
-      { facet: "props", match: { kind: "name", name: "Card" } },
+      { facet: "mystery", match: { kind: "name", name: "Card" } },
     ] as unknown as ContractRowsV2;
 
     expect(() => {

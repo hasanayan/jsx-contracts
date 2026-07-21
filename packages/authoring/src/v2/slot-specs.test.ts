@@ -15,7 +15,7 @@ function slotsOf(build: Parameters<typeof defineContracts>[0]): SlotV2[] {
 
   expect(set.rows).toHaveLength(1);
 
-  return row?.slots ?? [];
+  return row?.facet === "slots" ? row.slots : [];
 }
 
 describe("count verbs", () => {

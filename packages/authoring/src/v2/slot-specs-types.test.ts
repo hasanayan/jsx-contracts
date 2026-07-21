@@ -21,7 +21,9 @@ describe("slot spec types", () => {
       });
     });
 
-    expect(set.rows[0]?.slots).toHaveLength(5);
+    const row = set.rows[0];
+
+    expect(row?.facet === "slots" ? row.slots : []).toHaveLength(5);
   });
 
   it("rejects a sibling reference that is not a declared key", () => {

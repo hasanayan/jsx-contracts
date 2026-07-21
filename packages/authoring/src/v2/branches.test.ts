@@ -95,7 +95,7 @@ describe("when → branch rows", () => {
       );
     }).rows;
 
-    expect(row?.slots).toEqual([]);
+    expect(row?.facet === "slots" ? row.slots : undefined).toEqual([]);
     expect(row?.branches).toHaveLength(1);
   });
 });

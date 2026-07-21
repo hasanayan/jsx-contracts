@@ -4,6 +4,7 @@ import { ancestorGranular } from "./adapter/rules/ancestor.js";
 import { propsGranular } from "./adapter/rules/props.js";
 import { slotsGranular } from "./adapter/rules/slots.js";
 import { subtreeGranular } from "./adapter/rules/subtree.js";
+import { propsV2Rules } from "./adapter/rules-v2/props.js";
 import { slotsV2Rules } from "./adapter/rules-v2/slots.js";
 
 // The payload types every rule accepts, published so a generated or
@@ -37,6 +38,10 @@ export type {
   ConditionValueV2,
   MatchKey,
   NameMatch,
+  PropDeprecationV2,
+  PropsBranchV2,
+  PropsRowV2,
+  PropSpecV2,
   SlotBranchV2,
   SlotsRowV2,
   SlotV2,
@@ -47,6 +52,7 @@ export type {
   ClosureMessageId,
   SlotsV2MessageId,
 } from "./adapter/rules-v2/slots.js";
+export type { PropsV2MessageId } from "./adapter/rules-v2/props.js";
 
 /**
  * The plugin's thirteen rules — one per facet feature: `slots.children`,
@@ -78,6 +84,7 @@ export type RuleId = keyof typeof granularRules;
 export const rules = {
   ...granularRules,
   ...slotsV2Rules,
+  ...propsV2Rules,
 } as unknown as NonNullable<ESLint.Plugin["rules"]>;
 
 /** The `@jsx-contracts` ESLint plugin. Register under that plugin name. */

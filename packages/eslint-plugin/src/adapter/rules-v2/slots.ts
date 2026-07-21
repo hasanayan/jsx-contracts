@@ -78,6 +78,10 @@ function indexSlots(rows: ContractRowsV2): Map<string, PreparedSlotsV2> {
   const index = new Map<string, PreparedSlotsV2>();
 
   for (const row of rows) {
+    if (row.facet !== "slots") {
+      continue;
+    }
+
     const pool = createConditionPool();
     const branchIds = (row.branches ?? []).map((branch): number => {
       const id = pool.intern(branch.when);

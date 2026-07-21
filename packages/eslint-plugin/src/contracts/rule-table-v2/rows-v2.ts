@@ -133,8 +133,67 @@ export interface SlotsRowV2 {
   branches?: SlotBranchV2[];
 }
 
+/**
+ * A prop's deprecation, from `deprecated(useInstead?)`. Its presence is the
+ * deprecation; `useInstead` names the replacement to hint at, when given.
+ */
+export interface PropDeprecationV2 {
+  useInstead?: string;
+}
+
+/**
+ * One entry of a props map: a prop name bound to its constraints. The map is
+ * always loose — an entry with no constraint at all is an authoring error, so a
+ * spec always carries at least one of these fields.
+ */
+export interface PropSpecV2 {
+  /** The prop this entry constrains, i.e. the map key. */
+  prop: string;
+  /** The prop must be written on the element. */
+  required?: boolean;
+  /** Props that must be written alongside this one when it is present. */
+  requires?: string[];
+  /** Props that may not be written alongside this one; symmetry is not implied. */
+  excludes?: string[];
+  /** This prop is deprecated; present means deprecated, whatever the hint. */
+  deprecated?: PropDeprecationV2;
+}
+
+/**
+ * One conditional branch over a container's props: a props delta applied only
+ * while its condition holds. Like {@link SlotBranchV2}, branches are independent
+ * facts; each spec it carries is evaluated with the branch's witness and
+ * `because` attached to any violation it drives.
+ */
+export interface PropsBranchV2 {
+  /** The condition that activates this branch, read against the element's props. */
+  when: WhenV2;
+  /** The author's intent for this branch, appended to a violation it drives. */
+  because?: string;
+  /** Prop specs this branch adds while active, each carrying the branch witness. */
+  props: PropSpecV2[];
+}
+
+/** One statement about a component's props, v2. */
+export interface PropsRowV2 {
+  facet: "props";
+  /** The component's identity. */
+  match: MatchKey;
+  /** The prop specs, each a prop name bound to its constraints. */
+  props: PropSpecV2[];
+  /**
+   * Contract-level at-least-one-of groups: each group is satisfied when any one
+   * of its props is present. The one `requiresAnyOf` verb compiles here.
+   */
+  requiresAnyOf?: string[][];
+  /** The author's static intent, appended to a violation message. */
+  because?: string;
+  /** Conditional branches over the props facet; empty or absent for none. */
+  branches?: PropsBranchV2[];
+}
+
 /** One row of the v2 rule table. A discriminated union as facets are added. */
-export type ContractRowV2 = SlotsRowV2;
+export type ContractRowV2 = SlotsRowV2 | PropsRowV2;
 
 /** The v2 rule table: the payload a v2 rule takes. */
 export type ContractRowsV2 = ContractRowV2[];

@@ -10,6 +10,9 @@
 
 import type {
   ContractRowsV2,
+  PropSpecV2,
+  PropsBranchV2,
+  PropsRowV2,
   SlotBranchV2,
   SlotV2,
   SlotsRowV2,
@@ -20,9 +23,10 @@ import type { Condition } from "./conditions.js";
 /** Severity of an emitted rule. */
 export type Severity = "error" | "warn";
 
-// The plugin's v2 children rule id. `authoring` stays type-only over the plugin,
-// so the id is restated here rather than imported.
+// The plugin's v2 rule ids. `authoring` stays type-only over the plugin, so the
+// ids are restated here rather than imported.
 const SLOTS_CLOSURE_ID = "@jsx-contracts/slots.closure";
+const PROPS_CONTRACT_ID = "@jsx-contracts/props.contract";
 
 /**
  * The spec-builder a slot callback receives. Every verb is local to the slot it
@@ -69,13 +73,59 @@ export type SlotsMap = Record<string, SlotSpec>;
  */
 export type SlotsMapOf<K extends string> = Record<K, SlotSpec<K>>;
 
+/**
+ * The spec-builder a props map entry receives. Every verb is local to the prop
+ * it constrains and returns the builder, so specs read as one chain:
+ * `(p) => p.required().excludes("onClick")`.
+ *
+ * Unlike a slot's siblings, `requires`/`excludes` name any prop — a co-prop
+ * need not have its own map entry (`href` excludes `onClick` without declaring
+ * it) — so these accept plain prop names.
+ */
+export interface PropSpecBuilder {
+  /** The prop must be written on the element. */
+  required(): PropSpecBuilder;
+  /** The prop may only be written alongside each named prop. */
+  requires(...props: string[]): PropSpecBuilder;
+  /** The prop may not be written alongside any named prop. */
+  excludes(...props: string[]): PropSpecBuilder;
+  /** The prop is deprecated; `useInstead` names the replacement to hint at. */
+  deprecated(useInstead?: string): PropSpecBuilder;
+}
+
+/**
+ * A prop's spec: a callback given the spec-builder. Unlike a slot, there is no
+ * `true` shorthand — a prop entry always states a constraint, and a
+ * constraint-free entry is a config-time error.
+ */
+export type PropSpec = (spec: PropSpecBuilder) => PropSpecBuilder;
+
+/** A props map: prop name → spec. */
+export type PropsMap = Record<string, PropSpec>;
+
 /** One contract's accumulating state inside the collector. */
 interface ContractState {
   readonly name: string;
   readonly from: string;
   slots: SlotV2[] | undefined;
   loose: boolean;
-  branches: SlotBranchV2[];
+  props: PropSpecV2[] | undefined;
+  requiresAnyOf: string[][];
+  branches: BranchDraft[];
+}
+
+/**
+ * One `when` call, recorded before it is split across facets. A branch can
+ * change slots, props, or both; compilation routes its slot deltas to the slots
+ * row's branches and its prop deltas to the props row's.
+ */
+interface BranchDraft {
+  when: Condition["when"];
+  because: string | undefined;
+  forbidSlots: string[];
+  requireSlots: string[];
+  extend: SlotV2[];
+  props: PropSpecV2[];
 }
 
 /**
@@ -90,6 +140,12 @@ export interface BranchDeltaBuilder {
   requireSlot: (alias: string) => BranchDeltaBuilder;
   /** Add or re-declare slots while the branch holds; a redeclared alias replaces. */
   extend: (map: SlotsMap) => BranchDeltaBuilder;
+  /**
+   * Gate prop rules on the branch condition. The specs apply only while the
+   * branch holds, and a violation one drives names the witness that turned it
+   * on.
+   */
+  props: (map: PropsMap) => BranchDeltaBuilder;
 }
 
 /** A branch delta: the callback given the {@link BranchDeltaBuilder}. */
@@ -113,6 +169,19 @@ export interface ContractBuilderV2 {
   slots: <K extends string>(map: SlotsMapOf<K>) => ContractBuilderV2;
   /** Opt out of closure: undeclared children stop being violations. */
   loose: () => ContractBuilderV2;
+  /**
+   * Declare the component's props contract. The map is always loose — every
+   * entry states a constraint, and a constraint-free entry is a config-time
+   * error. Calling it twice throws — one component, one props map.
+   *
+   * A spec's `requires`/`excludes` name any prop, declared here or not.
+   */
+  props: (map: PropsMap) => ContractBuilderV2;
+  /**
+   * Require at least one of the named props to be present — the one
+   * contract-level at-least-one-of verb. Each call adds one group.
+   */
+  requiresAnyOf: (...props: string[]) => ContractBuilderV2;
   /**
    * Add a conditional branch: a delta over the children facet applied only
    * while `condition` holds on the matched element. Branches are independent
@@ -308,24 +377,43 @@ function parseSlots(map: SlotsMap, subject: string): SlotV2[] {
   );
 }
 
-/** A recording delta builder: every verb writes to `branch` and chains. */
-function deltaRecorder(
-  branch: SlotBranchV2,
-  subject: string,
-): BranchDeltaBuilder {
-  const builder: BranchDeltaBuilder = {
-    forbidSlot(alias): BranchDeltaBuilder {
-      (branch.forbidSlots ??= []).push(alias);
+/** What one prop callback records before it is assembled into a row. */
+interface PropDraft {
+  required: boolean;
+  requires: string[];
+  excludes: string[];
+  deprecated: { useInstead?: string } | undefined;
+}
+
+function emptyPropDraft(): PropDraft {
+  return {
+    required: false,
+    requires: [],
+    excludes: [],
+    deprecated: undefined,
+  };
+}
+
+/** A recording prop spec-builder: every verb writes to `draft` and chains. */
+function propRecorder(draft: PropDraft): PropSpecBuilder {
+  const builder: PropSpecBuilder = {
+    required(): PropSpecBuilder {
+      draft.required = true;
 
       return builder;
     },
-    requireSlot(alias): BranchDeltaBuilder {
-      (branch.requireSlots ??= []).push(alias);
+    requires(...props): PropSpecBuilder {
+      draft.requires.push(...props);
 
       return builder;
     },
-    extend(map): BranchDeltaBuilder {
-      (branch.extend ??= []).push(...parseSlots(map, subject));
+    excludes(...props): PropSpecBuilder {
+      draft.excludes.push(...props);
+
+      return builder;
+    },
+    deprecated(useInstead): PropSpecBuilder {
+      draft.deprecated = useInstead === undefined ? {} : { useInstead };
 
       return builder;
     },
@@ -334,46 +422,196 @@ function deltaRecorder(
   return builder;
 }
 
-/** Compile one `when` call into a branch row, its shorthand expanded on `subject`. */
+/** Assemble one prop row, or throw when the entry states no constraint. */
+function buildPropSpec(prop: string, spec: PropSpec): PropSpecV2 {
+  const draft = emptyPropDraft();
+
+  spec(propRecorder(draft));
+
+  const constrained =
+    draft.required ||
+    draft.requires.length > 0 ||
+    draft.excludes.length > 0 ||
+    draft.deprecated !== undefined;
+
+  if (!constrained) {
+    throw new Error(
+      `defineContracts: prop "${prop}" states no constraint — every props ` +
+        "entry must call at least one of required/requires/excludes/deprecated.",
+    );
+  }
+
+  const row: PropSpecV2 = { prop };
+
+  if (draft.required) {
+    row.required = true;
+  }
+
+  if (draft.requires.length > 0) {
+    row.requires = [...draft.requires];
+  }
+
+  if (draft.excludes.length > 0) {
+    row.excludes = [...draft.excludes];
+  }
+
+  if (draft.deprecated !== undefined) {
+    row.deprecated = draft.deprecated;
+  }
+
+  return row;
+}
+
+function parseProps(map: PropsMap): PropSpecV2[] {
+  return Object.entries(map).map(([prop, spec]) => buildPropSpec(prop, spec));
+}
+
+/** A recording delta builder: every verb writes to `draft` and chains. */
+function deltaRecorder(draft: BranchDraft, subject: string): BranchDeltaBuilder {
+  const builder: BranchDeltaBuilder = {
+    forbidSlot(alias): BranchDeltaBuilder {
+      draft.forbidSlots.push(alias);
+
+      return builder;
+    },
+    requireSlot(alias): BranchDeltaBuilder {
+      draft.requireSlots.push(alias);
+
+      return builder;
+    },
+    extend(map): BranchDeltaBuilder {
+      draft.extend.push(...parseSlots(map, subject));
+
+      return builder;
+    },
+    props(map): BranchDeltaBuilder {
+      draft.props.push(...parseProps(map));
+
+      return builder;
+    },
+  };
+
+  return builder;
+}
+
+/** Record one `when` call into a branch draft, shorthand expanded on `subject`. */
 function buildBranch(
   condition: Condition,
   delta: BranchDelta,
   options: BranchOptions | undefined,
   subject: string,
-): SlotBranchV2 {
-  const branch: SlotBranchV2 = { when: condition.when };
+): BranchDraft {
+  const draft: BranchDraft = {
+    when: condition.when,
+    because: options?.because,
+    forbidSlots: [],
+    requireSlots: [],
+    extend: [],
+    props: [],
+  };
 
-  if (options?.because !== undefined) {
-    branch.because = options.because;
+  delta(deltaRecorder(draft, subject));
+
+  return draft;
+}
+
+/** The slot half of a branch, or `undefined` when it changes no slots. */
+function slotBranchOf(draft: BranchDraft): SlotBranchV2 | undefined {
+  if (
+    draft.forbidSlots.length === 0 &&
+    draft.requireSlots.length === 0 &&
+    draft.extend.length === 0
+  ) {
+    return undefined;
   }
 
-  delta(deltaRecorder(branch, subject));
+  const branch: SlotBranchV2 = { when: draft.when };
+
+  if (draft.because !== undefined) {
+    branch.because = draft.because;
+  }
+
+  if (draft.extend.length > 0) {
+    branch.extend = draft.extend;
+  }
+
+  if (draft.forbidSlots.length > 0) {
+    branch.forbidSlots = draft.forbidSlots;
+  }
+
+  if (draft.requireSlots.length > 0) {
+    branch.requireSlots = draft.requireSlots;
+  }
+
+  return branch;
+}
+
+/** The props half of a branch, or `undefined` when it changes no props. */
+function propsBranchOf(draft: BranchDraft): PropsBranchV2 | undefined {
+  if (draft.props.length === 0) {
+    return undefined;
+  }
+
+  const branch: PropsBranchV2 = { when: draft.when, props: draft.props };
+
+  if (draft.because !== undefined) {
+    branch.because = draft.because;
+  }
 
   return branch;
 }
 
 function compileStates(states: ContractState[]): ContractRowsV2 {
-  const rows: SlotsRowV2[] = [];
+  const rows: ContractRowsV2 = [];
 
   for (const state of states) {
-    // A contract with neither a children map nor a branch declares no children
-    // facet — no row.
-    if (state.slots === undefined && state.branches.length === 0) {
-      continue;
+    const slotBranches = state.branches
+      .map(slotBranchOf)
+      .filter((branch): branch is SlotBranchV2 => branch !== undefined);
+
+    const propsBranches = state.branches
+      .map(propsBranchOf)
+      .filter((branch): branch is PropsBranchV2 => branch !== undefined);
+
+    // A contract with neither a children map nor a slot-changing branch declares
+    // no children facet — no slots row.
+    if (state.slots !== undefined || slotBranches.length > 0) {
+      const row: SlotsRowV2 = {
+        facet: "slots",
+        match: { kind: "name", name: state.name },
+        slots: state.slots ?? [],
+        closed: !state.loose,
+      };
+
+      if (slotBranches.length > 0) {
+        row.branches = slotBranches;
+      }
+
+      rows.push(row);
     }
 
-    const row: SlotsRowV2 = {
-      facet: "slots",
-      match: { kind: "name", name: state.name },
-      slots: state.slots ?? [],
-      closed: !state.loose,
-    };
+    // Likewise, a props row only when something states a prop rule.
+    if (
+      state.props !== undefined ||
+      state.requiresAnyOf.length > 0 ||
+      propsBranches.length > 0
+    ) {
+      const row: PropsRowV2 = {
+        facet: "props",
+        match: { kind: "name", name: state.name },
+        props: state.props ?? [],
+      };
 
-    if (state.branches.length > 0) {
-      row.branches = state.branches;
+      if (state.requiresAnyOf.length > 0) {
+        row.requiresAnyOf = state.requiresAnyOf;
+      }
+
+      if (propsBranches.length > 0) {
+        row.branches = propsBranches;
+      }
+
+      rows.push(row);
     }
-
-    rows.push(row);
   }
 
   return rows;
@@ -386,7 +624,17 @@ export function makeRuleSet(rows: ContractRowsV2): RuleSetV2 {
     rules(
       severity: Severity = "error",
     ): Record<string, [Severity, ContractRowsV2]> {
-      return { [SLOTS_CLOSURE_ID]: [severity, rows] };
+      const entries: Record<string, [Severity, ContractRowsV2]> = {
+        [SLOTS_CLOSURE_ID]: [severity, rows],
+      };
+
+      // The props rule ships only when a contract states props: each rule
+      // filters the table to its own facet, so a props-free table needs no entry.
+      if (rows.some((row) => row.facet === "props")) {
+        entries[PROPS_CONTRACT_ID] = [severity, rows];
+      }
+
+      return entries;
     },
   };
 }
@@ -423,6 +671,33 @@ function makeBuilder(
     loose(): ContractBuilderV2 {
       guard();
       state.loose = true;
+
+      return builder;
+    },
+    props(map): ContractBuilderV2 {
+      guard();
+
+      if (state.props !== undefined) {
+        throw new Error(
+          `defineContracts: contract "${state.name}" declares props twice.`,
+        );
+      }
+
+      state.props = parseProps(map);
+
+      return builder;
+    },
+    requiresAnyOf(...props): ContractBuilderV2 {
+      guard();
+
+      if (props.length === 0) {
+        throw new Error(
+          `defineContracts: contract "${state.name}" requiresAnyOf() needs ` +
+            "at least one prop.",
+        );
+      }
+
+      state.requiresAnyOf.push([...props]);
 
       return builder;
     },
@@ -473,6 +748,8 @@ export function defineContracts(
       from,
       slots: undefined,
       loose: false,
+      props: undefined,
+      requiresAnyOf: [],
       branches: [],
     };
 

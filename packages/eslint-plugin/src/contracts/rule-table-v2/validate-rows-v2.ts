@@ -7,6 +7,9 @@
 import type {
   ContractRowsV2,
   MatchKey,
+  PropSpecV2,
+  PropsBranchV2,
+  PropsRowV2,
   SlotBranchV2,
   SlotsRowV2,
   WhenV2,
@@ -210,6 +213,103 @@ function validateSlotsRow(row: SlotsRowV2, fail: Fail): void {
   }
 }
 
+/** A prop spec must name its prop and carry at least one real constraint. */
+function validatePropSpec(spec: PropSpecV2, label: string, fail: Fail): void {
+  if (typeof spec.prop !== "string" || spec.prop.length === 0) {
+    fail(`${label} must name a prop`);
+  }
+
+  for (const relation of ["requires", "excludes"] as const) {
+    const refs = spec[relation];
+
+    if (refs === undefined) {
+      continue;
+    }
+
+    if (!Array.isArray(refs)) {
+      fail(`${label} "${spec.prop}" ${relation} must be an array`);
+    }
+
+    for (const ref of refs as unknown[]) {
+      if (typeof ref !== "string" || ref.length === 0) {
+        fail(`${label} "${spec.prop}" ${relation} must name props`);
+      }
+    }
+  }
+
+  const constrained =
+    spec.required === true ||
+    (spec.requires?.length ?? 0) > 0 ||
+    (spec.excludes?.length ?? 0) > 0 ||
+    spec.deprecated !== undefined;
+
+  if (!constrained) {
+    fail(`${label} "${spec.prop}" carries no constraint`);
+  }
+}
+
+function validatePropsBranch(
+  branch: PropsBranchV2,
+  label: string,
+  fail: Fail,
+): void {
+  if (typeof branch !== "object") {
+    fail(`${label} must be an object`);
+  }
+
+  validateWhen(branch.when, label, fail);
+
+  if (branch.because !== undefined && typeof branch.because !== "string") {
+    fail(`${label} because must be a string`);
+  }
+
+  if (!Array.isArray(branch.props)) {
+    fail(`${label} props must be an array`);
+  }
+
+  for (const spec of branch.props) {
+    validatePropSpec(spec, `${label} prop spec`, fail);
+  }
+}
+
+function validatePropsRow(row: PropsRowV2, fail: Fail): void {
+  if (!Array.isArray(row.props)) {
+    fail("props must be an array");
+  }
+
+  for (const spec of row.props) {
+    validatePropSpec(spec, "prop spec", fail);
+  }
+
+  if (row.requiresAnyOf !== undefined) {
+    if (!Array.isArray(row.requiresAnyOf)) {
+      fail("requiresAnyOf must be an array");
+    }
+
+    for (const group of row.requiresAnyOf) {
+      if (!Array.isArray(group) || group.length === 0) {
+        fail("requiresAnyOf group must be a non-empty array of props");
+      }
+
+      for (const name of group as unknown[]) {
+        if (typeof name !== "string" || name.length === 0) {
+          fail("requiresAnyOf group must name props");
+        }
+      }
+    }
+  }
+
+  if (row.branches !== undefined) {
+    if (!Array.isArray(row.branches)) {
+      fail("branches must be an array");
+    }
+
+    row.branches.forEach((branch, index) => {
+      validatePropsBranch(branch, `branch ${String(index)}`, fail);
+    });
+  }
+}
+
 /** Shape-validate a v2 rule table. Throws on the first malformed row. */
 export function validateContractRowsV2(rows: ContractRowsV2): void {
   for (const [index, row] of rows.entries()) {
@@ -221,11 +321,20 @@ export function validateContractRowsV2(rows: ContractRowsV2): void {
     // Read defensively: a hand-written table can carry any facet string.
     const facet: unknown = (row as { facet: unknown }).facet;
 
-    if (facet !== "slots") {
-      fail(`has unknown facet ${JSON.stringify(facet)}`);
+    validateMatch(row.match, "row", fail);
+
+    if (facet === "slots") {
+      validateSlotsRow(row as SlotsRowV2, fail);
+
+      continue;
     }
 
-    validateMatch(row.match, "row", fail);
-    validateSlotsRow(row, fail);
+    if (facet === "props") {
+      validatePropsRow(row as PropsRowV2, fail);
+
+      continue;
+    }
+
+    fail(`has unknown facet ${JSON.stringify(facet)}`);
   }
 }

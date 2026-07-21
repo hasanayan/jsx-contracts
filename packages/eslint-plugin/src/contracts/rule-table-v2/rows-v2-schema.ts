@@ -62,6 +62,34 @@ const branch: JsonSchema = {
   additionalProperties: false,
 };
 
+const propSpec: JsonSchema = {
+  type: "object",
+  properties: {
+    prop: { type: "string" },
+    required: { type: "boolean" },
+    requires: { type: "array", items: { type: "string" } },
+    excludes: { type: "array", items: { type: "string" } },
+    deprecated: {
+      type: "object",
+      properties: { useInstead: { type: "string" } },
+      additionalProperties: false,
+    },
+  },
+  required: ["prop"],
+  additionalProperties: false,
+};
+
+const propsBranch: JsonSchema = {
+  type: "object",
+  properties: {
+    when,
+    because: { type: "string" },
+    props: { type: "array", items: propSpec },
+  },
+  required: ["when", "props"],
+  additionalProperties: false,
+};
+
 export const contractRowsV2Schema: JsonSchema[] = [
   {
     type: "array",
@@ -78,6 +106,22 @@ export const contractRowsV2Schema: JsonSchema[] = [
             branches: { type: "array", items: branch },
           },
           required: ["facet", "match", "slots", "closed"],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: {
+            facet: { type: "string", enum: ["props"] },
+            match: matchKey,
+            props: { type: "array", items: propSpec },
+            requiresAnyOf: {
+              type: "array",
+              items: { type: "array", items: { type: "string" } },
+            },
+            because: { type: "string" },
+            branches: { type: "array", items: propsBranch },
+          },
+          required: ["facet", "match", "props"],
           additionalProperties: false,
         },
       ],
