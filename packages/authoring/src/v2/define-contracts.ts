@@ -22,21 +22,49 @@ export type Severity = "error" | "warn";
 const SLOTS_CLOSURE_ID = "@jsx-contracts/slots.closure";
 
 /**
- * The spec-builder a slot callback receives. No verbs yet — bounds and
- * relationships arrive with ADR 0003 T2 — so the callback form is accepted and
- * extended in place then.
+ * The spec-builder a slot callback receives. Every verb is local to the slot it
+ * constrains and returns the builder, so specs read as one chain:
+ * `(s) => s.exactly(1).requires(".Icon")`.
+ *
+ * `Sibling` is the map's own key union, so `requires`/`excludes` only accept
+ * declared siblings — a typo is a compile error with autocomplete.
  */
-export type SlotSpecBuilder = Record<never, never>;
+export interface SlotSpecBuilder<Sibling extends string = string> {
+  /**
+   * Bind the slot's identity. Required on a bare capitalized key; a config-time
+   * error on a dotted key, which already implies its identity from the subject.
+   * `from` is the element's own import gate for a foreign component.
+   */
+  is(name: string, from?: string): SlotSpecBuilder<Sibling>;
+  /** The slot must appear at least `count` times; the upper bound stays open. */
+  min(count: number): SlotSpecBuilder<Sibling>;
+  /** The slot may appear at most `count` times; the lower bound stays nought. */
+  max(count: number): SlotSpecBuilder<Sibling>;
+  /** The slot must appear exactly `count` times: both bounds at once. */
+  exactly(count: number): SlotSpecBuilder<Sibling>;
+  /** The slot may only render alongside each named sibling. */
+  requires(...siblings: Sibling[]): SlotSpecBuilder<Sibling>;
+  /** The slot may not render alongside any named sibling; symmetry is computed. */
+  excludes(...siblings: Sibling[]): SlotSpecBuilder<Sibling>;
+}
 
 /**
  * A slot's spec: `true` for an unconstrained slot, or a callback given the
- * spec-builder. A dotted key already implies the slot's identity; `true` and a
- * bare callback add no constraint.
+ * spec-builder. A dotted key already implies the slot's identity; `true` is
+ * `(s) => s.is("<key>")`.
  */
-export type SlotSpec = true | ((spec: SlotSpecBuilder) => SlotSpecBuilder);
+export type SlotSpec<Sibling extends string = string> =
+  true | ((spec: SlotSpecBuilder<Sibling>) => SlotSpecBuilder<Sibling>);
 
 /** A slots map: alias key → spec. */
 export type SlotsMap = Record<string, SlotSpec>;
+
+/**
+ * A slots map whose sibling references are keyed to its own aliases: `K` is
+ * inferred from the map's keys, so a spec's `requires`/`excludes` only accept
+ * the aliases actually declared.
+ */
+export type SlotsMapOf<K extends string> = Record<K, SlotSpec<K>>;
 
 /** One contract's accumulating state inside the collector. */
 interface ContractState {
@@ -51,8 +79,11 @@ export interface ContractBuilderV2 {
   /**
    * Declare the container's direct-children schema. The map is closed by
    * default. Calling it twice throws — one component, one children map.
+   *
+   * Sibling references inside a spec (`requires`/`excludes`) are typed against
+   * the map's own keys, so a mistyped alias is a compile error.
    */
-  slots: (map: SlotsMap) => ContractBuilderV2;
+  slots: <K extends string>(map: SlotsMapOf<K>) => ContractBuilderV2;
   /** Opt out of closure: undeclared children stop being violations. */
   loose: () => ContractBuilderV2;
 }
@@ -70,25 +101,168 @@ export interface RuleSetV2 {
   rules: (severity?: Severity) => Record<string, [Severity, ContractRowsV2]>;
 }
 
-/** A dotted alias implies a member of the subject; a bare alias stands alone. */
-function identityFor(alias: string, subject: string): string {
-  return alias.startsWith(".") ? `${subject}${alias}` : alias;
+/** What one slot callback records before the key form resolves its identity. */
+interface SlotDraft {
+  isCalled: boolean;
+  isName: string | undefined;
+  isFrom: string | undefined;
+  min: number | undefined;
+  max: number | undefined;
+  requires: string[];
+  excludes: string[];
 }
 
-const passthrough: SlotSpecBuilder = {};
+function emptyDraft(): SlotDraft {
+  return {
+    isCalled: false,
+    isName: undefined,
+    isFrom: undefined,
+    min: undefined,
+    max: undefined,
+    requires: [],
+    excludes: [],
+  };
+}
 
-function parseSlots(map: SlotsMap, subject: string): SlotV2[] {
-  return Object.entries(map).map(([alias, spec]) => {
-    if (typeof spec === "function") {
-      // Run the callback for its shape; T1 has no verbs to record.
-      spec(passthrough);
+/** A recording spec-builder: every verb writes to `draft` and chains. */
+function recorder(draft: SlotDraft): SlotSpecBuilder {
+  const builder: SlotSpecBuilder = {
+    is(name, from): SlotSpecBuilder {
+      draft.isCalled = true;
+      draft.isName = name;
+      draft.isFrom = from;
+
+      return builder;
+    },
+    min(count): SlotSpecBuilder {
+      draft.min = count;
+
+      return builder;
+    },
+    max(count): SlotSpecBuilder {
+      draft.max = count;
+
+      return builder;
+    },
+    exactly(count): SlotSpecBuilder {
+      draft.min = count;
+      draft.max = count;
+
+      return builder;
+    },
+    requires(...siblings): SlotSpecBuilder {
+      draft.requires.push(...siblings);
+
+      return builder;
+    },
+    excludes(...siblings): SlotSpecBuilder {
+      draft.excludes.push(...siblings);
+
+      return builder;
+    },
+  };
+
+  return builder;
+}
+
+/** A dotted name is a member of the subject; anything else stands alone. */
+function resolveName(name: string, subject: string): string {
+  return name.startsWith(".") ? `${subject}${name}` : name;
+}
+
+/** Assemble a slot row from its resolved identity and recorded spec. */
+function assembleSlot(
+  alias: string,
+  name: string,
+  from: string | undefined,
+  draft: SlotDraft,
+): SlotV2 {
+  const slot: SlotV2 = { alias, match: { kind: "name", name } };
+
+  if (from !== undefined) {
+    slot.from = from;
+  }
+
+  if (draft.min !== undefined || draft.max !== undefined) {
+    slot.count = {};
+
+    if (draft.min !== undefined) {
+      slot.count.min = draft.min;
     }
 
-    return {
+    if (draft.max !== undefined) {
+      slot.count.max = draft.max;
+    }
+  }
+
+  if (draft.requires.length > 0) {
+    slot.requires = [...draft.requires];
+  }
+
+  if (draft.excludes.length > 0) {
+    slot.excludes = [...draft.excludes];
+  }
+
+  return slot;
+}
+
+/**
+ * Resolve one map entry to a slot row. The key form decides where identity
+ * comes from: a dotted key implies it (and an explicit `is()` is a double-bind
+ * error); a bare capitalized key must call `is()`; a bare lowercase key is an
+ * intrinsic that stands as written; `true` is `is("<key>")`.
+ */
+function buildSlot(alias: string, spec: SlotSpec, subject: string): SlotV2 {
+  const dotted = alias.startsWith(".");
+
+  if (spec === true) {
+    return assembleSlot(
       alias,
-      match: { kind: "name", name: identityFor(alias, subject) },
-    };
-  });
+      resolveName(alias, subject),
+      undefined,
+      emptyDraft(),
+    );
+  }
+
+  const draft = emptyDraft();
+
+  spec(recorder(draft));
+
+  if (dotted) {
+    if (draft.isCalled) {
+      throw new Error(
+        `defineContracts: slot "${alias}" binds its identity twice — a dotted ` +
+          "key already implies is(); drop the is() call.",
+      );
+    }
+
+    return assembleSlot(alias, `${subject}${alias}`, undefined, draft);
+  }
+
+  if (draft.isCalled) {
+    return assembleSlot(
+      alias,
+      resolveName(draft.isName ?? alias, subject),
+      draft.isFrom,
+      draft,
+    );
+  }
+
+  if (/^[A-Z]/.test(alias)) {
+    throw new Error(
+      `defineContracts: slot "${alias}" must bind an identity with ` +
+        "is(name, from?) — a bare capitalized key has none to imply.",
+    );
+  }
+
+  // A bare lowercase key is an intrinsic: no identity to bind.
+  return assembleSlot(alias, alias, undefined, draft);
+}
+
+function parseSlots(map: SlotsMap, subject: string): SlotV2[] {
+  return Object.entries(map).map(([alias, spec]) =>
+    buildSlot(alias, spec, subject),
+  );
 }
 
 function compileStates(states: ContractState[]): ContractRowsV2 {
@@ -146,6 +320,8 @@ function makeBuilder(
         );
       }
 
+      // The interface keeps `K` for sibling typing; the parser reads the loose
+      // shape, so the narrowing is the callers' and this is where it is spent.
       state.slots = parseSlots(map, state.name);
 
       return builder;

@@ -97,6 +97,73 @@ describe("validateContractRowsV2", () => {
     }).toThrow(/duplicate slot alias "\.Text"/);
   });
 
+  it("accepts count bounds and sibling references", () => {
+    expect(() => {
+      validateContractRowsV2([
+        {
+          facet: "slots",
+          match: { kind: "name", name: "Card.Heading" },
+          closed: true,
+          slots: [
+            {
+              alias: ".Text",
+              match: { kind: "name", name: "Card.Heading.Text" },
+              count: { min: 1, max: 1 },
+            },
+            {
+              alias: ".Icon",
+              match: { kind: "name", name: "Card.Heading.Icon" },
+              excludes: [".Text"],
+              requires: [".Text"],
+            },
+          ],
+        },
+      ]);
+    }).not.toThrow();
+  });
+
+  it("rejects a negative count bound", () => {
+    const rows = [
+      {
+        facet: "slots",
+        match: { kind: "name", name: "Card" },
+        closed: true,
+        slots: [
+          {
+            alias: ".Text",
+            match: { kind: "name", name: "Card.Text" },
+            count: { min: -1 },
+          },
+        ],
+      },
+    ] as unknown as ContractRowsV2;
+
+    expect(() => {
+      validateContractRowsV2(rows);
+    }).toThrow(/min count must be a non-negative number/);
+  });
+
+  it("rejects a sibling reference to an undeclared slot", () => {
+    const rows = [
+      {
+        facet: "slots",
+        match: { kind: "name", name: "Card" },
+        closed: true,
+        slots: [
+          {
+            alias: ".Text",
+            match: { kind: "name", name: "Card.Text" },
+            excludes: [".Ghost"],
+          },
+        ],
+      },
+    ] as unknown as ContractRowsV2;
+
+    expect(() => {
+      validateContractRowsV2(rows);
+    }).toThrow(/excludes names "\.Ghost", which is not a declared slot/);
+  });
+
   it("rejects an unknown facet", () => {
     const rows = [
       { facet: "props", match: { kind: "name", name: "Card" } },

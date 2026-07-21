@@ -35,6 +35,15 @@ export function displayName(match: MatchKey): string {
   return match.name;
 }
 
+/**
+ * A slot's count bounds, as written. An omitted end is unconstrained; a slot
+ * with no `count` at all is 0–∞. `exactly(n)` sets both ends to `n`.
+ */
+export interface CountV2 {
+  min?: number;
+  max?: number;
+}
+
 /** One slot in a slots map: an authoring alias bound to an element identity. */
 export interface SlotV2 {
   /**
@@ -44,6 +53,23 @@ export interface SlotV2 {
   alias: string;
   /** The slot element's identity; its display name is derived from this. */
   match: MatchKey;
+  /**
+   * The slot's own import gate, from `is(name, from)` — reserved for identity
+   * matching (ADR 0004). Carried on the row today but not yet matched against.
+   */
+  from?: string;
+  /** Count bounds this slot writes. Absent leaves the slot unconstrained (0–∞). */
+  count?: CountV2;
+  /**
+   * Sibling aliases this slot requires alongside it. Named by alias — the
+   * engine resolves them to display names against this row's own slots.
+   */
+  requires?: string[];
+  /**
+   * Sibling aliases this slot excludes. Symmetry is computed and N-way groups
+   * emerge from per-member declarations; named by alias like {@link requires}.
+   */
+  excludes?: string[];
 }
 
 /** One statement about a container's direct children, v2. */

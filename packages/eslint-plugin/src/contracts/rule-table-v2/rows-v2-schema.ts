@@ -22,11 +22,24 @@ const matchKey: JsonSchema = {
   ],
 };
 
+const count: JsonSchema = {
+  type: "object",
+  properties: {
+    min: { type: "number", minimum: 0 },
+    max: { type: "number", minimum: 0 },
+  },
+  additionalProperties: false,
+};
+
 const slot: JsonSchema = {
   type: "object",
   properties: {
     alias: { type: "string" },
     match: matchKey,
+    from: { type: "string" },
+    count,
+    requires: { type: "array", items: { type: "string" } },
+    excludes: { type: "array", items: { type: "string" } },
   },
   required: ["alias", "match"],
   additionalProperties: false,

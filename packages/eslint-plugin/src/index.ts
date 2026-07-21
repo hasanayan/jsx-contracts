@@ -32,13 +32,17 @@ export type { AncestorMessageId } from "./adapter/rules/ancestor.js";
 export type {
   ContractRowsV2,
   ContractRowV2,
+  CountV2,
   FacetV2,
   MatchKey,
   NameMatch,
   SlotsRowV2,
   SlotV2,
 } from "./contracts/rule-table-v2/rows-v2.js";
-export type { ClosureMessageId } from "./adapter/rules-v2/slots.js";
+export type {
+  ClosureMessageId,
+  SlotsV2MessageId,
+} from "./adapter/rules-v2/slots.js";
 
 /**
  * The plugin's thirteen rules — one per facet feature: `slots.children`,

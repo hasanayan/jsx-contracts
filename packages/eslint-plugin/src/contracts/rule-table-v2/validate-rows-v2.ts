@@ -32,6 +32,52 @@ function validateMatch(match: unknown, subject: string, fail: Fail): void {
   }
 }
 
+function validateCount(count: unknown, alias: string, fail: Fail): void {
+  if (count === undefined) {
+    return;
+  }
+
+  if (typeof count !== "object" || count === null) {
+    fail(`slot "${alias}" count must be an object`);
+  }
+
+  for (const bound of ["min", "max"] as const) {
+    const value = (count as Record<string, unknown>)[bound];
+
+    if (value !== undefined && (typeof value !== "number" || value < 0)) {
+      fail(`slot "${alias}" ${bound} count must be a non-negative number`);
+    }
+  }
+}
+
+function validateReferences(
+  refs: unknown,
+  relation: string,
+  alias: string,
+  aliases: Set<string>,
+  fail: Fail,
+): void {
+  if (refs === undefined) {
+    return;
+  }
+
+  if (!Array.isArray(refs)) {
+    fail(`slot "${alias}" ${relation} must be an array`);
+  }
+
+  for (const ref of refs as unknown[]) {
+    if (typeof ref !== "string") {
+      fail(`slot "${alias}" ${relation} must name sibling aliases`);
+    }
+
+    if (!aliases.has(ref)) {
+      fail(
+        `slot "${alias}" ${relation} names "${ref}", which is not a declared slot`,
+      );
+    }
+  }
+}
+
 function validateSlotsRow(row: SlotsRowV2, fail: Fail): void {
   if (typeof row.closed !== "boolean") {
     fail("closed must be a boolean");
@@ -54,6 +100,14 @@ function validateSlotsRow(row: SlotsRowV2, fail: Fail): void {
 
     aliases.add(slot.alias);
     validateMatch(slot.match, `slot "${slot.alias}"`, fail);
+    validateCount(slot.count, slot.alias, fail);
+  }
+
+  // A second pass: sibling references resolve against the whole map, so every
+  // alias is known before a `requires`/`excludes` is checked against it.
+  for (const slot of row.slots) {
+    validateReferences(slot.requires, "requires", slot.alias, aliases, fail);
+    validateReferences(slot.excludes, "excludes", slot.alias, aliases, fail);
   }
 }
 

@@ -43,6 +43,35 @@ const looseRows: ContractRowsV2 = [
   },
 ];
 
+const boundedRows: ContractRowsV2 = [
+  {
+    facet: "slots",
+    match: { kind: "name", name: "Card.Heading" },
+    closed: true,
+    slots: [
+      {
+        alias: ".Text",
+        match: { kind: "name", name: "Card.Heading.Text" },
+        count: { min: 1, max: 1 },
+      },
+      {
+        alias: ".Icon",
+        match: { kind: "name", name: "Card.Heading.Icon" },
+        excludes: [".Avatar"],
+      },
+      {
+        alias: ".Avatar",
+        match: { kind: "name", name: "Card.Heading.Avatar" },
+      },
+      {
+        alias: ".Actions",
+        match: { kind: "name", name: "Card.Heading.Actions" },
+        requires: [".Text"],
+      },
+    ],
+  },
+];
+
 ruleTester.run("slots.closure", slotsClosureRule, {
   valid: [
     {
@@ -60,6 +89,11 @@ ruleTester.run("slots.closure", slotsClosureRule, {
       code: "<Sidebar><Tooltip /></Sidebar>",
       options: [headingRows],
     },
+    {
+      name: "bounds, requires and excludes all satisfied",
+      code: "<Card.Heading><Card.Heading.Text /><Card.Heading.Icon /><Card.Heading.Actions /></Card.Heading>",
+      options: [boundedRows],
+    },
   ],
   invalid: [
     {
@@ -75,6 +109,27 @@ ruleTester.run("slots.closure", slotsClosureRule, {
             because: " A heading is text with an optional icon.",
           },
         },
+      ],
+    },
+    {
+      name: "a required text is missing (tooFew) and an actions has no text",
+      code: "<Card.Heading><Card.Heading.Actions /></Card.Heading>",
+      options: [boundedRows],
+      errors: [{ messageId: "tooFew" }, { messageId: "requiresSlot" }],
+    },
+    {
+      name: "two texts exceed exactly(1)",
+      code: "<Card.Heading><Card.Heading.Text /><Card.Heading.Text /></Card.Heading>",
+      options: [boundedRows],
+      errors: [{ messageId: "tooMany" }],
+    },
+    {
+      name: "an icon and an avatar exclude each other, symmetrically",
+      code: "<Card.Heading><Card.Heading.Text /><Card.Heading.Icon /><Card.Heading.Avatar /></Card.Heading>",
+      options: [boundedRows],
+      errors: [
+        { messageId: "exclusiveSlots" },
+        { messageId: "exclusiveSlots" },
       ],
     },
   ],

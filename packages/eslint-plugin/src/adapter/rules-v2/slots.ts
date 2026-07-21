@@ -7,6 +7,14 @@ import type { JSONSchema, TSESTree } from "@typescript-eslint/utils";
 import { ESLintUtils } from "@typescript-eslint/utils";
 
 import type {
+  BoundsMessageId,
+  PreparedBounds,
+} from "../../contracts/rule-table-v2/bounds.js";
+import {
+  evaluateBounds,
+  prepareBounds,
+} from "../../contracts/rule-table-v2/bounds.js";
+import type {
   ClosureMessageId,
   PreparedClosure,
 } from "../../contracts/rule-table-v2/closure.js";
@@ -21,6 +29,8 @@ import { validateContractRowsV2 } from "../../contracts/rule-table-v2/validate-r
 import { tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
 
+/** Every message the v2 slots facet reports: closure plus bounds/relations. */
+export type SlotsV2MessageId = ClosureMessageId | BoundsMessageId;
 export type { ClosureMessageId };
 
 const createRule = ESLintUtils.RuleCreator(
@@ -31,26 +41,40 @@ const messages = {
   closure:
     "<{{child}}> is not in <{{container}}>'s declared children — add it to " +
     "the contract or remove it.{{because}}",
+  tooMany: "<{{container}}> allows at most {{maxCount}} <{{name}}>.",
+  tooFew: "<{{container}}> requires at least {{minCount}} <{{name}}>.",
+  requiresSlot: "<{{name}}> in <{{container}}> requires <{{required}}>.",
+  exclusiveSlots:
+    "<{{name}}> in <{{container}}> cannot appear with {{others}}.",
 } as const;
 
+/** One container's prepared slots facet: closure and bounds together. */
+interface PreparedSlotsV2 {
+  closure: PreparedClosure;
+  bounds: PreparedBounds;
+}
+
 /** Group the v2 slots rows by container display name for lookup by tag. */
-function indexClosure(rows: ContractRowsV2): Map<string, PreparedClosure> {
-  const index = new Map<string, PreparedClosure>();
+function indexSlots(rows: ContractRowsV2): Map<string, PreparedSlotsV2> {
+  const index = new Map<string, PreparedSlotsV2>();
 
   for (const row of rows) {
-    index.set(displayName(row.match), prepareClosure(row));
+    index.set(displayName(row.match), {
+      closure: prepareClosure(row),
+      bounds: prepareBounds(row),
+    });
   }
 
   return index;
 }
 
-export const slotsClosureRule = createRule<[ContractRowsV2], ClosureMessageId>({
+export const slotsClosureRule = createRule<[ContractRowsV2], SlotsV2MessageId>({
   name: "slots.closure",
   meta: {
     type: "problem",
     docs: {
       description:
-        "Report direct children a closed container has not declared in its contract.",
+        "Enforce a container's children contract: closure, count bounds, and sibling requires/excludes.",
     },
     schema: contractRowsV2Schema as JSONSchema.JSONSchema4[],
     messages,
@@ -59,7 +83,7 @@ export const slotsClosureRule = createRule<[ContractRowsV2], ClosureMessageId>({
   create(context, [rows]) {
     validateContractRowsV2(rows);
 
-    const index = indexClosure(rows);
+    const index = indexSlots(rows);
     const { sourceCode, filename } = context;
 
     return {
@@ -77,8 +101,9 @@ export const slotsClosureRule = createRule<[ContractRowsV2], ClosureMessageId>({
         }
 
         const facts = elementFacts(sourceCode, filename, node, tag);
+        const root = facts.slotsRoot();
 
-        for (const violation of evaluateClosure(prepared, facts.slotsRoot())) {
+        for (const violation of evaluateClosure(prepared.closure, root)) {
           const because = violation.data["because"] ?? "";
 
           context.report({
@@ -89,6 +114,14 @@ export const slotsClosureRule = createRule<[ContractRowsV2], ClosureMessageId>({
               container: violation.data["container"] ?? "",
               because: because === "" ? "" : ` ${because}`,
             },
+          });
+        }
+
+        for (const violation of evaluateBounds(prepared.bounds, root)) {
+          context.report({
+            node: violation.ref as TSESTree.Node,
+            messageId: violation.messageId,
+            data: violation.data,
           });
         }
       },

@@ -13,5 +13,6 @@ export type {
   SlotSpec,
   SlotSpecBuilder,
   SlotsMap,
+  SlotsMapOf,
 } from "./define-contracts.js";
 export { mergeContracts } from "./merge-contracts.js";
