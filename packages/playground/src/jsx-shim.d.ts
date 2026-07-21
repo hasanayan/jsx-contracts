@@ -1,6 +1,4 @@
-// Minimal ambient JSX shim so the playground can typecheck .tsx files without
-// pulling in React. Uses the classic runtime (React.createElement) backed by a
-// global stub. Replace with real framework types if needed.
+// Minimal ambient JSX shim so .tsx files typecheck without pulling in React.
 
 declare global {
   namespace JSX {

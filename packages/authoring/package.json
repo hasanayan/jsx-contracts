@@ -1,0 +1,48 @@
+{
+  "name": "@jsx-contracts/authoring",
+  "version": "0.0.9",
+  "type": "module",
+  "license": "MIT",
+  "description": "Type-safe authoring API for JSX composition contracts — contractsFor and the fluent contract() builder that compile to the rule table the @jsx-contracts/eslint-plugin rules consume.",
+  "keywords": [
+    "jsx",
+    "react",
+    "composition",
+    "contracts",
+    "slots",
+    "design-system",
+    "eslint"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hasanayan/jsx-contracts.git",
+    "directory": "packages/authoring"
+  },
+  "homepage": "https://github.com/hasanayan/jsx-contracts#readme",
+  "bugs": "https://github.com/hasanayan/jsx-contracts/issues",
+  "exports": {
+    ".": "./build/index.js"
+  },
+  "files": [
+    "build/**/*.js",
+    "build/**/*.js.map",
+    "build/**/*.d.ts",
+    "build/**/*.d.ts.map"
+  ],
+  "sideEffects": false,
+  "devDependencies": {
+    "@jsx-contracts/eslint-plugin": "workspace:*",
+    "@typescript-eslint/utils": "8.62.1",
+    "eslint": "9.39.4",
+    "typescript-eslint": "8.62.1",
+    "vitest": "4.1.9"
+  },
+  "peerDependencies": {
+    "@jsx-contracts/eslint-plugin": ">=0.0.9"
+  },
+  "peerDependenciesMeta": {
+    "@jsx-contracts/eslint-plugin": {
+      "optional": true
+    }
+  }
+}

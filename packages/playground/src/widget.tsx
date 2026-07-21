@@ -1,6 +1,4 @@
-// A fake design system to exercise the rules through a real ESLint run.
-// Object.assign builds the compound component so dotted JSX members
-// (Widget.Tray.Title) type-check under the playground's jsx shim.
+// A fake component module to exercise the rules through a real ESLint run.
 
 interface WidgetProps {
   variant?: string;

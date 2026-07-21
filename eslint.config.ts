@@ -19,7 +19,6 @@ export default defineConfig(
     ignores: ["packages/*/build/", "**/*.d.ts", "scripts/"],
   },
 
-  // Core ESLint
   eslint.configs.recommended,
   {
     rules: {
@@ -41,7 +40,6 @@ export default defineConfig(
     },
   },
 
-  // TypeScript
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
   {
@@ -107,7 +105,6 @@ export default defineConfig(
     },
   },
 
-  // Stylistic
   stylistic.configs["disable-legacy"],
   {
     plugins: { stylistic },
@@ -150,7 +147,6 @@ export default defineConfig(
     },
   },
 
-  // Imports
   importPlugin.flatConfigs.typescript,
   {
     settings: {
@@ -203,7 +199,6 @@ export default defineConfig(
     },
   },
 
-  // File naming conventions
   { plugins: { "check-file": checkFile } },
   {
     files: ["packages/*/src/**"],
@@ -222,7 +217,6 @@ export default defineConfig(
     },
   },
 
-  // Vitest
   {
     files: ["**/*.test.ts", "**/*.test.tsx"],
     extends: [vitest.configs.recommended],
@@ -236,8 +230,6 @@ export default defineConfig(
     },
   },
 
-  // The @jsx-contracts rules, scoped to the playground's JSX, driven by the
-  // payloads compiled in packages/playground/src/contracts.ts.
   {
     files: ["packages/playground/src/**/*.tsx"],
     plugins: { "@jsx-contracts": jsxContracts },

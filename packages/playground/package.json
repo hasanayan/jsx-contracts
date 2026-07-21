@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@jsx-contracts/eslint-plugin": "workspace:*"
+    "@jsx-contracts/authoring": "workspace:*"
   }
 }
