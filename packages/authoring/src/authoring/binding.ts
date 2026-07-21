@@ -19,7 +19,7 @@ interface BoundContract<Module> {
 
 /**
  * Bind a gate and a module's types once, and destructure what you need off the
- * result: the import gate is stated for the whole design system rather than
+ * result: the import gate is stated for the whole bound module rather than
  * repeated per component, and component names are completed and checked against
  * the module's capitalized export paths, so a typo fails to compile.
  * `typeof import("...")` is type-only; the module is never loaded at runtime.

@@ -21,7 +21,7 @@ export type ComponentNames<Module> = unknown extends Module
   : ComponentPaths<Module>;
 
 /**
- * What a binding carries into a builder's types: the design system's module,
+ * What a binding carries into a builder's types: the bound module,
  * referenced type-only, and the component's own name as a literal. The type
  * itself is the unbound case — an unknown module and an unnarrowed component
  * name — which is the default a builder degrades to.

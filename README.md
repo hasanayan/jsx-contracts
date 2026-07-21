@@ -24,8 +24,8 @@ Requires ESLint 9+ (flat config).
 import jsxContracts from "@jsx-contracts/eslint-plugin";
 import { contractsFor, mergeContracts } from "@jsx-contracts/authoring";
 
-// The import gate — and, optionally, the design system's module type — stated
-// once for the whole design system. The condition constructors come off the
+// The import gate — and, optionally, the bound module's type — stated
+// once for that whole module. The condition constructors come off the
 // same binding.
 const { contract, prop } = contractsFor<typeof import("@acme/ds")>("@acme/ds");
 
@@ -121,14 +121,14 @@ wouldn't do) and share the per-file work across every variant.
 
 ### The binding
 
-`contractsFor` states the import gate once for a whole design system, and
+`contractsFor` states the import gate once for a whole module, and
 destructuring `contract` off it is how you reach a builder — no contract
 repeats the gate. The condition constructors — `prop`, `allOf`, `anyOf`, `not` —
 come off the same binding, so they never occupy package-level names. Give it
-your design system's module type and component names are autocompleted and
+the bound module's type and component names are autocompleted and
 checked against its capitalized export paths, so a typo, or a component later
 renamed away, fails to compile. The type import is erased
-at build time; ESLint never loads the design system. Without a type argument
+at build time; ESLint never loads the bound module. Without a type argument
 the names widen to plain `string`:
 
 ```ts
@@ -188,7 +188,7 @@ export const contracts = mergeContracts(tray, widget);
 
 ### Conditional rules
 
-A design system's contracts are rarely uniform across a component's whole
+Contracts are rarely uniform across a component's whole
 surface: `Button` needs `href` only when it renders as an anchor, `Widget.Tray`
 accepts fewer slots in its compact variant. `.when(condition, rules)` gates any
 rule on any facet on a **condition** over the element's own props.
@@ -367,7 +367,7 @@ const contracts = mergeContracts(widgetContract, tabsContract);
   `exclusive` (slot groups that may not co-render together).
 - **Strict mode** — statically unresolvable children become violations instead
   of being skipped.
-- **Descendant counts** — real design systems tolerate wrapper elements between
+- **Descendant counts** — real component trees tolerate wrapper elements between
   a root and its parts (`<Tabs.Root><div><Tabs.List /></div></Tabs.Root>`),
   which the direct-child slots facet can't see. Require an element within count
   bounds _anywhere below_ a component: exactly one `Tabs.List`, at most one
@@ -512,7 +512,7 @@ collects that model from the AST. The plugin owns both halves of its own input c
 rule table's TypeScript shapes, and the JSON schema plus runtime validators
 beside them. `packages/authoring` is the authoring layer
 (`@jsx-contracts/authoring`) — `contractsFor`, which binds the import gate and
-the design system's types, the fluent `contract()` builder it hands back, and
+the bound module's types, the fluent `contract()` builder it hands back, and
 the `findUnsatisfiable` check, which reasons over the condition trees the plugin
 only ever sees as payload — which imports those types type-only and compiles to them, so it keeps zero runtime dependencies. `packages/playground` is a manual
 smoke-check only; behaviour is verified by tests.

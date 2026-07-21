@@ -760,7 +760,7 @@ describe("nameless contracts", () => {
   });
 });
 
-// A fake design-system module type, so the shorthand checks below have export
+// A fake bound module type, so the shorthand checks below have export
 // paths to resolve against. `Widget.Tray` has parts under it; `Widget.Footer`
 // is a leaf, and `Widget.Tray.Title` sits at the deepest level the module's
 // types resolve.

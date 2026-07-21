@@ -8,13 +8,13 @@ and commits.
 - **Contract** — all jsx-contracts enforces about one component: import gate +
   facets. Authored as a `contract()` chain, one per component; compiles to one
   **row** per facet per condition.
-- **Binding** — `contractsFor(gate)`, optionally given the design system's
-  module type: it states the import gate once for a whole design system and
+- **Binding** — `contractsFor(gate)`, optionally given the bound module's type:
+  it states the import gate once for that whole module and
   hands back the `contract` starter — the only way to reach a builder — together
   with the condition constructors (`prop`, `allOf`, `anyOf`, `not`), so those
   names never occupy package-level exports. The module is referenced type-only,
   so component names are checked against its capitalized export paths without
-  the design system ever being loaded. A component from another package needs
+  the bound module ever being loaded. A component from another package needs
   its own binding.
 - **Condition** — a value that gates a rule: `prop(name).is(...)` /
   `.isPresent()`, composed with `allOf`, `anyOf` and `not`, nested freely.

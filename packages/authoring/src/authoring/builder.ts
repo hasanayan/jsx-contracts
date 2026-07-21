@@ -255,13 +255,13 @@ export type Fragment<SlotKey extends string = never> = ContractMethods<
 /**
  * Start a fluent contract. Internal: consumers reach one by destructuring
  * `contract` off a `contractsFor` binding, which supplies `from` — the gate is
- * stated once for the whole design system rather than repeated per component.
+ * stated once for the whole bound module rather than repeated per component.
  * Called with no name it builds a nameless contract instead, for `when`.
  *
  * The type-state enforces order: slots must be declared before
  * `slotRequires`/`exclusiveSlots` can reference them, and count bounds are
  * offered only directly after the declaration they bound. The binding travels
- * with a named builder — the design-system module, and the component's own name
+ * with a named builder — the bound module, and the component's own name
  * captured as a literal — so shorthand part names can be checked against the
  * module's export paths.
  *

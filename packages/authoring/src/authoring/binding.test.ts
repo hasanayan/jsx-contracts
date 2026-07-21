@@ -85,7 +85,7 @@ describe("contractsFor", () => {
   });
 });
 
-// A fake design-system module type for `contractsFor`'s type-level checks.
+// A fake bound module type for `contractsFor`'s type-level checks.
 interface WidgetModule {
   Widget: ((props: unknown) => unknown) & {
     Tray: ((props: unknown) => unknown) & {

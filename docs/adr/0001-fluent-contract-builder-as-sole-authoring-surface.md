@@ -10,7 +10,7 @@ issue #5, which follows them and shipped as `findUnsatisfiable`.
 ## Decision
 
 `defineContracts` (the component-keyed map) is removed. `contractsFor` is the only
-entry point: it binds the import gate and the design system's types, and returns
+entry point: it binds the import gate and the bound module's types, and returns
 the builder together with the condition constructors.
 
 ```ts
@@ -185,7 +185,7 @@ Count defaults — you assert only what you write:
 
 ## Usage
 
-Bind the gate and the design system's types once:
+Bind the gate and the bound module's types once:
 
 ```ts
 // ds-contract.ts

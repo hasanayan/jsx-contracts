@@ -1,4 +1,4 @@
-// A fake design system to exercise the rules through a real ESLint run.
+// A fake component module to exercise the rules through a real ESLint run.
 
 interface WidgetProps {
   variant?: string;
