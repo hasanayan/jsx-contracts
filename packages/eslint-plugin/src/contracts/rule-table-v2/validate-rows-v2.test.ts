@@ -247,7 +247,9 @@ describe("validateContractRowsV2", () => {
         branches: [
           {
             when: { prop: "flat" },
-            forbidDescendants: [{ match: { kind: "name", name: "Card.Footer" } }],
+            forbidDescendants: [
+              { match: { kind: "name", name: "Card.Footer" } },
+            ],
           },
         ],
       },

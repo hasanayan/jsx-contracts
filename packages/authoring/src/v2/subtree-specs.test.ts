@@ -119,7 +119,11 @@ describe("descendants map → subtree row", () => {
     }, "subtree");
 
     expect(subtree.descendants).toEqual([
-      { alias: ".Tab", match: { kind: "name", name: "Tabs.Tab" }, count: { min: 1 } },
+      {
+        alias: ".Tab",
+        match: { kind: "name", name: "Tabs.Tab" },
+        count: { min: 1 },
+      },
       {
         alias: ".Panel",
         match: { kind: "name", name: "Tabs.Panel" },
@@ -227,11 +231,13 @@ describe("subtree bans as a branch delta", () => {
       { when: { prop: "onClick" }, forbidSlots: [".Footer"] },
     ]);
 
-    expect(subtree?.facet === "subtree" ? subtree.branches : undefined).toEqual([
-      {
-        when: { prop: "onClick" },
-        forbidDescendants: [{ match: { kind: "name", name: "button" } }],
-      },
-    ]);
+    expect(subtree?.facet === "subtree" ? subtree.branches : undefined).toEqual(
+      [
+        {
+          when: { prop: "onClick" },
+          forbidDescendants: [{ match: { kind: "name", name: "button" } }],
+        },
+      ],
+    );
   });
 });

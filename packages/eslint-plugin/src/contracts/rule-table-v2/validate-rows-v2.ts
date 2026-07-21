@@ -314,11 +314,7 @@ function validatePropsRow(row: PropsRowV2, fail: Fail): void {
   }
 }
 
-function validateStringArray(
-  value: unknown,
-  label: string,
-  fail: Fail,
-): void {
+function validateStringArray(value: unknown, label: string, fail: Fail): void {
   if (!Array.isArray(value)) {
     fail(`${label} must be an array`);
   }
@@ -330,11 +326,7 @@ function validateStringArray(
   }
 }
 
-function validateForbidden(
-  entries: unknown,
-  label: string,
-  fail: Fail,
-): void {
+function validateForbidden(entries: unknown, label: string, fail: Fail): void {
   if (!Array.isArray(entries)) {
     fail(`${label} must be an array`);
   }

@@ -136,7 +136,10 @@ export function evaluateSubtree(
   const forbid = new Map<string, PreparedBan>();
   const forbidProps = new Map<string, PreparedBan>();
 
-  const collect = (target: Map<string, PreparedBan>, bans: PreparedBan[]): void => {
+  const collect = (
+    target: Map<string, PreparedBan>,
+    bans: PreparedBan[],
+  ): void => {
     for (const ban of bans) {
       if (!target.has(ban.name)) {
         target.set(ban.name, ban);
@@ -176,7 +179,9 @@ export function evaluateSubtree(
     return name === "" ? undefined : forbid.get(name);
   }
 
-  function matchesForbidProps(props: SubtreeElement["props"]): PreparedBan | undefined {
+  function matchesForbidProps(
+    props: SubtreeElement["props"],
+  ): PreparedBan | undefined {
     for (const prop of props) {
       const ban = forbidProps.get(prop.name);
 

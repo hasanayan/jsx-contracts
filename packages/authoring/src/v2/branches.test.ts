@@ -16,7 +16,7 @@ function branchesOf(
 ): SlotBranchV2[] {
   const [row] = defineContracts(build).rows;
 
-  return row?.facet === "slots" ? row.branches ?? [] : [];
+  return row?.facet === "slots" ? (row.branches ?? []) : [];
 }
 
 describe("when → branch rows", () => {

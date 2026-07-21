@@ -137,8 +137,7 @@ export interface DescendantSpecBuilder {
  * identity; `true` is `(d) => d.is("<key>")`.
  */
 export type DescendantSpec =
-  | true
-  | ((spec: DescendantSpecBuilder) => DescendantSpecBuilder);
+  true | ((spec: DescendantSpecBuilder) => DescendantSpecBuilder);
 
 /** A descendants map: alias key → spec. */
 export type DescendantsMap = Record<string, DescendantSpec>;
@@ -604,7 +603,10 @@ function parseForbidList(
 }
 
 /** A recording delta builder: every verb writes to `draft` and chains. */
-function deltaRecorder(draft: BranchDraft, subject: string): BranchDeltaBuilder {
+function deltaRecorder(
+  draft: BranchDraft,
+  subject: string,
+): BranchDeltaBuilder {
   const builder: BranchDeltaBuilder = {
     forbidSlot(alias): BranchDeltaBuilder {
       draft.forbidSlots.push(alias);

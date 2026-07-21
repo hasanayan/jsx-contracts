@@ -67,7 +67,11 @@ export function evaluateAncestor(
       violations.push({
         ref: elementRef,
         messageId: "forbiddenAncestor",
-        data: { component: prepared.component, ancestor: nearest.name, because },
+        data: {
+          component: prepared.component,
+          ancestor: nearest.name,
+          because,
+        },
       });
     }
   }
