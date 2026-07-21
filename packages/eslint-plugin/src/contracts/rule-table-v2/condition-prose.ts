@@ -23,17 +23,6 @@ function code(text: string | number | boolean): string {
   return `\`${String(text)}\``;
 }
 
-/** Join literals as an or-list: "`a`", "`a` or `b`", "`a`, `b` or `c`". */
-function orList(values: (string | number | boolean)[]): string {
-  const rendered = values.map(code);
-
-  if (rendered.length <= 1) {
-    return rendered.join("");
-  }
-
-  return `${rendered.slice(0, -1).join(", ")} or ${rendered.at(-1) ?? ""}`;
-}
-
 function renderProp(test: PropTest, subject: string, negated: boolean): string {
   if (test.values === undefined) {
     return negated
@@ -43,10 +32,13 @@ function renderProp(test: PropTest, subject: string, negated: boolean): string {
 
   const verb = negated ? "is not" : "is";
 
-  return `${code(subject)}'s ${code(test.prop)} ${verb} ${orList(test.values)}`;
+  return `${code(subject)}'s ${code(test.prop)} ${verb} ${formatList(
+    test.values.map(code),
+    "or",
+  )}`;
 }
 
-function renderPositive(when: WhenV2, subject: string): string {
+function render(when: WhenV2, subject: string): string {
   if ("all" in when) {
     return formatList(
       when.all.map((operand) => render(operand, subject)),
@@ -75,11 +67,7 @@ function renderNegated(when: WhenV2, subject: string): string {
     return renderProp(when, subject, true);
   }
 
-  return `not (${renderPositive(when, subject)})`;
-}
-
-function render(when: WhenV2, subject: string): string {
-  return renderPositive(when, subject);
+  return `not (${render(when, subject)})`;
 }
 
 /**

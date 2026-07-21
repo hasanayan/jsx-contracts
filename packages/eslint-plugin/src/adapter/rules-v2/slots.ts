@@ -149,11 +149,14 @@ export const slotsClosureRule = createRule<[ContractRowsV2], SlotsV2MessageId>({
             hasSpread: facts.hasSpread,
           };
 
-          const vocab = computeEffectiveVocabulary(prepared.row, (index) => {
-            const id = prepared.branchIds[index];
+          const vocab = computeEffectiveVocabulary(
+            prepared.row,
+            (branchIndex) => {
+              const id = prepared.branchIds[branchIndex];
 
-            return id !== undefined && prepared.pool.holdsAt(subject, id);
-          });
+              return id !== undefined && prepared.pool.holdsAt(subject, id);
+            },
+          );
 
           closure = closureOf(vocab);
           bounds = prepareBounds({ ...prepared.row, slots: vocab.slots });
