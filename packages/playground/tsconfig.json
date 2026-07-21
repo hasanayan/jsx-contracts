@@ -8,5 +8,5 @@
     "tsBuildInfoFile": "build/.tsbuildinfo"
   },
   "include": ["src"],
-  "references": [{ "path": "../helpers" }]
+  "references": [{ "path": "../authoring" }]
 }

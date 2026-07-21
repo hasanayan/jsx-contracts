@@ -13,7 +13,7 @@
   "references": [
     { "path": "packages/bench" },
     { "path": "packages/eslint-plugin" },
-    { "path": "packages/helpers" },
+    { "path": "packages/authoring" },
     { "path": "packages/playground" }
   ]
 }

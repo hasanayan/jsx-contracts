@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
-const manifestPaths = ["packages/eslint-plugin", "packages/helpers"].map(
+const manifestPaths = ["packages/eslint-plugin", "packages/authoring"].map(
   (dir) => resolve(root, dir, "package.json"),
 );
 

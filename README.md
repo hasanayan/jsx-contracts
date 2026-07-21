@@ -3,16 +3,16 @@
 ESLint plugin that enforces JSX **composition contracts** — the structural rules
 governing how a component's children may be nested and slotted. Declare each
 component's contract once with the fluent `contract()` builder (from the
-companion `@jsx-contracts/helpers` package); the plugin reports violations
+companion `@jsx-contracts/authoring` package); the plugin reports violations
 where the components are used.
 
 ## Install
 
 ```sh
-npm i -D @jsx-contracts/eslint-plugin @jsx-contracts/helpers
+npm i -D @jsx-contracts/eslint-plugin @jsx-contracts/authoring
 ```
 
-`@jsx-contracts/eslint-plugin` enforces the contracts; `@jsx-contracts/helpers`
+`@jsx-contracts/eslint-plugin` enforces the contracts; `@jsx-contracts/authoring`
 is the type-safe authoring layer (`contractsFor`, the fluent `contract()`
 builder, `mergeContracts`, and the build-time `findUnsatisfiable` check).
 Requires ESLint 9+ (flat config).
@@ -22,7 +22,7 @@ Requires ESLint 9+ (flat config).
 ```ts
 // eslint.config.ts
 import jsxContracts from "@jsx-contracts/eslint-plugin";
-import { contractsFor, mergeContracts } from "@jsx-contracts/helpers";
+import { contractsFor, mergeContracts } from "@jsx-contracts/authoring";
 
 // The import gate — and, optionally, the design system's module type — stated
 // once for the whole design system. The condition constructors come off the
@@ -133,7 +133,7 @@ the names widen to plain `string`:
 
 ```ts
 // ds-contract.ts — one binding, shared by every contract
-import { contractsFor } from "@jsx-contracts/helpers";
+import { contractsFor } from "@jsx-contracts/authoring";
 
 export const { contract, prop, allOf, anyOf, not } =
   contractsFor<typeof import("@acme/ds")>("@acme/ds");
@@ -166,7 +166,7 @@ Builders are `CompiledContracts`, so `mergeContracts` combines them with
 everything else:
 
 ```ts
-import { mergeContracts } from "@jsx-contracts/helpers";
+import { mergeContracts } from "@jsx-contracts/authoring";
 
 import { contract, prop } from "./ds-contract.js";
 
@@ -291,7 +291,7 @@ test — and it reports rather than throws, because the narrowing it describes i
 legal and may be intended:
 
 ```ts
-import { findUnsatisfiable, mergeContracts } from "@jsx-contracts/helpers";
+import { findUnsatisfiable, mergeContracts } from "@jsx-contracts/authoring";
 
 const contracts = mergeContracts(tray, button);
 const found = findUnsatisfiable(contracts, {
@@ -343,7 +343,7 @@ export const widgetContract = contract("Widget.Tray")
 ```ts
 // eslint.config.ts
 import jsxContracts from "@jsx-contracts/eslint-plugin";
-import { mergeContracts } from "@jsx-contracts/helpers";
+import { mergeContracts } from "@jsx-contracts/authoring";
 
 import { tabsContract } from "./src/tabs/contract.js";
 import { widgetContract } from "./src/widget/contract.js";
@@ -507,11 +507,11 @@ contract("Button").notInside("Button");
 
 pnpm workspace with two published packages. `packages/eslint-plugin` enforces:
 a framework-agnostic core (`src/contracts/`) that evaluates contracts over a
-pure rendered-tree model, plus ESLint adapters (`src/rules/`) that collect that
-model from the AST. The plugin owns both halves of its own input contract: the
+pure rendered-tree model, plus the ESLint adapter (`src/adapter/`) that
+collects that model from the AST. The plugin owns both halves of its own input contract: the
 rule table's TypeScript shapes, and the JSON schema plus runtime validators
-beside them. `packages/helpers` is the authoring layer
-(`@jsx-contracts/helpers`) — `contractsFor`, which binds the import gate and
+beside them. `packages/authoring` is the authoring layer
+(`@jsx-contracts/authoring`) — `contractsFor`, which binds the import gate and
 the design system's types, the fluent `contract()` builder it hands back, and
 the `findUnsatisfiable` check, which reasons over the condition trees the plugin
 only ever sees as payload — which imports those types type-only and compiles to them, so it keeps zero runtime dependencies. `packages/playground` is a manual

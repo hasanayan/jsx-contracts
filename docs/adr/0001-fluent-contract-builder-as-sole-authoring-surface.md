@@ -189,7 +189,7 @@ Bind the gate and the design system's types once:
 
 ```ts
 // ds-contract.ts
-import { contractsFor } from "@jsx-contracts/helpers";
+import { contractsFor } from "@jsx-contracts/authoring";
 
 export const { contract, prop, allOf, anyOf, not } =
   contractsFor<typeof import("@acme/ds")>("@acme/ds");
@@ -297,7 +297,7 @@ Wire them up:
 
 ```ts
 // eslint.config.ts
-import { mergeContracts } from "@jsx-contracts/helpers";
+import { mergeContracts } from "@jsx-contracts/authoring";
 
 export const contracts = mergeContracts(tray, widget, button, panel, card);
 
@@ -352,7 +352,7 @@ visible evidence, so it can report falsely where a positive condition would only
 miss: a spread may carry the very prop being negated. A condition tree containing
 a `not` is therefore inactive on an element with a spread, matching how
 `evaluateProps` already skips required-prop checks under one
-(`evaluate-props.ts:90`). Absent a spread, a missing prop satisfies a negated
+(`contracts/facets/props.ts:157`). Absent a spread, a missing prop satisfies a negated
 test.
 
 Together with "no active rows means the facet is unchecked", this has a sharper
@@ -406,9 +406,9 @@ reported element, visible in the source. It stays additive later through message
 data, with no message-id change.
 
 The payload types move to the eslint-plugin, which is the package that consumes
-them and already owns the JSON schema and the runtime validators; helpers imports
+them and already owns the JSON schema and the runtime validators; the authoring package imports
 them type-only. Type safety at that boundary stays deliberately loose — a row's
-`component` is a plain `string` — because helpers owns consumer type safety and
+`component` is a plain `string` — because the authoring package owns consumer type safety and
 the plugin's guarantee is the runtime one.
 
 Count bounds need no payload change — `.atLeast(1)` compiles to today's

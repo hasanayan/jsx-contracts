@@ -34,7 +34,7 @@ whether an element reaches activation and the collectors at all.
 
 Fixtures are generated deterministically from a seeded LCG (`src/fixture.ts`),
 so two runs lint byte-identical sources. The table (`src/table.ts`) is
-hand-written rather than compiled through `@jsx-contracts/helpers`: the rule
+hand-written rather than compiled through `@jsx-contracts/authoring`: the rule
 table is a documented hand-writable format, and writing it out keeps the bench
 from moving whenever the authoring surface does.
 

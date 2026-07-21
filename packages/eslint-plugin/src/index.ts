@@ -1,9 +1,9 @@
 import type { ESLint } from "eslint";
 
-import { ancestorGranular } from "./rules/ancestor.js";
-import { propsGranular } from "./rules/props.js";
-import { slotsGranular } from "./rules/slots.js";
-import { subtreeGranular } from "./rules/subtree.js";
+import { ancestorGranular } from "./adapter/rules/ancestor.js";
+import { propsGranular } from "./adapter/rules/props.js";
+import { slotsGranular } from "./adapter/rules/slots.js";
+import { subtreeGranular } from "./adapter/rules/subtree.js";
 
 // The payload types every rule accepts, published so a generated or
 // hand-written table can be type-checked against the real thing.
@@ -20,11 +20,11 @@ export type {
   SlotsRow,
   SubtreeRow,
   WhenCondition,
-} from "./contracts/payload.js";
-export type { SlotsMessageId } from "./rules/slots.js";
-export type { SubtreeMessageId } from "./rules/subtree.js";
-export type { PropsMessageId } from "./rules/props.js";
-export type { AncestorMessageId } from "./rules/ancestor.js";
+} from "./contracts/rule-table/rows.js";
+export type { SlotsMessageId } from "./adapter/rules/slots.js";
+export type { SubtreeMessageId } from "./adapter/rules/subtree.js";
+export type { PropsMessageId } from "./adapter/rules/props.js";
+export type { AncestorMessageId } from "./adapter/rules/ancestor.js";
 
 /**
  * The plugin's thirteen rules — one per facet feature: `slots.children`,
@@ -44,7 +44,7 @@ const granularRules = {
 
 /**
  * The single owner of the facet-feature rule-id list. Every other spelling —
- * the plugin's rules record, and the flat-config keys `@jsx-contracts/helpers`
+ * the plugin's rules record, and the flat-config keys `@jsx-contracts/authoring`
  * emits — derives from or is pinned against this union, so renaming, adding or
  * removing a rule here is a type error there rather than a silent dead key.
  */

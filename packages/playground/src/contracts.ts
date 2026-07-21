@@ -1,4 +1,4 @@
-import { contractsFor, mergeContracts } from "@jsx-contracts/helpers";
+import { contractsFor, mergeContracts } from "@jsx-contracts/authoring";
 
 import type * as widgets from "./widget.js";
 
