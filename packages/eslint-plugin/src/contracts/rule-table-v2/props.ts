@@ -16,7 +16,7 @@ import type { PropFact, Ref } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
 
 import { renderCondition } from "./condition-prose.js";
-import type { PropSpecV2, PropsRowV2 } from "./rows-v2.js";
+import type { PropDeprecationV2, PropSpecV2, PropsRowV2 } from "./rows-v2.js";
 import { displayName } from "./rows-v2.js";
 
 /** Every message the v2 props facet reports. */
@@ -39,7 +39,7 @@ interface PreparedPropSpec {
   required: boolean;
   requires: string[];
   excludes: string[];
-  deprecated: { useInstead?: string } | undefined;
+  deprecated: PropDeprecationV2 | undefined;
   witness: string | undefined;
   because: string | undefined;
 }
@@ -99,7 +99,7 @@ function trailing(because: string | undefined): string {
   return because === undefined || because === "" ? "" : ` ${because}`;
 }
 
-function hintText(deprecated: { useInstead?: string }): string {
+function hintText(deprecated: PropDeprecationV2): string {
   return deprecated.useInstead === undefined
     ? ""
     : ` — use \`${deprecated.useInstead}\` instead`;
