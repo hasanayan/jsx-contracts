@@ -5,6 +5,3 @@ tsconfig.tsbuildinfo
 coverage/
 .DS_Store
 build
-
-# Generated at pack time from the root README (see prepack).
-packages/eslint-plugin/README.md

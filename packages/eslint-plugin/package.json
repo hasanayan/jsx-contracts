@@ -32,9 +32,6 @@
     "build/**/*.d.ts.map"
   ],
   "sideEffects": false,
-  "scripts": {
-    "prepack": "node -e \"require('node:fs').copyFileSync('../../README.md','README.md')\""
-  },
   "peerDependencies": {
     "eslint": ">=9"
   },

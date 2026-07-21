@@ -30,9 +30,6 @@
     "build/**/*.d.ts.map"
   ],
   "sideEffects": false,
-  "scripts": {
-    "prepack": "node -e \"require('node:fs').copyFileSync('../../README.md','README.md')\""
-  },
   "devDependencies": {
     "@jsx-contracts/eslint-plugin": "workspace:*",
     "@typescript-eslint/utils": "8.62.1",
