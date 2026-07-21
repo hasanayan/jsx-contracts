@@ -3,9 +3,6 @@
  * `not`. They build the {@link WhenV2} data AST — no opaque predicates, so the
  * plugin's canonical normalization can intern a condition, message assembly can
  * render it to English, and `findUnsatisfiable` can reason over it.
- *
- * These are the v2 surface's own constructors; the old `authoring/conditions`
- * copy stays until ADR 0003 T8 deletes it.
  */
 
 import type { ConditionValueV2, WhenV2 } from "@jsx-contracts/eslint-plugin";

@@ -1,6 +1,7 @@
 import { memoized } from "../../memoized.js";
 import type { PropFact, Ref } from "../rendered-tree/rendered-tree.js";
-import type { ConditionValue, WhenCondition } from "../rule-table/rows.js";
+
+import type { ConditionValue, WhenCondition } from "./when-condition.js";
 
 /**
  * A condition tree with the string shorthand expanded, rebuilt with keys in a

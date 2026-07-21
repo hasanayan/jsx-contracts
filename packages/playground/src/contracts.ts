@@ -1,30 +1,26 @@
-import { contractsFor, mergeContracts } from "@jsx-contracts/authoring";
+import { defineContracts, prop } from "@jsx-contracts/authoring";
 
-import type * as widgets from "./widget.js";
+// The module the fixture's components are imported from. Carried on every row;
+// name matching is what enforces the contracts today (ADR 0004 reserves gate
+// matching).
+const GATE = "*/playground/src/widget.js";
 
-const { contract, prop } = contractsFor<typeof widgets>(
-  "*/playground/src/widget.js",
-);
+export const contracts = defineContracts(({ contract }) => {
+  contract("Widget.Tray", GATE).slots({
+    ".Title": (s) => s.exactly(1),
+    // An <Action> only makes sense alongside a <Title>, and there are at most two.
+    ".Action": (s) => s.max(2).requires(".Title"),
+    // An <Overflow> collapses the actions, so it cannot co-render with them.
+    ".Overflow": (s) => s.excludes(".Action"),
+  });
 
-const tray = contract("Widget.Tray")
-  .hasSlot(".Title")
-  .atLeast(1)
-  .atMost(1)
-  .hasSlot(".Action")
-  .atLeast(0)
-  .atMost(2)
-  .hasSlot(".Overflow")
-  // An <Action> only makes sense alongside a <Title>.
-  .slotRequires(".Action", ".Title")
-  // An <Overflow> collapses the actions, so it cannot co-render with them.
-  .exclusiveSlots([".Overflow"], [".Action"]);
-
-// A compact widget narrows what may appear below it.
-const widget = contract("Widget").when(
-  prop("variant").is("compact"),
-  contract()
-    .forbidDescendants("Widget.Footer")
-    .forbidDescendantProps("data-analytics"),
-);
-
-export const contracts = mergeContracts(tray, widget);
+  // A compact widget narrows what may appear below it.
+  contract("Widget", GATE).when(
+    prop("variant").is("compact"),
+    (c) =>
+      c
+        .forbidDescendants("Widget.Footer")
+        .forbidDescendantProps("data-analytics"),
+    { because: "A compact widget narrows what may appear below it." },
+  );
+});

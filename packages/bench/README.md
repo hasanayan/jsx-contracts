@@ -10,8 +10,8 @@ pnpm --filter @jsx-contracts/bench bench
 
 ## What it measures
 
-Each scenario is linted twice against the same generated file: once with all
-thirteen rules on, all carrying the same table, and once with no rules at all.
+Each scenario is linted twice against the same generated file: once with every
+rule on, all carrying the same table, and once with no rules at all.
 What is reported is the **delta** — parse and scope-analysis cost subtracted
 out, leaving the plugin's own price.
 

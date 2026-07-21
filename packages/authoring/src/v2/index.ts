@@ -1,12 +1,13 @@
 /**
- * The ADR 0003 authoring surface. Lives beside the old `contractsFor` builder
- * until ADR 0003 T8 replaces it; imported from `@jsx-contracts/authoring/v2`
- * meanwhile so the old package entry stays untouched.
+ * The ADR 0003 authoring surface — the package's public API, re-exported from
+ * the package root (`src/index.ts`). `defineContracts` injects the
+ * `contract(name, from)` primitive; conditions and the whole-repo helpers are
+ * free imports.
  */
 
 export { allOf, anyOf, not, prop } from "./conditions.js";
 export type { Condition, PropCondition } from "./conditions.js";
-export { defineContracts, makeRuleSet } from "./define-contracts.js";
+export { defineContracts } from "./define-contracts.js";
 export type {
   BranchDelta,
   BranchDeltaBuilder,

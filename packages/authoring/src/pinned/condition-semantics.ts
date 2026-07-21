@@ -1,6 +1,7 @@
 import type { WhenCondition } from "@jsx-contracts/eslint-plugin";
 
-import type { Literal } from "../compile/entry.js";
+/** A prop value a when-condition activates on. */
+export type Literal = string | number | boolean;
 
 /**
  * A condition tree with the string shorthand expanded and every object's keys

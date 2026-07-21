@@ -4,7 +4,23 @@
  * validator: three spellings of one shape.
  */
 
-import type { JsonSchema } from "../rule-table/rows-schema.js";
+/** A JSON Schema draft-4 document, as far as this file needs one. */
+export interface JsonSchema {
+  type?: string | string[];
+  enum?: unknown[];
+  properties?: Record<string, JsonSchema>;
+  additionalProperties?: JsonSchema | boolean;
+  required?: string[];
+  items?: JsonSchema;
+  oneOf?: JsonSchema[];
+  minItems?: number;
+  maxItems?: number;
+  minimum?: number;
+  /** Draft-4 spelling of `$id`, which is what ESLint's validator resolves. */
+  id?: string;
+  $ref?: string;
+  definitions?: Record<string, JsonSchema>;
+}
 
 // The discriminated match key. Only the `name` variant is emitted today; the
 // oneOf is where the `identity` variant lands with ADR 0004.

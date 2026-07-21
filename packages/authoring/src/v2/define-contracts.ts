@@ -2,10 +2,8 @@
  * The ADR 0003 authoring entry: `defineContracts` and the `contract(name, from)`
  * primitive it injects. A contract registers when `contract()` is called — no
  * return needed — builders accumulate in place, and the rule set freezes when
- * the callback returns. This compiles to row schema v2.
- *
- * The old fluent surface (`contractsFor`/`contract()` chains) is untouched; both
- * ship until ADR 0003 T8 deletes the old one.
+ * the callback returns. This compiles to row schema v2 — the plugin's only
+ * rule-table shape.
  */
 
 import type {

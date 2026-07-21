@@ -26,8 +26,8 @@ import type { WhenCondition } from "@jsx-contracts/eslint-plugin";
 // note on the exports themselves, and docs/adr/0002-*).
 import { isAttributePresent } from "../../../eslint-plugin/build/adapter/collect/props.js";
 import { normalizeWhen } from "../../../eslint-plugin/build/contracts/activation/when-condition-pool.js";
-import type { Literal } from "../compile/entry.js";
 
+import type { Literal } from "./condition-semantics.js";
 import {
   matchesWhileAbsent,
   normalizeCondition,

@@ -1,5 +1,7 @@
-import type { Literal } from "../compile/entry.js";
-import type { NormalizedCondition } from "../pinned/condition-semantics.js";
+import type {
+  Literal,
+  NormalizedCondition,
+} from "../pinned/condition-semantics.js";
 import { matchesWhileAbsent } from "../pinned/condition-semantics.js";
 
 /** The interning key of a normalized tree: its content, canonically ordered. */

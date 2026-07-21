@@ -5,10 +5,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { PropFact } from "../rendered-tree/rendered-tree.js";
-import type { WhenCondition } from "../rule-table/rows.js";
 
 import type { ConditionSubject } from "./when-condition-pool.js";
 import { createConditionPool } from "./when-condition-pool.js";
+import type { WhenCondition } from "./when-condition.js";
 
 // The element the pool reads a condition against: identity plus the two prop
 // facts. Every subject gets a fresh `elementRef`, so no test shares a cache slot

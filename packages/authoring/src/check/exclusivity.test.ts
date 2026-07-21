@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { Condition } from "../authoring/conditions.js";
-import { allOf, anyOf, not, prop } from "../authoring/conditions.js";
 import { normalizeCondition } from "../pinned/condition-semantics.js";
+import type { Condition } from "../v2/conditions.js";
+import { allOf, anyOf, not, prop } from "../v2/conditions.js";
 
 import { createExclusivity } from "./exclusivity.js";
 
