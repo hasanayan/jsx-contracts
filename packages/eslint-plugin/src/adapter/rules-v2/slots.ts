@@ -31,12 +31,15 @@ import type {
   SlotsRowV2,
 } from "../../contracts/rule-table-v2/rows-v2.js";
 import { displayName } from "../../contracts/rule-table-v2/rows-v2.js";
+import type { StrictMessageId } from "../../contracts/rule-table-v2/strict-analysis.js";
+import { evaluateStrictAnalysis } from "../../contracts/rule-table-v2/strict-analysis.js";
 import { validateContractRowsV2 } from "../../contracts/rule-table-v2/validate-rows-v2.js";
-import { tagName } from "../collect/index.js";
+import { classifyOpaqueRegion, tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
 
-/** Every message the v2 slots facet reports: closure plus bounds/relations. */
-export type SlotsV2MessageId = ClosureMessageId | BoundsMessageId;
+/** Every message the v2 slots facet reports: closure, bounds/relations, strictness. */
+export type SlotsV2MessageId =
+  ClosureMessageId | BoundsMessageId | StrictMessageId;
 export type { ClosureMessageId };
 
 const createRule = ESLintUtils.RuleCreator(
@@ -56,6 +59,7 @@ const messages = {
   requiresSlot: "<{{name}}> in <{{container}}> requires <{{required}}>.",
   exclusiveSlots:
     "<{{name}}> in <{{container}}> cannot appear with {{others}}.",
+  opaqueRegion: "Cannot verify {{rule}}: {{cause}} from {{region}}.",
 } as const;
 
 /**
@@ -180,6 +184,31 @@ export const slotsClosureRule = createRule<[ContractRowsV2], SlotsV2MessageId>({
             messageId: violation.messageId,
             data: violation.data,
           });
+        }
+
+        // Strictness is orthogonal to closure and bounds: an opaque children
+        // region that intersects a rule those two cannot verify reports here,
+        // and only when the switch is on.
+        if (
+          prepared.row.strictAnalysis === true &&
+          root.unknownRefs.length > 0
+        ) {
+          const regions = root.unknownRefs.map((ref) =>
+            classifyOpaqueRegion(sourceCode, ref as TSESTree.Node),
+          );
+
+          for (const violation of evaluateStrictAnalysis(
+            true,
+            closure,
+            bounds,
+            regions,
+          )) {
+            context.report({
+              node: violation.ref as TSESTree.Node,
+              messageId: violation.messageId,
+              data: violation.data,
+            });
+          }
         }
       },
     };

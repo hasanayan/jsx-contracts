@@ -142,6 +142,7 @@ export const contractRowsV2Schema: JsonSchema[] = [
             match: matchKey,
             slots: { type: "array", items: slot },
             closed: { type: "boolean" },
+            strictAnalysis: { type: "boolean" },
             because: { type: "string" },
             branches: { type: "array", items: branch },
           },

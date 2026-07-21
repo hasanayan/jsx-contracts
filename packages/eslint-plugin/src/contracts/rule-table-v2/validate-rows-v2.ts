@@ -179,6 +179,13 @@ function validateSlotsRow(row: SlotsRowV2, fail: Fail): void {
     fail("closed must be a boolean");
   }
 
+  if (
+    row.strictAnalysis !== undefined &&
+    typeof row.strictAnalysis !== "boolean"
+  ) {
+    fail("strictAnalysis must be a boolean");
+  }
+
   if (!Array.isArray(row.slots)) {
     fail("slots must be an array");
   }

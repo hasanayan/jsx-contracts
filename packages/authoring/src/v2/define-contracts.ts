@@ -156,6 +156,7 @@ interface ContractState {
   readonly from: string;
   slots: SlotV2[] | undefined;
   loose: boolean;
+  strictAnalysis: boolean;
   props: PropSpecV2[] | undefined;
   requiresAnyOf: string[][];
   descendants: DescendantV2[] | undefined;
@@ -231,6 +232,15 @@ export interface ContractBuilderV2 {
   slots: <K extends string>(map: SlotsMapOf<K>) => ContractBuilderV2;
   /** Opt out of closure: undeclared children stop being violations. */
   loose: () => ContractBuilderV2;
+  /**
+   * Turn analysis strict: an opaque children region (`{items.map(…)}`,
+   * `{props.children}`, an unresolvable variable) that intersects a rule it
+   * could break reports a "cannot verify" finding, instead of being assumed
+   * fine. One contract-level switch, riding the children map — a contract with
+   * no slots facet has no opaque children to guard, so this throws there.
+   * Orthogonal to {@link loose}.
+   */
+  strictAnalysis: () => ContractBuilderV2;
   /**
    * Declare the component's props contract. The map is always loose — every
    * entry states a constraint, and a constraint-free entry is a config-time
@@ -764,11 +774,23 @@ function compileStates(states: ContractState[]): ContractRowsV2 {
         closed: !state.loose,
       };
 
+      // Strictness rides the children row: it only ever guards opaque children.
+      if (state.strictAnalysis) {
+        row.strictAnalysis = true;
+      }
+
       if (slotBranches.length > 0) {
         row.branches = slotBranches;
       }
 
       rows.push(row);
+    } else if (state.strictAnalysis) {
+      // Nothing authored may silently fail to ship: a strictness switch with no
+      // children facet to ride has nothing to guard.
+      throw new Error(
+        `defineContracts: contract "${state.name}" calls strictAnalysis() but ` +
+          "declares no children — strictness guards a children map.",
+      );
     }
 
     // Likewise, a props row only when something states a prop rule.
@@ -903,6 +925,12 @@ function makeBuilder(
 
       return builder;
     },
+    strictAnalysis(): ContractBuilderV2 {
+      guard();
+      state.strictAnalysis = true;
+
+      return builder;
+    },
     props(map): ContractBuilderV2 {
       guard();
 
@@ -1021,6 +1049,7 @@ export function defineContracts(
       from,
       slots: undefined,
       loose: false,
+      strictAnalysis: false,
       props: undefined,
       requiresAnyOf: [],
       descendants: undefined,

@@ -63,4 +63,33 @@ describe("defineContracts end to end", () => {
 
     expect(messages).toEqual([]);
   });
+
+  it("reports a strict container blinded by dynamic children", () => {
+    const strictRules = defineContracts(({ contract }) => {
+      contract("Card.Heading", "~/components/Card.tsx")
+        .slots({ ".Text": true })
+        .strictAnalysis();
+    });
+
+    const linter = new Linter();
+    const messages = linter.verify(
+      `
+      export const example = (
+        <Card.Heading>{items.map((i) => <Card.Heading.Text key={i} />)}</Card.Heading>
+      );
+    `,
+      {
+        plugins: { "@jsx-contracts": plugin },
+        languageOptions,
+        rules: strictRules.rules(),
+      },
+    );
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.ruleId).toBe("@jsx-contracts/slots.closure");
+    expect(messages[0]?.message).toBe(
+      "Cannot verify <Card.Heading>'s declared children: dynamic children " +
+        "from {items.map(…)}.",
+    );
+  });
 });

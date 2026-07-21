@@ -101,6 +101,107 @@ const branchedRows: ContractRowsV2 = [
   },
 ];
 
+const strictBoundedRows: ContractRowsV2 = [
+  {
+    facet: "slots",
+    match: { kind: "name", name: "Card.Heading" },
+    closed: true,
+    strictAnalysis: true,
+    slots: [
+      {
+        alias: ".Text",
+        match: { kind: "name", name: "Card.Heading.Text" },
+        count: { min: 1, max: 1 },
+      },
+    ],
+  },
+];
+
+const strictLooseRows: ContractRowsV2 = [
+  {
+    facet: "slots",
+    match: { kind: "name", name: "Card.Heading" },
+    closed: false,
+    strictAnalysis: true,
+    slots: [
+      { alias: ".Text", match: { kind: "name", name: "Card.Heading.Text" } },
+    ],
+  },
+];
+
+// Closed but unbounded: only closure is at risk, so a region names it alone.
+const strictClosedRows: ContractRowsV2 = [
+  {
+    facet: "slots",
+    match: { kind: "name", name: "Card.Heading" },
+    closed: true,
+    strictAnalysis: true,
+    slots: [
+      { alias: ".Text", match: { kind: "name", name: "Card.Heading.Text" } },
+    ],
+  },
+];
+
+ruleTester.run("slots.closure strictAnalysis", slotsClosureRule, {
+  valid: [
+    {
+      name: "no opaque region: fully static children pass",
+      code: "<Card.Heading><Card.Heading.Text /></Card.Heading>",
+      options: [strictBoundedRows],
+    },
+    {
+      name: "an opaque region that touches no rule is silent",
+      code: "<Card.Heading>{items.map((i) => (<Card.Heading.Text key={i} />))}</Card.Heading>",
+      options: [strictLooseRows],
+    },
+    {
+      name: "an opaque region is fine without the switch",
+      code: "<Card.Heading>{items.map((i) => (<Card.Heading.Text key={i} />))}</Card.Heading>",
+      options: [boundedRows],
+    },
+  ],
+  invalid: [
+    {
+      name: "dynamic children blind a count, naming both sides",
+      code: "<Card.Heading>{items.map((i) => (<X key={i} />))}</Card.Heading>",
+      options: [strictBoundedRows],
+      errors: [
+        {
+          messageId: "opaqueRegion",
+          data: {
+            rule: "<Card.Heading>'s declared children",
+            cause: "dynamic children",
+            region: "{items.map(…)}",
+          },
+        },
+        {
+          messageId: "opaqueRegion",
+          data: {
+            rule: "the <Card.Heading.Text> count",
+            cause: "dynamic children",
+            region: "{items.map(…)}",
+          },
+        },
+      ],
+    },
+    {
+      name: "passthrough children blind a closed container's closure",
+      code: "<Card.Heading><Card.Heading.Text />{props.children}</Card.Heading>",
+      options: [strictClosedRows],
+      errors: [
+        {
+          messageId: "opaqueRegion",
+          data: {
+            rule: "<Card.Heading>'s declared children",
+            cause: "passthrough children",
+            region: "{props.children}",
+          },
+        },
+      ],
+    },
+  ],
+});
+
 ruleTester.run("slots.closure branches", slotsClosureRule, {
   valid: [
     {

@@ -11,6 +11,31 @@
 /** An opaque AST handle the adapter attaches for reporting. */
 export type Ref = object;
 
+/**
+ * Why a region of a container's children is opaque to static analysis — the
+ * internal cause classification behind `strictAnalysis`. Not surfaced in the
+ * authoring options; kept so finer control can be added later without a surface
+ * change.
+ *
+ * - `dynamic-children` — a call whose output is children (`{items.map(…)}`).
+ * - `passthrough-children` — children handed through a variable or member
+ *   access (`{props.children}`, `{content}`).
+ * - `unresolvable` — anything else the collector cannot see through.
+ */
+export type OpaqueCause =
+  "dynamic-children" | "passthrough-children" | "unresolvable";
+
+/**
+ * One statically-opaque region among a container's direct children: the AST
+ * handle to report on, its internal cause, and the blinding expression rendered
+ * for a message (e.g. `"{items.map(…)}"`).
+ */
+export interface OpaqueRegion {
+  ref: Ref;
+  cause: OpaqueCause;
+  text: string;
+}
+
 /** Which side of which conditional an element sits in. */
 export type Branch = `${number}:${"consequent" | "alternate"}`;
 

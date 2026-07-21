@@ -67,6 +67,29 @@ describe("defineContracts", () => {
     expect(onlyRow(loose.rows).closed).toBe(false);
   });
 
+  it("compiles strictAnalysis() to the slots row flag, off by default", () => {
+    const lax = defineContracts(({ contract }) => {
+      contract("Card.Heading", CARD_FROM).slots({ ".Text": true });
+    });
+
+    const strict = defineContracts(({ contract }) => {
+      contract("Card.Heading", CARD_FROM)
+        .slots({ ".Text": true })
+        .strictAnalysis();
+    });
+
+    expect(onlyRow(lax.rows).strictAnalysis).toBeUndefined();
+    expect(onlyRow(strict.rows).strictAnalysis).toBe(true);
+  });
+
+  it("throws when strictAnalysis() has no children map to ride", () => {
+    expect(() =>
+      defineContracts(({ contract }) => {
+        contract("Card", CARD_FROM).strictAnalysis();
+      }),
+    ).toThrow(/strictAnalysis\(\) but declares no children/u);
+  });
+
   it("emits no row for a contract that declares no children map", () => {
     const set = defineContracts(({ contract }) => {
       contract("Card", CARD_FROM);

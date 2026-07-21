@@ -127,6 +127,14 @@ export interface SlotsRowV2 {
    * default; `.loose()` opts out.
    */
   closed: boolean;
+  /**
+   * Whether the analysis is strict: when set, an opaque children region — a
+   * `{items.map(…)}`, a `{props.children}`, an unresolvable variable — that
+   * intersects a rule it could break reports a "cannot verify" finding rather
+   * than being assumed fine. The contract-level `.strictAnalysis()` switch
+   * compiles here. Orthogonal to {@link closed}.
+   */
+  strictAnalysis?: boolean;
   /** The author's static intent, appended to a violation message. */
   because?: string;
   /** Conditional branches over the children facet; empty or absent for none. */
