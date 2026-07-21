@@ -4,8 +4,10 @@ import { ancestorGranular } from "./adapter/rules/ancestor.js";
 import { propsGranular } from "./adapter/rules/props.js";
 import { slotsGranular } from "./adapter/rules/slots.js";
 import { subtreeGranular } from "./adapter/rules/subtree.js";
+import { ancestorV2Rules } from "./adapter/rules-v2/ancestor.js";
 import { propsV2Rules } from "./adapter/rules-v2/props.js";
 import { slotsV2Rules } from "./adapter/rules-v2/slots.js";
+import { subtreeV2Rules } from "./adapter/rules-v2/subtree.js";
 
 // The payload types every rule accepts, published so a generated or
 // hand-written table can be type-checked against the real thing.
@@ -31,10 +33,13 @@ export type { AncestorMessageId } from "./adapter/rules/ancestor.js";
 // Row schema v2 (ADR 0003). The authoring collector compiles to these; a
 // hand-written or generated v2 table can be type-checked against them.
 export type {
+  AncestorRowV2,
   ContractRowsV2,
   ContractRowV2,
   CountV2,
+  DescendantV2,
   FacetV2,
+  ForbiddenV2,
   ConditionValueV2,
   MatchKey,
   NameMatch,
@@ -45,6 +50,8 @@ export type {
   SlotBranchV2,
   SlotsRowV2,
   SlotV2,
+  SubtreeBranchV2,
+  SubtreeRowV2,
   WhenPropV2,
   WhenV2,
 } from "./contracts/rule-table-v2/rows-v2.js";
@@ -53,6 +60,8 @@ export type {
   SlotsV2MessageId,
 } from "./adapter/rules-v2/slots.js";
 export type { PropsV2MessageId } from "./adapter/rules-v2/props.js";
+export type { SubtreeV2MessageId } from "./adapter/rules-v2/subtree.js";
+export type { AncestorV2MessageId } from "./adapter/rules-v2/ancestor.js";
 
 /**
  * The plugin's thirteen rules — one per facet feature: `slots.children`,
@@ -85,6 +94,8 @@ export const rules = {
   ...granularRules,
   ...slotsV2Rules,
   ...propsV2Rules,
+  ...subtreeV2Rules,
+  ...ancestorV2Rules,
 } as unknown as NonNullable<ESLint.Plugin["rules"]>;
 
 /** The `@jsx-contracts` ESLint plugin. Register under that plugin name. */

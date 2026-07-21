@@ -192,8 +192,90 @@ export interface PropsRowV2 {
   branches?: PropsBranchV2[];
 }
 
+/**
+ * An element referenced by name in a subtree ban or an ancestor rule. The
+ * dotted-shorthand of a `forbidDescendants`/`notInside` entry is expanded
+ * against the subject at authoring time, so the {@link match} name is always
+ * whole — the regression the old emit path's silent `.Actions` no-op left open.
+ */
+export interface ForbiddenV2 {
+  /** The forbidden element's identity; its display name derives from this. */
+  match: MatchKey;
+  /**
+   * The element's own import gate, from the `{ name, from }` entry form —
+   * reserved for identity matching (ADR 0004), carried today but not matched.
+   */
+  from?: string;
+}
+
+/**
+ * One entry of a descendants map: an alias bound to an element identity that
+ * must appear somewhere below the container, within its count bounds. The same
+ * triple model as a slot (alias key, identity, bound spec), minus the sibling
+ * relations that only make sense among direct children.
+ */
+export interface DescendantV2 {
+  /** The authoring-scoped alias — the map key. Messages use the identity, not this. */
+  alias: string;
+  /** The descendant element's identity; its display name derives from this. */
+  match: MatchKey;
+  /** The descendant's own import gate, from `is(name, from)` — reserved (ADR 0004). */
+  from?: string;
+  /** Count bounds anywhere below. Absent leaves the descendant unbounded (0–∞). */
+  count?: CountV2;
+}
+
+/**
+ * One conditional branch over a container's subtree: a delta applied only while
+ * its condition holds. Only the bans are branch deltas (ADR 0003 US20) —
+ * required descendants stay a base-level statement — so a branch carries
+ * `forbidDescendants` and `forbidDescendantProps`, each reported with the
+ * branch witness and `because`.
+ */
+export interface SubtreeBranchV2 {
+  /** The condition that activates this branch, read against the element's props. */
+  when: WhenV2;
+  /** The author's intent for this branch, appended to a violation it drives. */
+  because?: string;
+  /** Elements this branch forbids anywhere below while active. */
+  forbidDescendants?: ForbiddenV2[];
+  /** Props no descendant may carry while this branch is active. */
+  forbidDescendantProps?: string[];
+}
+
+/** One statement about what may and must appear anywhere below a component, v2. */
+export interface SubtreeRowV2 {
+  facet: "subtree";
+  /** The container's identity. */
+  match: MatchKey;
+  /** Elements required somewhere below, each within its count bounds. */
+  descendants: DescendantV2[];
+  /** Elements forbidden anywhere below. */
+  forbidDescendants: ForbiddenV2[];
+  /** Props no descendant may carry. */
+  forbidDescendantProps: string[];
+  /** The author's static intent, appended to a violation message. */
+  because?: string;
+  /** Conditional branches over the subtree bans; empty or absent for none. */
+  branches?: SubtreeBranchV2[];
+}
+
+/** One statement about a component's placement and lifecycle, v2. */
+export interface AncestorRowV2 {
+  facet: "ancestor";
+  /** The component's identity. */
+  match: MatchKey;
+  /** Ancestors this component may not render inside. */
+  notInside: ForbiddenV2[];
+  /** This component is deprecated; present means deprecated, whatever the hint. */
+  deprecated?: PropDeprecationV2;
+  /** The author's static intent, appended to a violation message. */
+  because?: string;
+}
+
 /** One row of the v2 rule table. A discriminated union as facets are added. */
-export type ContractRowV2 = SlotsRowV2 | PropsRowV2;
+export type ContractRowV2 =
+  SlotsRowV2 | PropsRowV2 | SubtreeRowV2 | AncestorRowV2;
 
 /** The v2 rule table: the payload a v2 rule takes. */
 export type ContractRowsV2 = ContractRowV2[];

@@ -16,7 +16,7 @@ function branchesOf(
 ): SlotBranchV2[] {
   const [row] = defineContracts(build).rows;
 
-  return row?.branches ?? [];
+  return row?.facet === "slots" ? row.branches ?? [] : [];
 }
 
 describe("when → branch rows", () => {
@@ -96,6 +96,6 @@ describe("when → branch rows", () => {
     }).rows;
 
     expect(row?.facet === "slots" ? row.slots : undefined).toEqual([]);
-    expect(row?.branches).toHaveLength(1);
+    expect(row?.facet === "slots" ? row.branches : undefined).toHaveLength(1);
   });
 });

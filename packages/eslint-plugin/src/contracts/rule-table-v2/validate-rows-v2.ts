@@ -5,13 +5,17 @@
  */
 
 import type {
+  AncestorRowV2,
   ContractRowsV2,
+  ForbiddenV2,
   MatchKey,
   PropSpecV2,
   PropsBranchV2,
   PropsRowV2,
   SlotBranchV2,
   SlotsRowV2,
+  SubtreeBranchV2,
+  SubtreeRowV2,
   WhenV2,
 } from "./rows-v2.js";
 
@@ -310,6 +314,126 @@ function validatePropsRow(row: PropsRowV2, fail: Fail): void {
   }
 }
 
+function validateStringArray(
+  value: unknown,
+  label: string,
+  fail: Fail,
+): void {
+  if (!Array.isArray(value)) {
+    fail(`${label} must be an array`);
+  }
+
+  for (const item of value as unknown[]) {
+    if (typeof item !== "string" || item.length === 0) {
+      fail(`${label} must be non-empty strings`);
+    }
+  }
+}
+
+function validateForbidden(
+  entries: unknown,
+  label: string,
+  fail: Fail,
+): void {
+  if (!Array.isArray(entries)) {
+    fail(`${label} must be an array`);
+  }
+
+  for (const entry of entries as ForbiddenV2[]) {
+    validateMatch(entry.match, label, fail);
+
+    if (entry.from !== undefined && typeof entry.from !== "string") {
+      fail(`${label} from must be a string`);
+    }
+  }
+}
+
+function validateSubtreeBranch(
+  branch: SubtreeBranchV2,
+  label: string,
+  fail: Fail,
+): void {
+  if (typeof branch !== "object") {
+    fail(`${label} must be an object`);
+  }
+
+  validateWhen(branch.when, label, fail);
+
+  if (branch.because !== undefined && typeof branch.because !== "string") {
+    fail(`${label} because must be a string`);
+  }
+
+  if (branch.forbidDescendants !== undefined) {
+    validateForbidden(
+      branch.forbidDescendants,
+      `${label} forbidDescendants`,
+      fail,
+    );
+  }
+
+  if (branch.forbidDescendantProps !== undefined) {
+    validateStringArray(
+      branch.forbidDescendantProps,
+      `${label} forbidDescendantProps`,
+      fail,
+    );
+  }
+}
+
+function validateSubtreeRow(row: SubtreeRowV2, fail: Fail): void {
+  if (!Array.isArray(row.descendants)) {
+    fail("descendants must be an array");
+  }
+
+  const aliases = new Set<string>();
+
+  for (const descendant of row.descendants) {
+    if (typeof descendant.alias !== "string" || descendant.alias.length === 0) {
+      fail("a descendant must carry a non-empty alias");
+    }
+
+    if (aliases.has(descendant.alias)) {
+      fail(`lists duplicate descendant alias "${descendant.alias}"`);
+    }
+
+    aliases.add(descendant.alias);
+    validateMatch(descendant.match, `descendant "${descendant.alias}"`, fail);
+    validateCount(descendant.count, descendant.alias, fail);
+  }
+
+  validateForbidden(row.forbidDescendants, "forbidDescendants", fail);
+  validateStringArray(row.forbidDescendantProps, "forbidDescendantProps", fail);
+
+  if (row.branches !== undefined) {
+    if (!Array.isArray(row.branches)) {
+      fail("branches must be an array");
+    }
+
+    row.branches.forEach((branch, index) => {
+      validateSubtreeBranch(branch, `branch ${String(index)}`, fail);
+    });
+  }
+}
+
+function validateAncestorRow(row: AncestorRowV2, fail: Fail): void {
+  validateForbidden(row.notInside, "notInside", fail);
+
+  // Read defensively: a hand-written row can carry any deprecated shape.
+  const deprecated: unknown = row.deprecated;
+
+  if (deprecated !== undefined) {
+    if (typeof deprecated !== "object" || deprecated === null) {
+      fail("deprecated must be an object");
+    }
+
+    const { useInstead } = deprecated as { useInstead?: unknown };
+
+    if (useInstead !== undefined && typeof useInstead !== "string") {
+      fail("deprecated useInstead must be a string");
+    }
+  }
+}
+
 /** Shape-validate a v2 rule table. Throws on the first malformed row. */
 export function validateContractRowsV2(rows: ContractRowsV2): void {
   for (const [index, row] of rows.entries()) {
@@ -331,6 +455,18 @@ export function validateContractRowsV2(rows: ContractRowsV2): void {
 
     if (facet === "props") {
       validatePropsRow(row as PropsRowV2, fail);
+
+      continue;
+    }
+
+    if (facet === "subtree") {
+      validateSubtreeRow(row as SubtreeRowV2, fail);
+
+      continue;
+    }
+
+    if (facet === "ancestor") {
+      validateAncestorRow(row as AncestorRowV2, fail);
 
       continue;
     }

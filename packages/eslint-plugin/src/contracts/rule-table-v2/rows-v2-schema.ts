@@ -90,6 +90,46 @@ const propsBranch: JsonSchema = {
   additionalProperties: false,
 };
 
+// A forbidden element in a subtree ban or an ancestor rule: an already-expanded
+// match key and an optional self-gate.
+const forbidden: JsonSchema = {
+  type: "object",
+  properties: { match: matchKey, from: { type: "string" } },
+  required: ["match"],
+  additionalProperties: false,
+};
+
+// A required descendant: the slot triple minus sibling relations.
+const descendant: JsonSchema = {
+  type: "object",
+  properties: {
+    alias: { type: "string" },
+    match: matchKey,
+    from: { type: "string" },
+    count,
+  },
+  required: ["alias", "match"],
+  additionalProperties: false,
+};
+
+const subtreeBranch: JsonSchema = {
+  type: "object",
+  properties: {
+    when,
+    because: { type: "string" },
+    forbidDescendants: { type: "array", items: forbidden },
+    forbidDescendantProps: { type: "array", items: { type: "string" } },
+  },
+  required: ["when"],
+  additionalProperties: false,
+};
+
+const deprecated: JsonSchema = {
+  type: "object",
+  properties: { useInstead: { type: "string" } },
+  additionalProperties: false,
+};
+
 export const contractRowsV2Schema: JsonSchema[] = [
   {
     type: "array",
@@ -122,6 +162,41 @@ export const contractRowsV2Schema: JsonSchema[] = [
             branches: { type: "array", items: propsBranch },
           },
           required: ["facet", "match", "props"],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: {
+            facet: { type: "string", enum: ["subtree"] },
+            match: matchKey,
+            descendants: { type: "array", items: descendant },
+            forbidDescendants: { type: "array", items: forbidden },
+            forbidDescendantProps: {
+              type: "array",
+              items: { type: "string" },
+            },
+            because: { type: "string" },
+            branches: { type: "array", items: subtreeBranch },
+          },
+          required: [
+            "facet",
+            "match",
+            "descendants",
+            "forbidDescendants",
+            "forbidDescendantProps",
+          ],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: {
+            facet: { type: "string", enum: ["ancestor"] },
+            match: matchKey,
+            notInside: { type: "array", items: forbidden },
+            deprecated,
+            because: { type: "string" },
+          },
+          required: ["facet", "match", "notInside"],
           additionalProperties: false,
         },
       ],

@@ -229,4 +229,73 @@ describe("validateContractRowsV2", () => {
       validateContractRowsV2(rows);
     }).toThrow(/forbidSlots names "\.Ghost", not a declared slot/);
   });
+
+  it("accepts subtree and ancestor rows", () => {
+    const rows: ContractRowsV2 = [
+      {
+        facet: "subtree",
+        match: { kind: "name", name: "Card" },
+        descendants: [
+          {
+            alias: ".Item",
+            match: { kind: "name", name: "Card.Item" },
+            count: { min: 1 },
+          },
+        ],
+        forbidDescendants: [{ match: { kind: "name", name: "button" } }],
+        forbidDescendantProps: ["onClick"],
+        branches: [
+          {
+            when: { prop: "flat" },
+            forbidDescendants: [{ match: { kind: "name", name: "Card.Footer" } }],
+          },
+        ],
+      },
+      {
+        facet: "ancestor",
+        match: { kind: "name", name: "Card.Action" },
+        notInside: [{ match: { kind: "name", name: "Table" } }],
+        deprecated: { useInstead: "Button" },
+      },
+    ];
+
+    expect(() => {
+      validateContractRowsV2(rows);
+    }).not.toThrow();
+  });
+
+  it("rejects a forbidDescendants entry with a malformed match key", () => {
+    const rows = [
+      {
+        facet: "subtree",
+        match: { kind: "name", name: "Card" },
+        descendants: [],
+        forbidDescendants: [{ match: { kind: "symbol" } }],
+        forbidDescendantProps: [],
+      },
+    ] as unknown as ContractRowsV2;
+
+    expect(() => {
+      validateContractRowsV2(rows);
+    }).toThrow(/forbidDescendants match key must have kind "name"/);
+  });
+
+  it("rejects a duplicate descendant alias", () => {
+    const rows = [
+      {
+        facet: "subtree",
+        match: { kind: "name", name: "Card" },
+        descendants: [
+          { alias: ".Item", match: { kind: "name", name: "Card.Item" } },
+          { alias: ".Item", match: { kind: "name", name: "Card.Other" } },
+        ],
+        forbidDescendants: [],
+        forbidDescendantProps: [],
+      },
+    ] as unknown as ContractRowsV2;
+
+    expect(() => {
+      validateContractRowsV2(rows);
+    }).toThrow(/duplicate descendant alias "\.Item"/);
+  });
 });
