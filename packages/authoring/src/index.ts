@@ -4,3 +4,4 @@
  * runtime dependency on the plugin.
  */
 export * from "./surface/index.js";
+export * from "./describe/index.js";
