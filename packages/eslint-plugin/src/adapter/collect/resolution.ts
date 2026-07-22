@@ -22,17 +22,14 @@ function* scopeChain(
 }
 
 /**
- * Per-file resolution state, built once and consulted by hash lookup. Scanning
- * a scope's reference list per identifier is quadratic in file size: a
- * JSX-heavy file puts every reference in one function scope, and collection
- * resolves many identifiers per element.
+ * Built once and consulted by hash lookup. Scanning a scope's reference list per
+ * identifier is quadratic in file size — a JSX-heavy file puts every reference
+ * in one function scope.
  */
 interface ResolutionIndex {
-  /** Every reference's identifier node → what it resolved to, unresolved as null. */
   resolved: Map<TSESTree.Node, TSESLint.Scope.Variable | null>;
-  /** Each scope's declarations by name, built on first use of that scope. */
+  /** Built on first use of each scope. */
   declared: WeakMap<TSESLint.Scope.Scope, Map<string, TSESLint.Scope.Variable>>;
-  /** Import specifier per tag-name node — an ancestor resolves once for the file. */
   importSources: Map<TSESTree.JSXTagNameExpression, string | null>;
 }
 
@@ -42,9 +39,8 @@ function resolutionIndexFor(sourceCode: SourceCode): ResolutionIndex {
   return memoized(resolutionIndexes, sourceCode, () => {
     const resolved = new Map<TSESTree.Node, TSESLint.Scope.Variable | null>();
 
-    // A reference lives in the scope it occurs in, which is always on the
-    // scope chain the per-identifier scan walked; indexing every scope at once
-    // is the same lookup without the scan.
+    // A reference always lives on the scope chain the per-identifier scan
+    // walked, so indexing every scope at once is the same lookup without it.
     for (const scope of sourceCode.scopeManager?.scopes ?? []) {
       for (const reference of scope.references) {
         resolved.set(reference.identifier, reference.resolved);
@@ -62,7 +58,6 @@ function declaredIn(
   return memoized(index.declared, scope, () => {
     const byName = new Map<string, TSESLint.Scope.Variable>();
 
-    // First declaration wins, matching the `find` this replaces.
     for (const variable of scope.variables) {
       if (!byName.has(variable.name)) {
         byName.set(variable.name, variable);
@@ -86,8 +81,7 @@ function resolveJsxVariable(
     return referenced;
   }
 
-  // An intrinsic tag makes no reference at all, so fall back to the nearest
-  // scope declaring the name.
+  // An intrinsic tag makes no reference at all.
   for (const current of scopeChain(sourceCode.getScope(identifier))) {
     const variable = declaredIn(index, current).get(identifier.name);
 
@@ -100,11 +94,10 @@ function resolveJsxVariable(
 }
 
 /**
- * The specifier a tag's root identifier is imported from, normalized against the
- * filename when relative. Null for a non-import. Memoized on the tag-name node:
- * an ancestor resolved once stays resolved for every descendant walking past
- * it. The memo does not key on `filename`, because it lives in the index of
- * the one `sourceCode` that filename belongs to.
+ * Normalized against the filename when relative, null for a non-import. Memoized
+ * on the tag-name node, so an ancestor resolved once stays resolved for every
+ * descendant. The memo need not key on `filename`: it lives in the index of the
+ * one `sourceCode` that filename belongs to.
  */
 export function resolveImportSource(
   sourceCode: SourceCode,
@@ -161,8 +154,7 @@ function computeImportSource(
   return specifier;
 }
 
-// The initializer of a single-definition, never-reassigned local; null
-// otherwise.
+// The initializer of a single-definition, never-reassigned local.
 export function resolveConstantInit(
   sourceCode: SourceCode,
   identifier: TSESTree.Identifier | TSESTree.JSXIdentifier,

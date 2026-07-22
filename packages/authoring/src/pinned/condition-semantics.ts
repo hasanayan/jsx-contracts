@@ -1,12 +1,11 @@
-import type { WhenCondition } from "@jsx-contracts/eslint-plugin";
+import type { ConditionValue, When } from "@jsx-contracts/eslint-plugin";
 
-import type { Literal } from "../compile/entry.js";
+export type Literal = ConditionValue;
 
 /**
- * A condition tree with the string shorthand expanded and every object's keys
- * written in a fixed order, so two conditions that mean the same thing hash
- * alike. Mirrors the core's own `normalizeWhen`, which is canonical
- * (see docs/adr/0002-*).
+ * Mirrors the engine's canonical `normalizeWhen`, because this package carries
+ * no runtime dependency on the plugin (ADR 0002) and `findUnsatisfiable` needs
+ * canonical conditions. The sibling agreement test ties the two copies together.
  */
 export type NormalizedCondition =
   | { prop: string; values?: Literal[] }
@@ -14,11 +13,7 @@ export type NormalizedCondition =
   | { any: NormalizedCondition[] }
   | { not: NormalizedCondition };
 
-export function normalizeCondition(when: WhenCondition): NormalizedCondition {
-  if (typeof when === "string") {
-    return { prop: when };
-  }
-
+export function normalizeCondition(when: When): NormalizedCondition {
   if ("all" in when) {
     return { all: when.all.map(normalizeCondition) };
   }
@@ -36,10 +31,8 @@ export function normalizeCondition(when: WhenCondition): NormalizedCondition {
     : { prop: when.prop, values: [...when.values] };
 }
 
-// Values a test matches on a prop the model counts as absent: `as={false}` and
-// `as={undefined}`. Exported for the sibling agreement test, which pins this
-// re-encoding of the adapter's absence rule against the adapter itself — the
-// adapter's `isAttributePresent` is canonical (see docs/adr/0002-*).
+// Re-encodes the adapter's canonical absence rule, pinned by the sibling
+// agreement test (see docs/adr/0002-*).
 export function matchesWhileAbsent(value: Literal): boolean {
   return value === false || value === "undefined";
 }

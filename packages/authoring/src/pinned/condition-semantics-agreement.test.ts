@@ -1,50 +1,38 @@
 // Condition semantics is implemented once per package on purpose (authoring
-// keeps zero runtime dependencies — see docs/adr/0002-*), so nothing at the type level
-// ties the two copies together. This is that tie: a shared corpus run through
-// both copies, asserting they agree.
-//
-//   - `normalizeCondition` (authoring) and `normalizeWhen` (core) must partition
-//     any set of conditions into the same equality classes — two conditions
-//     normalize alike under one exactly when they do under the other — and,
-//     since both intern by `JSON.stringify`, produce byte-identical intern keys.
-//   - `matchesWhileAbsent` (authoring) re-encodes the adapter's
-//     `isAttributePresent` absence rule; its verdict on a condition literal must
-//     match what the adapter produces for that literal written as an attribute.
-//
-// If either mirror drifts from its original, a case here fails.
+// keeps zero runtime dependencies — docs/adr/0002-*), so nothing at the type
+// level ties the two copies together. This is that tie: a shared corpus run
+// through both, asserting they partition it into the same equality classes and
+// intern it to the same keys, and that the absence rule agrees likewise.
 
 import type { TSESTree } from "@typescript-eslint/utils";
 import { Linter } from "eslint";
 import tseslint from "typescript-eslint";
 import { describe, expect, it } from "vitest";
 
-import type { WhenCondition } from "@jsx-contracts/eslint-plugin";
+import type { When } from "@jsx-contracts/eslint-plugin";
 
-// The plugin's exports map exposes only "."; these two internals are reached
-// through its built output — the same artifacts the package-name import above
-// resolves to — so they stay effectively private to consumers (see the pin-only
-// note on the exports themselves, and docs/adr/0002-*).
+// Reached through the plugin's built output, so these internals stay private to
+// consumers (see docs/adr/0002-*).
 import { isAttributePresent } from "../../../eslint-plugin/build/adapter/collect/props.js";
 import { normalizeWhen } from "../../../eslint-plugin/build/contracts/activation/when-condition-pool.js";
-import type { Literal } from "../compile/entry.js";
+import { allOf, anyOf, not, prop } from "../surface/conditions.js";
 
+import type { Literal } from "./condition-semantics.js";
 import {
   matchesWhileAbsent,
   normalizeCondition,
 } from "./condition-semantics.js";
 
-const authoringKey = (when: WhenCondition): string =>
+const authoringKey = (when: When): string =>
   JSON.stringify(normalizeCondition(when));
 
-const coreKey = (when: WhenCondition): string =>
-  JSON.stringify(normalizeWhen(when));
+const engineKey = (when: When): string => JSON.stringify(normalizeWhen(when));
 
-// Conditions written differently that mean the same thing: each group must
-// collapse to a single intern key, the same one under both normalizers.
-const synonyms: { label: string; forms: WhenCondition[] }[] = [
+// Each group must collapse to a single intern key, the same under both.
+const synonyms: { label: string; forms: When[] }[] = [
   {
-    label: "a string shorthand and its explicit prop test",
-    forms: ["present", { prop: "present" }],
+    label: "a constructed presence test and its hand-written form",
+    forms: [prop("present").isPresent().when, { prop: "present" }],
   },
   {
     label: "a prop/values object written in either key order",
@@ -54,48 +42,64 @@ const synonyms: { label: string; forms: WhenCondition[] }[] = [
     ],
   },
   {
-    label: "a nested tree with its inner keys reordered",
+    label: "a nested tree built and hand-written",
     forms: [
-      { all: [{ prop: "a", values: ["x"] }, { not: "b" }] },
-      { all: [{ values: ["x"], prop: "a" }, { not: "b" }] },
+      allOf(prop("a").is("x"), not(prop("b").isPresent())).when,
+      { all: [{ prop: "a", values: ["x"] }, { not: { prop: "b" } }] },
+      { all: [{ values: ["x"], prop: "a" }, { not: { prop: "b" } }] },
     ],
   },
 ];
 
-// Conditions that must never collapse together: value order, presence versus
-// value, `all` versus `any`, and a tree versus its negation all stay distinct.
-const distinct: WhenCondition[] = [
+// Value order, presence versus value, `all` versus `any`, and a tree versus its
+// negation all stay distinct.
+const distinct: When[] = [
   { prop: "variant" },
   { prop: "variant", values: ["compact", "dense"] },
   { prop: "variant", values: ["dense", "compact"] },
   { prop: "other", values: ["compact", "dense"] },
-  "flag",
-  { not: "flag" },
-  { all: ["a", "b"] },
-  { all: ["b", "a"] },
-  { any: ["a", "b"] },
-  { not: { any: ["a", "b"] } },
+  { prop: "flag" },
+  { not: { prop: "flag" } },
+  { all: [{ prop: "a" }, { prop: "b" }] },
+  { all: [{ prop: "b" }, { prop: "a" }] },
+  { any: [{ prop: "a" }, { prop: "b" }] },
+  { not: { any: [{ prop: "a" }, { prop: "b" }] } },
 ];
 
-const everyCondition: WhenCondition[] = [
+const everyCondition: When[] = [
   ...synonyms.flatMap((group) => group.forms),
   ...distinct,
 ];
 
 describe("condition normalization agrees across the two packages", () => {
+  it("builds exactly the tree both normalizers expect", () => {
+    expect(normalizeCondition(prop("dense").isPresent().when)).toEqual({
+      prop: "dense",
+    });
+
+    expect(
+      normalizeCondition(prop("variant").is("compact", 2, false).when),
+    ).toEqual({ prop: "variant", values: ["compact", 2, false] });
+
+    expect(
+      normalizeCondition(
+        anyOf(prop("a").is("x"), not(prop("b").isPresent())).when,
+      ),
+    ).toEqual({ any: [{ prop: "a", values: ["x"] }, { not: { prop: "b" } }] });
+  });
+
   it("interns every condition to a byte-identical key under both", () => {
     for (const when of everyCondition) {
-      expect(authoringKey(when)).toBe(coreKey(when));
+      expect(authoringKey(when)).toBe(engineKey(when));
     }
   });
 
-  // The equality-class claim stated directly, independent of the key format:
-  // two conditions are alike under authoring exactly when they are under the core.
+  // The equality-class claim, independent of the key format.
   it("agrees on which conditions are alike and which differ", () => {
     for (const left of everyCondition) {
       for (const right of everyCondition) {
         expect(authoringKey(left) === authoringKey(right)).toBe(
-          coreKey(left) === coreKey(right),
+          engineKey(left) === engineKey(right),
         );
       }
     }
@@ -105,24 +109,23 @@ describe("condition normalization agrees across the two packages", () => {
     for (const { label, forms } of synonyms) {
       it(label, () => {
         const authoring = new Set(forms.map(authoringKey));
-        const core = new Set(forms.map(coreKey));
+        const engine = new Set(forms.map(engineKey));
 
         expect(authoring.size).toBe(1);
-        expect(core.size).toBe(1);
-        expect([...authoring]).toStrictEqual([...core]);
+        expect(engine.size).toBe(1);
+        expect([...authoring]).toStrictEqual([...engine]);
       });
     }
   });
 
   it("keeps distinct conditions distinct under both", () => {
     expect(new Set(distinct.map(authoringKey)).size).toBe(distinct.length);
-    expect(new Set(distinct.map(coreKey)).size).toBe(distinct.length);
+    expect(new Set(distinct.map(engineKey)).size).toBe(distinct.length);
   });
 });
 
-// The value node of the sole JSX attribute in `<x {attribute} />`, parsed the
-// way the adapter's rules parse. Boxed so a legitimately `null` value (a bare
-// attribute) is distinguishable from "the rule never ran".
+// Boxed so a legitimately `null` value (a bare attribute) is distinguishable
+// from "the rule never ran".
 function attributeValue(attribute: string): TSESTree.JSXAttribute["value"] {
   const captured: { value: TSESTree.JSXAttribute["value"] }[] = [];
 
@@ -163,10 +166,8 @@ function attributeValue(attribute: string): TSESTree.JSXAttribute["value"] {
   return only.value;
 }
 
-// A condition literal paired with that value written as an attribute. The two
-// forms the model counts as absent — `={false}` and `={undefined}` — are the
-// only literals `matchesWhileAbsent` returns true for; every present form pairs
-// with false.
+// `={false}` and `={undefined}` are the only literals `matchesWhileAbsent`
+// returns true for; every present form pairs with false.
 const absence: { label: string; value: Literal; attribute: string }[] = [
   { label: "a false literal", value: false, attribute: "foo={false}" },
   {
@@ -196,15 +197,13 @@ describe("the absence rule agrees across the two packages", () => {
     }
   });
 
-  // The adapter's third absent form. No condition literal (`string | number |
-  // boolean`) can be `null`, so `matchesWhileAbsent` has no arm for it; this pins
-  // that the adapter still treats it as absent, so the gap stays a non-gap.
+  // No condition literal can be `null`, so `matchesWhileAbsent` has no arm for
+  // it. This pins that the gap stays a non-gap.
   it("counts an explicit null absent, which no literal can reach", () => {
     expect(isAttributePresent(attributeValue("foo={null}"))).toBe(false);
   });
 
-  // A bare attribute is present — the `isPresent()` case, carrying no value for a
-  // condition literal to match.
+  // The `isPresent()` case, carrying no value for a literal to match.
   it("counts a bare attribute present", () => {
     expect(isAttributePresent(attributeValue("foo"))).toBe(true);
   });

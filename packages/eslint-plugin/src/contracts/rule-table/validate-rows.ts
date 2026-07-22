@@ -1,251 +1,469 @@
 /**
- * The runtime shape check every rule runs over its rule table, catching what
- * the JSON schema deliberately lets through. Throws on the first malformed row.
+ * The runtime shape check, catching what the JSON schema deliberately lets
+ * through — above all a malformed match key, the field the engine keys off.
  */
 
 import type {
   AncestorRow,
-  ContractRow,
   ContractRows,
+  Forbidden,
+  MatchKey,
+  PropSpec,
+  PropsBranch,
   PropsRow,
+  SlotBranch,
   SlotsRow,
+  SubtreeBranch,
   SubtreeRow,
-  WhenCondition,
+  When,
 } from "./rows.js";
-import { normalizeForbid, normalizeSlot } from "./shorthand.js";
 
-/** Rejects the row under validation, naming its position and identity. */
 type Fail = (problem: string) => never;
 
-function failFor(row: ContractRow, index: number): Fail {
-  const label = `row ${String(index)} (${row.facet} <${row.component}>)`;
+const matchKinds = new Set(["name"]);
 
-  return (problem) => {
-    throw new Error(`contracts: ${label} ${problem}.`);
-  };
-}
-
-function checkBounds(
-  fail: Fail,
-  subject: string,
-  min: number | undefined,
-  max: number | undefined,
-  minKey: string,
-  maxKey: string,
-): void {
-  if (min !== undefined && (!Number.isInteger(min) || min < 0)) {
-    fail(`${subject} ${minKey} must be a non-negative integer`);
+function validateMatch(match: unknown, subject: string, fail: Fail): void {
+  if (typeof match !== "object" || match === null) {
+    fail(`${subject} match key must be an object`);
   }
 
-  if (max !== undefined && (!Number.isInteger(max) || max < 1)) {
-    fail(`${subject} ${maxKey} must be a positive integer`);
+  const key = match as Partial<MatchKey>;
+
+  if (typeof key.kind !== "string" || !matchKinds.has(key.kind)) {
+    fail(
+      `${subject} match key must have kind "name", got ${JSON.stringify(
+        key.kind,
+      )}`,
+    );
   }
 
-  if (min !== undefined && max !== undefined && min > max) {
-    fail(`${subject} ${minKey} exceeds ${maxKey}`);
+  if (typeof key.name !== "string" || key.name.length === 0) {
+    fail(`${subject} match key must name an element`);
   }
 }
 
-function validateWhen(when: WhenCondition, fail: Fail): void {
-  if (typeof when === "string") {
-    if (when.length === 0) {
-      fail("when must name a prop");
-    }
-
+function validateCount(count: unknown, alias: string, fail: Fail): void {
+  if (count === undefined) {
     return;
   }
 
-  // Exactly one arm, at every depth.
-  const arms = (["prop", "all", "any", "not"] as const).filter(
-    (arm) => arm in when,
-  );
-
-  if (arms.length > 1) {
-    fail(`when must carry one of prop/all/any/not, not ${arms.join(" and ")}`);
+  if (typeof count !== "object" || count === null) {
+    fail(`slot "${alias}" count must be an object`);
   }
 
-  if ("all" in when || "any" in when) {
-    const operator = "all" in when ? "all" : "any";
-    const operands = "all" in when ? when.all : when.any;
+  for (const bound of ["min", "max"] as const) {
+    const value = (count as Record<string, unknown>)[bound];
+
+    if (value !== undefined && (typeof value !== "number" || value < 0)) {
+      fail(`slot "${alias}" ${bound} count must be a non-negative number`);
+    }
+  }
+}
+
+function validateReferences(
+  refs: unknown,
+  relation: string,
+  alias: string,
+  aliases: Set<string>,
+  fail: Fail,
+): void {
+  if (refs === undefined) {
+    return;
+  }
+
+  if (!Array.isArray(refs)) {
+    fail(`slot "${alias}" ${relation} must be an array`);
+  }
+
+  for (const ref of refs as unknown[]) {
+    if (typeof ref !== "string") {
+      fail(`slot "${alias}" ${relation} must name sibling aliases`);
+    }
+
+    if (!aliases.has(ref)) {
+      fail(
+        `slot "${alias}" ${relation} names "${ref}", which is not a declared slot`,
+      );
+    }
+  }
+}
+
+function validateWhen(when: unknown, subject: string, fail: Fail): void {
+  if (typeof when !== "object" || when === null) {
+    fail(`${subject} condition must be an object`);
+  }
+
+  const node = when as Partial<When> & Record<string, unknown>;
+
+  if ("all" in node || "any" in node) {
+    const operands = node.all ?? node.any;
 
     if (!Array.isArray(operands) || operands.length === 0) {
-      fail(`when ${operator} must not be empty`);
+      fail(`${subject} all/any must be a non-empty array of conditions`);
     }
 
-    for (const operand of operands) {
-      validateWhen(operand, fail);
+    for (const operand of operands as unknown[]) {
+      validateWhen(operand, subject, fail);
     }
 
     return;
   }
 
-  if ("not" in when) {
-    validateWhen(when.not, fail);
+  if ("not" in node) {
+    validateWhen(node.not, subject, fail);
 
     return;
   }
 
-  if (typeof when.prop !== "string" || when.prop.length === 0) {
-    fail("when must name a prop");
+  if (typeof node.prop !== "string" || node.prop.length === 0) {
+    fail(`${subject} condition must name a prop`);
   }
 
-  if (when.values?.length === 0) {
-    fail(`when "${when.prop}" values must not be empty`);
+  if (node.values !== undefined && !Array.isArray(node.values)) {
+    fail(`${subject} condition values must be an array`);
+  }
+}
+
+function validateBranch(
+  branch: SlotBranch,
+  label: string,
+  baseAliases: Set<string>,
+  fail: Fail,
+): void {
+  if (typeof branch !== "object") {
+    fail(`${label} must be an object`);
+  }
+
+  validateWhen(branch.when, label, fail);
+
+  if (branch.because !== undefined && typeof branch.because !== "string") {
+    fail(`${label} because must be a string`);
+  }
+
+  for (const relation of ["forbidSlots", "requireSlots"] as const) {
+    const refs = branch[relation];
+
+    if (refs === undefined) {
+      continue;
+    }
+
+    if (!Array.isArray(refs)) {
+      fail(`${label} ${relation} must be an array`);
+    }
+
+    for (const ref of refs as unknown[]) {
+      if (typeof ref !== "string" || !baseAliases.has(ref)) {
+        fail(
+          `${label} ${relation} names "${String(ref)}", not a declared slot`,
+        );
+      }
+    }
+  }
+
+  for (const slot of branch.extend ?? []) {
+    if (typeof slot.alias !== "string" || slot.alias.length === 0) {
+      fail(`${label} extend slot must carry a non-empty alias`);
+    }
+
+    validateMatch(slot.match, `${label} extend slot "${slot.alias}"`, fail);
+    validateCount(slot.count, slot.alias, fail);
   }
 }
 
 function validateSlotsRow(row: SlotsRow, fail: Fail): void {
-  // Absent `slots` is the identity; empty would intersect the container's list
-  // away.
-  if (row.slots?.length === 0) {
-    fail("slots must not be empty");
+  if (typeof row.closed !== "boolean") {
+    fail("closed must be a boolean");
   }
 
   if (
-    row.slots === undefined &&
-    row.requires === undefined &&
-    row.exclusive === undefined &&
-    row.strict === undefined
+    row.strictAnalysis !== undefined &&
+    typeof row.strictAnalysis !== "boolean"
   ) {
-    fail("must declare slots, a cross-slot rule, or strictness");
+    fail("strictAnalysis must be a boolean");
   }
 
-  const slots = new Set<string>();
-
-  for (const rawSlot of row.slots ?? []) {
-    const slot = normalizeSlot(rawSlot);
-
-    if (slots.has(slot.name)) {
-      fail(`lists duplicate slot "${slot.name}"`);
-    }
-
-    slots.add(slot.name);
-
-    checkBounds(
-      fail,
-      `slot "${slot.name}"`,
-      slot.minCount,
-      slot.maxCount,
-      "minCount",
-      "maxCount",
-    );
+  if (!Array.isArray(row.slots)) {
+    fail("slots must be an array");
   }
 
-  // Cross-slot references resolve against the slots declared in the same row.
-  const references = [
-    ...Object.entries(row.requires ?? {}).flat(),
-    ...(row.exclusive ?? []).flat(2),
-  ];
+  const aliases = new Set<string>();
 
-  for (const reference of references) {
-    if (!slots.has(reference)) {
-      fail(`references "${reference}", which it does not declare`);
+  for (const slot of row.slots) {
+    if (typeof slot.alias !== "string" || slot.alias.length === 0) {
+      fail("a slot must carry a non-empty alias");
     }
+
+    if (aliases.has(slot.alias)) {
+      fail(`lists duplicate slot alias "${slot.alias}"`);
+    }
+
+    aliases.add(slot.alias);
+    validateMatch(slot.match, `slot "${slot.alias}"`, fail);
+    validateCount(slot.count, slot.alias, fail);
+  }
+
+  // A second pass, so every alias is known before a reference is checked.
+  for (const slot of row.slots) {
+    validateReferences(slot.requires, "requires", slot.alias, aliases, fail);
+    validateReferences(slot.excludes, "excludes", slot.alias, aliases, fail);
+  }
+
+  if (row.branches !== undefined) {
+    if (!Array.isArray(row.branches)) {
+      fail("branches must be an array");
+    }
+
+    row.branches.forEach((branch, index) => {
+      validateBranch(branch, `branch ${String(index)}`, aliases, fail);
+    });
   }
 }
 
-function validateSubtreeRow(row: SubtreeRow, fail: Fail): void {
-  if (row.forbid?.length === 0) {
-    fail("forbid must not be empty");
+function validatePropSpec(spec: PropSpec, label: string, fail: Fail): void {
+  if (typeof spec.prop !== "string" || spec.prop.length === 0) {
+    fail(`${label} must name a prop`);
   }
 
-  if (row.forbidProps?.length === 0) {
-    fail("forbidProps must not be empty");
-  }
+  for (const relation of ["requires", "excludes"] as const) {
+    const refs = spec[relation];
 
-  if (row.require?.length === 0) {
-    fail("require must not be empty");
-  }
-
-  if (
-    (row.forbid?.length ?? 0) === 0 &&
-    (row.forbidProps?.length ?? 0) === 0 &&
-    (row.require?.length ?? 0) === 0
-  ) {
-    fail("must forbid an element or prop, or require a descendant");
-  }
-
-  for (const entry of row.require ?? []) {
-    if (entry.name.length === 0) {
-      fail("require entry must name an element");
+    if (refs === undefined) {
+      continue;
     }
 
-    checkBounds(
-      fail,
-      `require "${entry.name}"`,
-      entry.min,
-      entry.max,
-      "min",
-      "max",
-    );
+    if (!Array.isArray(refs)) {
+      fail(`${label} "${spec.prop}" ${relation} must be an array`);
+    }
+
+    for (const ref of refs as unknown[]) {
+      if (typeof ref !== "string" || ref.length === 0) {
+        fail(`${label} "${spec.prop}" ${relation} must name props`);
+      }
+    }
+  }
+
+  const constrained =
+    spec.required === true ||
+    (spec.requires?.length ?? 0) > 0 ||
+    (spec.excludes?.length ?? 0) > 0 ||
+    spec.deprecated !== undefined;
+
+  if (!constrained) {
+    fail(`${label} "${spec.prop}" carries no constraint`);
+  }
+}
+
+function validatePropsBranch(
+  branch: PropsBranch,
+  label: string,
+  fail: Fail,
+): void {
+  if (typeof branch !== "object") {
+    fail(`${label} must be an object`);
+  }
+
+  validateWhen(branch.when, label, fail);
+
+  if (branch.because !== undefined && typeof branch.because !== "string") {
+    fail(`${label} because must be a string`);
+  }
+
+  if (!Array.isArray(branch.props)) {
+    fail(`${label} props must be an array`);
+  }
+
+  for (const spec of branch.props) {
+    validatePropSpec(spec, `${label} prop spec`, fail);
   }
 }
 
 function validatePropsRow(row: PropsRow, fail: Fail): void {
-  const declares =
-    (row.required?.length ?? 0) > 0 ||
-    (row.exclusive?.length ?? 0) > 0 ||
-    Object.keys(row.deprecated ?? {}).length > 0 ||
-    row.deprecatedComponent !== undefined;
-
-  if (!declares) {
-    fail("must declare at least one prop contract");
+  if (!Array.isArray(row.props)) {
+    fail("props must be an array");
   }
 
-  for (const entry of row.required ?? []) {
-    if (Array.isArray(entry) && entry.length === 0) {
-      fail("has an empty required group");
+  for (const spec of row.props) {
+    validatePropSpec(spec, "prop spec", fail);
+  }
+
+  if (row.requiresAnyOf !== undefined) {
+    if (!Array.isArray(row.requiresAnyOf)) {
+      fail("requiresAnyOf must be an array");
+    }
+
+    for (const group of row.requiresAnyOf) {
+      if (!Array.isArray(group) || group.length === 0) {
+        fail("requiresAnyOf group must be a non-empty array of props");
+      }
+
+      for (const name of group as unknown[]) {
+        if (typeof name !== "string" || name.length === 0) {
+          fail("requiresAnyOf group must name props");
+        }
+      }
     }
   }
 
-  for (const [groupA, groupB] of row.exclusive ?? []) {
-    if (groupA.length === 0 || groupB.length === 0) {
-      fail("has an empty exclusive group");
+  if (row.branches !== undefined) {
+    if (!Array.isArray(row.branches)) {
+      fail("branches must be an array");
     }
+
+    row.branches.forEach((branch, index) => {
+      validatePropsBranch(branch, `branch ${String(index)}`, fail);
+    });
+  }
+}
+
+function validateStringArray(value: unknown, label: string, fail: Fail): void {
+  if (!Array.isArray(value)) {
+    fail(`${label} must be an array`);
+  }
+
+  for (const item of value as unknown[]) {
+    if (typeof item !== "string" || item.length === 0) {
+      fail(`${label} must be non-empty strings`);
+    }
+  }
+}
+
+function validateForbidden(entries: unknown, label: string, fail: Fail): void {
+  if (!Array.isArray(entries)) {
+    fail(`${label} must be an array`);
+  }
+
+  for (const entry of entries as Forbidden[]) {
+    validateMatch(entry.match, label, fail);
+
+    if (entry.from !== undefined && typeof entry.from !== "string") {
+      fail(`${label} from must be a string`);
+    }
+  }
+}
+
+function validateSubtreeBranch(
+  branch: SubtreeBranch,
+  label: string,
+  fail: Fail,
+): void {
+  if (typeof branch !== "object") {
+    fail(`${label} must be an object`);
+  }
+
+  validateWhen(branch.when, label, fail);
+
+  if (branch.because !== undefined && typeof branch.because !== "string") {
+    fail(`${label} because must be a string`);
+  }
+
+  if (branch.forbidDescendants !== undefined) {
+    validateForbidden(
+      branch.forbidDescendants,
+      `${label} forbidDescendants`,
+      fail,
+    );
+  }
+
+  if (branch.forbidDescendantProps !== undefined) {
+    validateStringArray(
+      branch.forbidDescendantProps,
+      `${label} forbidDescendantProps`,
+      fail,
+    );
+  }
+}
+
+function validateSubtreeRow(row: SubtreeRow, fail: Fail): void {
+  if (!Array.isArray(row.descendants)) {
+    fail("descendants must be an array");
+  }
+
+  const aliases = new Set<string>();
+
+  for (const descendant of row.descendants) {
+    if (typeof descendant.alias !== "string" || descendant.alias.length === 0) {
+      fail("a descendant must carry a non-empty alias");
+    }
+
+    if (aliases.has(descendant.alias)) {
+      fail(`lists duplicate descendant alias "${descendant.alias}"`);
+    }
+
+    aliases.add(descendant.alias);
+    validateMatch(descendant.match, `descendant "${descendant.alias}"`, fail);
+    validateCount(descendant.count, descendant.alias, fail);
+  }
+
+  validateForbidden(row.forbidDescendants, "forbidDescendants", fail);
+  validateStringArray(row.forbidDescendantProps, "forbidDescendantProps", fail);
+
+  if (row.branches !== undefined) {
+    if (!Array.isArray(row.branches)) {
+      fail("branches must be an array");
+    }
+
+    row.branches.forEach((branch, index) => {
+      validateSubtreeBranch(branch, `branch ${String(index)}`, fail);
+    });
   }
 }
 
 function validateAncestorRow(row: AncestorRow, fail: Fail): void {
-  if (row.notInside.length === 0) {
-    fail("notInside must not be empty");
-  }
+  validateForbidden(row.notInside, "notInside", fail);
 
-  for (const rawEntry of row.notInside) {
-    if (normalizeForbid(rawEntry).name.length === 0) {
-      fail("notInside entry must name an element");
+  // Read defensively: a hand-written row can carry any deprecated shape.
+  const deprecated: unknown = row.deprecated;
+
+  if (deprecated !== undefined) {
+    if (typeof deprecated !== "object" || deprecated === null) {
+      fail("deprecated must be an object");
+    }
+
+    const { useInstead } = deprecated as { useInstead?: unknown };
+
+    if (useInstead !== undefined && typeof useInstead !== "string") {
+      fail("deprecated useInstead must be a string");
     }
   }
 }
 
-/** Shape-validate a rule table. Throws on the first malformed row. */
+/** Throws on the first malformed row. */
 export function validateContractRows(rows: ContractRows): void {
   for (const [index, row] of rows.entries()) {
-    const fail = failFor(row, index);
+    const label = `row ${String(index)}`;
+    const fail: Fail = (problem) => {
+      throw new Error(`contracts: ${label} ${problem}.`);
+    };
 
-    if (row.when !== undefined) {
-      validateWhen(row.when, fail);
+    // Read defensively: a hand-written table can carry any facet string.
+    const facet: unknown = (row as { facet: unknown }).facet;
+
+    validateMatch(row.match, "row", fail);
+
+    if (facet === "slots") {
+      validateSlotsRow(row as SlotsRow, fail);
+
+      continue;
     }
 
-    switch (row.facet) {
-      case "slots": {
-        validateSlotsRow(row, fail);
-        break;
-      }
+    if (facet === "props") {
+      validatePropsRow(row as PropsRow, fail);
 
-      case "subtree": {
-        validateSubtreeRow(row, fail);
-        break;
-      }
-
-      case "props": {
-        validatePropsRow(row, fail);
-        break;
-      }
-
-      case "ancestor": {
-        validateAncestorRow(row, fail);
-        break;
-      }
+      continue;
     }
+
+    if (facet === "subtree") {
+      validateSubtreeRow(row as SubtreeRow, fail);
+
+      continue;
+    }
+
+    if (facet === "ancestor") {
+      validateAncestorRow(row as AncestorRow, fail);
+
+      continue;
+    }
+
+    fail(`has unknown facet ${JSON.stringify(facet)}`);
   }
 }

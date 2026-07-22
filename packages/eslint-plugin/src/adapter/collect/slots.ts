@@ -15,19 +15,12 @@ import { descendTransparent } from "./transparent.js";
 type SourceCode = Readonly<TSESLint.SourceCode>;
 
 /**
- * How many constants one container's collection may inline. Inlining is per
- * reference, not per constant, so a chain of constants each naming its
- * predecessor twice doubles per link — content no hand-written container has,
- * but nothing in the language forbids. Past the budget the remaining
- * references degrade to unknown refs, which is what the collector already says
- * about content it cannot see through.
+ * Inlining is per reference, so a chain of constants each naming its predecessor
+ * twice doubles per link. Past the budget the rest degrade to unknown refs.
  */
 const maxConstantExpansions = 1000;
 
-/**
- * A container's direct rendered children, seen through transparent nodes and
- * resolved constants. Child elements are opaque: recorded, not recursed into.
- */
+/** Child elements are opaque: recorded, not recursed into. */
 export function collectContainerChildren(
   sourceCode: SourceCode,
   filename: string,
@@ -37,9 +30,8 @@ export function collectContainerChildren(
   const unknownRefs: TSESTree.Node[] = [];
   const textRefs: TSESTree.JSXText[] = [];
 
-  // The inits currently on the descent stack — entered before descending and
-  // left on the way out, so only a constant that reaches itself counts as a
-  // cycle. A plain second reference to a shared constant is inlined again.
+  // On the descent stack, so only a constant reaching itself counts as a cycle;
+  // a second reference to a shared constant is inlined again.
   const inFlightInits = new Set<TSESTree.Expression>();
   let expansionsLeft = maxConstantExpansions;
 
@@ -126,10 +118,7 @@ export function collectContainerChildren(
   };
 }
 
-/**
- * Where a slot element sits: its nearest significant ancestor, or — when it is
- * assigned to a variable — the ancestors of every read of that variable.
- */
+/** The nearest significant ancestor, or the ancestors of every read of its variable. */
 export function collectPlacement(
   sourceCode: SourceCode,
   filename: string,

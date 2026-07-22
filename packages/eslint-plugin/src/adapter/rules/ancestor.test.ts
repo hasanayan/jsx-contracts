@@ -1,10 +1,11 @@
+// Seam 2 (rule): ancestor rows drive a real ESLint rule.
+
 import { RuleTester } from "@typescript-eslint/rule-tester";
-import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import { afterAll, describe, it } from "vitest";
 
 import type { ContractRows } from "../../contracts/rule-table/rows.js";
 
-import { ancestorGranular } from "./ancestor.js";
+import { ancestorContractRule } from "./ancestor.js";
 
 RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
@@ -13,156 +14,62 @@ RuleTester.itOnly = it.only;
 
 const ruleTester = new RuleTester({
   languageOptions: {
-    parserOptions: {
-      ecmaFeatures: { jsx: true },
-    },
+    parserOptions: { ecmaFeatures: { jsx: true } },
   },
 });
 
-const buttonOptions: ContractRows = [
+const rows: ContractRows = [
   {
     facet: "ancestor",
-    importPath: "*/acme-ds/components/button",
-    component: "Button",
-    notInside: ["Button"],
+    match: { kind: "name", name: "Card.Action" },
+    notInside: [{ match: { kind: "name", name: "Table" } }],
+  },
+  {
+    facet: "ancestor",
+    match: { kind: "name", name: "OldButton" },
+    notInside: [],
+    deprecated: { useInstead: "Button" },
+    because: "Superseded in v3.",
   },
 ];
 
-const gatedOptions: ContractRows = [
-  {
-    facet: "ancestor",
-    importPath: "*/acme-ds/components/card",
-    component: "Card.Action",
-    notInside: [
-      { name: "Modal.Footer", importPath: "*/acme-ds/components/modal" },
-    ],
-  },
-];
-
-// A dotted member ancestor, name-only.
-const memberOptions: ContractRows = [
-  {
-    facet: "ancestor",
-    importPath: "*/acme-ds/components/card",
-    component: "Card.Action",
-    notInside: ["Modal.Footer"],
-  },
-];
-
-ruleTester.run("ancestor", ancestorGranular["ancestor.forbid"], {
+ruleTester.run("ancestor.contract", ancestorContractRule, {
   valid: [
     {
-      name: "a button not nested inside another button",
-      options: [buttonOptions],
-      code: `
-        const view = (
-          <div>
-            <Button>Save</Button>
-            <Button>Cancel</Button>
-          </div>
-        );
-      `,
+      name: "the component renders outside its forbidden ancestor",
+      code: "<Panel><Card.Action /></Panel>",
+      options: [rows],
     },
     {
-      name: "a constrained component from a non-matching import is ignored",
-      options: [buttonOptions],
-      code: `
-        import { Button } from "~/other/button";
-        const view = (
-          <Button>
-            <Button>Nested</Button>
-          </Button>
-        );
-      `,
-    },
-    {
-      name: "a gated forbidden ancestor from a non-matching import does not fire",
-      options: [gatedOptions],
-      code: `
-        import { Modal } from "~/other/modal";
-        const view = (
-          <Modal.Footer>
-            <Card.Action>Go</Card.Action>
-          </Modal.Footer>
-        );
-      `,
+      name: "an unconfigured component is ignored",
+      code: "<Table><Sidebar /></Table>",
+      options: [rows],
     },
   ],
   invalid: [
     {
-      name: "a button directly inside another button reports on the inner element",
-      options: [buttonOptions],
-      code: `
-        const view = (
-          <Button>
-            <Button>Nested</Button>
-          </Button>
-        );
-      `,
+      name: "the component renders inside a forbidden ancestor",
+      code: "<Table><Row><Card.Action /></Row></Table>",
+      options: [rows],
       errors: [
         {
           messageId: "forbiddenAncestor",
-          type: AST_NODE_TYPES.JSXOpeningElement,
-          data: { name: "Button", ancestor: "Button" },
+          data: { component: "Card.Action", ancestor: "Table", because: "" },
         },
       ],
     },
     {
-      name: "deep nesting through wrapper elements is caught",
-      options: [buttonOptions],
-      code: `
-        const view = (
-          <Button>
-            <span>
-              <em>
-                <Button>Nested</Button>
-              </em>
-            </span>
-          </Button>
-        );
-      `,
-      errors: [{ messageId: "forbiddenAncestor" }],
-    },
-    {
-      name: "nesting through a JSX-valued prop is caught",
-      options: [buttonOptions],
-      code: `
-        const view = <Button icon={<Button>Nested</Button>} />;
-      `,
-      errors: [{ messageId: "forbiddenAncestor" }],
-    },
-    {
-      name: "a gated forbidden ancestor fires when its import matches",
-      options: [gatedOptions],
-      code: `
-        import { Modal } from "~/acme-ds/components/modal";
-        const view = (
-          <Modal.Footer>
-            <Card.Action>Go</Card.Action>
-          </Modal.Footer>
-        );
-      `,
+      name: "a deprecated component is used, with its hint and because",
+      code: "<OldButton />",
+      options: [rows],
       errors: [
         {
-          messageId: "forbiddenAncestor",
-          data: { name: "Card.Action", ancestor: "Modal.Footer" },
-        },
-      ],
-    },
-    {
-      name: "dotted member tags match on both the component and the ancestor",
-      options: [memberOptions],
-      code: `
-        const view = (
-          <Modal.Footer>
-            <Card.Action>Go</Card.Action>
-          </Modal.Footer>
-        );
-      `,
-      errors: [
-        {
-          messageId: "forbiddenAncestor",
-          data: { name: "Card.Action", ancestor: "Modal.Footer" },
+          messageId: "deprecatedComponent",
+          data: {
+            component: "OldButton",
+            hint: " — use `Button` instead",
+            because: " Superseded in v3.",
+          },
         },
       ],
     },

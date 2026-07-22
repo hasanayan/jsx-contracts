@@ -1,4 +1,8 @@
-/** A JSON Schema draft-4 document, as far as this file needs one. */
+/**
+ * What ESLint validates a rule's options against. Kept in lockstep with
+ * `rows.ts` and the runtime validator: three spellings of one shape.
+ */
+
 export interface JsonSchema {
   type?: string | string[];
   enum?: unknown[];
@@ -16,175 +20,196 @@ export interface JsonSchema {
   definitions?: Record<string, JsonSchema>;
 }
 
-// Recursive, so it is referenced by absolute id rather than by a JSON pointer
-// through ESLint's option-schema wrapper.
-const whenConditionId = "https://jsx-contracts.dev/schema/when-condition.json";
-
-const whenCondition: JsonSchema = { $ref: whenConditionId };
-
-const whenConditionDefinition: JsonSchema = {
-  id: whenConditionId,
+// The oneOf is where ADR 0004's `identity` variant lands.
+const matchKey: JsonSchema = {
   oneOf: [
-    // A bare string is shorthand for `{ prop }`.
-    { type: "string" },
     {
       type: "object",
       properties: {
-        prop: { type: "string" },
-        values: {
-          type: "array",
-          items: { type: ["string", "number", "boolean"] },
-        },
-      },
-      required: ["prop"],
-      additionalProperties: false,
-    },
-    {
-      type: "object",
-      properties: { all: { type: "array", items: whenCondition } },
-      required: ["all"],
-      additionalProperties: false,
-    },
-    {
-      type: "object",
-      properties: { any: { type: "array", items: whenCondition } },
-      required: ["any"],
-      additionalProperties: false,
-    },
-    {
-      type: "object",
-      properties: { not: whenCondition },
-      required: ["not"],
-      additionalProperties: false,
-    },
-  ],
-};
-
-const forbiddenElement: JsonSchema = {
-  oneOf: [
-    { type: "string" },
-    {
-      type: "object",
-      properties: {
+        kind: { type: "string", enum: ["name"] },
         name: { type: "string" },
-        importPath: { type: "string" },
       },
-      required: ["name"],
+      required: ["kind", "name"],
       additionalProperties: false,
     },
   ],
 };
 
-const groupPairs: JsonSchema = {
-  type: "array",
-  items: {
-    type: "array",
-    items: { type: "array", items: { type: "string" } },
-    minItems: 2,
-    maxItems: 2,
+const count: JsonSchema = {
+  type: "object",
+  properties: {
+    min: { type: "number", minimum: 0 },
+    max: { type: "number", minimum: 0 },
   },
+  additionalProperties: false,
 };
 
-const rowBase: Record<string, JsonSchema> = {
-  component: { type: "string" },
-  importPath: { type: "string" },
-  when: whenCondition,
+const slot: JsonSchema = {
+  type: "object",
+  properties: {
+    alias: { type: "string" },
+    match: matchKey,
+    from: { type: "string" },
+    count,
+    requires: { type: "array", items: { type: "string" } },
+    excludes: { type: "array", items: { type: "string" } },
+  },
+  required: ["alias", "match"],
+  additionalProperties: false,
 };
 
-function rowArm(
-  facet: string,
-  properties: Record<string, JsonSchema>,
-  required: string[] = [],
-): JsonSchema {
-  return {
-    type: "object",
-    properties: {
-      facet: { type: "string", enum: [facet] },
-      ...rowBase,
-      ...properties,
+// Kept permissive — the runtime validator enforces the exact tree shape.
+const when: JsonSchema = { type: "object" };
+
+const branch: JsonSchema = {
+  type: "object",
+  properties: {
+    when,
+    because: { type: "string" },
+    extend: { type: "array", items: slot },
+    forbidSlots: { type: "array", items: { type: "string" } },
+    requireSlots: { type: "array", items: { type: "string" } },
+  },
+  required: ["when"],
+  additionalProperties: false,
+};
+
+const propSpec: JsonSchema = {
+  type: "object",
+  properties: {
+    prop: { type: "string" },
+    required: { type: "boolean" },
+    requires: { type: "array", items: { type: "string" } },
+    excludes: { type: "array", items: { type: "string" } },
+    deprecated: {
+      type: "object",
+      properties: { useInstead: { type: "string" } },
+      additionalProperties: false,
     },
-    required: ["facet", "component", "importPath", ...required],
-    additionalProperties: false,
-  };
-}
+  },
+  required: ["prop"],
+  additionalProperties: false,
+};
+
+const propsBranch: JsonSchema = {
+  type: "object",
+  properties: {
+    when,
+    because: { type: "string" },
+    props: { type: "array", items: propSpec },
+  },
+  required: ["when", "props"],
+  additionalProperties: false,
+};
+
+// Already expanded, so the match key is always a whole name.
+const forbidden: JsonSchema = {
+  type: "object",
+  properties: { match: matchKey, from: { type: "string" } },
+  required: ["match"],
+  additionalProperties: false,
+};
+
+const descendant: JsonSchema = {
+  type: "object",
+  properties: {
+    alias: { type: "string" },
+    match: matchKey,
+    from: { type: "string" },
+    count,
+  },
+  required: ["alias", "match"],
+  additionalProperties: false,
+};
+
+const subtreeBranch: JsonSchema = {
+  type: "object",
+  properties: {
+    when,
+    because: { type: "string" },
+    forbidDescendants: { type: "array", items: forbidden },
+    forbidDescendantProps: { type: "array", items: { type: "string" } },
+  },
+  required: ["when"],
+  additionalProperties: false,
+};
+
+const deprecated: JsonSchema = {
+  type: "object",
+  properties: { useInstead: { type: "string" } },
+  additionalProperties: false,
+};
 
 export const contractRowsSchema: JsonSchema[] = [
   {
     type: "array",
-    definitions: { whenCondition: whenConditionDefinition },
     items: {
       oneOf: [
-        rowArm("slots", {
-          slots: {
-            type: "array",
-            items: {
-              oneOf: [
-                { type: "string" },
-                {
-                  type: "object",
-                  properties: {
-                    name: { type: "string" },
-                    minCount: { type: "integer", minimum: 0 },
-                    maxCount: { type: "integer", minimum: 1 },
-                    importPath: { type: "string" },
-                  },
-                  required: ["name"],
-                  additionalProperties: false,
-                },
-              ],
+        {
+          type: "object",
+          properties: {
+            facet: { type: "string", enum: ["slots"] },
+            match: matchKey,
+            slots: { type: "array", items: slot },
+            closed: { type: "boolean" },
+            strictAnalysis: { type: "boolean" },
+            because: { type: "string" },
+            branches: { type: "array", items: branch },
+          },
+          required: ["facet", "match", "slots", "closed"],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: {
+            facet: { type: "string", enum: ["props"] },
+            match: matchKey,
+            props: { type: "array", items: propSpec },
+            requiresAnyOf: {
+              type: "array",
+              items: { type: "array", items: { type: "string" } },
             },
+            because: { type: "string" },
+            branches: { type: "array", items: propsBranch },
           },
-          requires: {
-            type: "object",
-            additionalProperties: { type: "string" },
-          },
-          exclusive: groupPairs,
-          strict: { type: "boolean" },
-        }),
-        rowArm("subtree", {
-          forbid: { type: "array", items: forbiddenElement },
-          forbidProps: { type: "array", items: { type: "string" } },
-          require: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                name: { type: "string" },
-                min: { type: "integer", minimum: 0 },
-                max: { type: "integer", minimum: 1 },
-                importPath: { type: "string" },
-              },
-              required: ["name"],
-              additionalProperties: false,
+          required: ["facet", "match", "props"],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: {
+            facet: { type: "string", enum: ["subtree"] },
+            match: matchKey,
+            descendants: { type: "array", items: descendant },
+            forbidDescendants: { type: "array", items: forbidden },
+            forbidDescendantProps: {
+              type: "array",
+              items: { type: "string" },
             },
+            because: { type: "string" },
+            branches: { type: "array", items: subtreeBranch },
           },
-        }),
-        rowArm("props", {
-          required: {
-            type: "array",
-            items: {
-              oneOf: [
-                { type: "string" },
-                { type: "array", items: { type: "string" } },
-              ],
-            },
+          required: [
+            "facet",
+            "match",
+            "descendants",
+            "forbidDescendants",
+            "forbidDescendantProps",
+          ],
+          additionalProperties: false,
+        },
+        {
+          type: "object",
+          properties: {
+            facet: { type: "string", enum: ["ancestor"] },
+            match: matchKey,
+            notInside: { type: "array", items: forbidden },
+            deprecated,
+            because: { type: "string" },
           },
-          exclusive: groupPairs,
-          deprecated: {
-            type: "object",
-            additionalProperties: {
-              oneOf: [{ type: "string" }, { type: "boolean", enum: [true] }],
-            },
-          },
-          deprecatedComponent: {
-            oneOf: [{ type: "string" }, { type: "boolean", enum: [true] }],
-          },
-        }),
-        rowArm(
-          "ancestor",
-          { notInside: { type: "array", items: forbiddenElement } },
-          ["notInside"],
-        ),
+          required: ["facet", "match", "notInside"],
+          additionalProperties: false,
+        },
       ],
     },
   },

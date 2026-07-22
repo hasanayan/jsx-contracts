@@ -11,6 +11,7 @@
     "scripts/**/*.ts",
     ".sandcastle/**/*.ts"
   ],
+  "exclude": [".sandcastle/worktrees/**/*"],
   "references": [
     { "path": "packages/bench" },
     { "path": "packages/eslint-plugin" },

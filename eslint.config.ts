@@ -15,8 +15,10 @@ const kebabCase = "+([a-z0-9])*(-+([a-z0-9]))";
 
 export default defineConfig(
   {
-    // scripts/ is release tooling — typechecked by tsc, not style-linted here.
-    ignores: ["packages/*/build/", "**/*.d.ts", "scripts/"],
+    // scripts/ and .sandcastle/ are tooling — typechecked by tsc, not
+    // style-linted here. .sandcastle/worktrees/ additionally holds throwaway
+    // agent checkouts of other commits, which are not this tree's source at all.
+    ignores: ["packages/*/build/", "**/*.d.ts", "scripts/", ".sandcastle/"],
   },
 
   eslint.configs.recommended,

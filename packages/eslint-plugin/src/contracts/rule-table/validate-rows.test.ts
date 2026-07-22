@@ -1,406 +1,303 @@
-// Config-load rejections throw rather than reporting, so they are invisible to
-// the rule tester and get their own seam here. Every rejection names the row
-// and the problem.
-//
-// There is deliberately no duplicate guard: many rows may name one component in
-// one facet, and combining them is the point. The tests below pin that.
-
 import { describe, expect, it } from "vitest";
 
-import type { ContractRow, ContractRows, WhenCondition } from "./rows.js";
+import type { ContractRows } from "./rows.js";
 import { validateContractRows } from "./validate-rows.js";
 
-type RowOf<F extends ContractRow["facet"]> = Extract<ContractRow, { facet: F }>;
+const validRows: ContractRows = [
+  {
+    facet: "slots",
+    match: { kind: "name", name: "Card.Heading" },
+    closed: true,
+    slots: [
+      { alias: ".Text", match: { kind: "name", name: "Card.Heading.Text" } },
+    ],
+  },
+];
 
 describe("validateContractRows", () => {
-  it("accepts an empty table", () => {
+  it("accepts hand-written rows", () => {
     expect(() => {
-      validateContractRows([]);
+      validateContractRows(validRows);
     }).not.toThrow();
   });
 
-  it("names the row's position and identity in the rejection", () => {
+  it("accepts a loose row with an empty slots list", () => {
     expect(() => {
       validateContractRows([
         {
-          facet: "props",
-          importPath: "@acme/ds",
-          component: "Button",
-          required: ["label"],
-        },
-        {
-          facet: "ancestor",
-          importPath: "@acme/ds",
-          component: "Link",
-          notInside: [],
+          facet: "slots",
+          match: { kind: "name", name: "Card" },
+          closed: false,
+          slots: [],
         },
       ]);
-    }).toThrow(
-      "contracts: row 1 (ancestor <Link>) notInside must not be empty",
-    );
+    }).not.toThrow();
   });
 
-  // The condition tree is the one recursive shape in the payload, so its rules
-  // have to hold at every depth rather than only at the root.
-  describe("when-condition trees", () => {
-    const row = (when: WhenCondition): ContractRows => [
+  it("rejects a match key of an unknown kind", () => {
+    const rows = [
       {
-        facet: "props",
-        importPath: "@acme/ds",
-        component: "Button",
-        when,
-        required: ["href"],
+        facet: "slots",
+        match: { kind: "identity", name: "Card" },
+        closed: true,
+        slots: [],
       },
-    ];
+    ] as unknown as ContractRows;
 
-    it("accepts a tree combining all, any and not", () => {
-      expect(() => {
-        validateContractRows(
-          row({
-            all: [
-              { any: [{ prop: "variant", values: ["compact"] }, "dense"] },
-              { not: "tight" },
-            ],
-          }),
-        );
-      }).not.toThrow();
-    });
-
-    it("rejects an empty all list", () => {
-      expect(() => {
-        validateContractRows(row({ all: [] }));
-      }).toThrow("when all must not be empty");
-    });
-
-    it("rejects an empty any list", () => {
-      expect(() => {
-        validateContractRows(row({ any: [] }));
-      }).toThrow("when any must not be empty");
-    });
-
-    it("rejects an empty values list nested under a composite arm", () => {
-      expect(() => {
-        validateContractRows(
-          row({ any: ["dense", { not: { prop: "as", values: [] } }] }),
-        );
-      }).toThrow('when "as" values must not be empty');
-    });
-
-    it("rejects a nameless prop test at any depth", () => {
-      expect(() => {
-        validateContractRows(row({ all: ["dense", { prop: "" }] }));
-      }).toThrow("when must name a prop");
-    });
-
-    // The schema's `oneOf` catches this on a configured table; a table built
-    // programmatically reaches the validator without passing through it.
-    it("rejects an object carrying more than one arm", () => {
-      expect(() => {
-        validateContractRows(row({ all: ["dense"], not: "tight" }));
-      }).toThrow("when must carry one of prop/all/any/not, not all and not");
-    });
-
-    it("rejects a prop test carrying a composite arm as well", () => {
-      expect(() => {
-        validateContractRows(row({ prop: "as", any: ["dense"] }));
-      }).toThrow("when must carry one of prop/all/any/not, not prop and any");
-    });
-
-    it("names the row the malformed condition sits in", () => {
-      expect(() => {
-        validateContractRows(row({ not: { all: [] } }));
-      }).toThrow(
-        "contracts: row 0 (props <Button>) when all must not be empty",
-      );
-    });
+    expect(() => {
+      validateContractRows(rows);
+    }).toThrow(/match key must have kind "name"/);
   });
 
-  // These were the four duplicate guards. Rows accumulate now, so each of them
-  // is the normal case rather than an error.
-  it("accepts many rows naming one component in one facet", () => {
-    const table: ContractRows = [
+  it("rejects a match key with no name", () => {
+    const rows = [
       {
         facet: "slots",
-        importPath: "@acme/ds",
-        component: "Widget.Tray",
-        slots: ["Widget.Tray.Title"],
+        match: { kind: "name", name: "" },
+        closed: true,
+        slots: [],
       },
+    ] as unknown as ContractRows;
+
+    expect(() => {
+      validateContractRows(rows);
+    }).toThrow(/match key must name an element/);
+  });
+
+  it("rejects a malformed match key on a slot", () => {
+    const rows = [
       {
         facet: "slots",
-        importPath: "@acme/ds",
-        component: "Widget.Tray",
-        slots: ["Widget.Tray.Title", "Widget.Tray.Action"],
+        match: { kind: "name", name: "Card.Heading" },
+        closed: true,
+        slots: [{ alias: ".Text", match: { kind: "name" } }],
       },
+    ] as unknown as ContractRows;
+
+    expect(() => {
+      validateContractRows(rows);
+    }).toThrow(/slot "\.Text" match key must name an element/);
+  });
+
+  it("rejects duplicate slot aliases", () => {
+    const rows: ContractRows = [
       {
-        facet: "subtree",
-        importPath: "@acme/ds",
-        component: "Widget",
-        when: { prop: "variant", values: ["compact"] },
-        forbid: ["Widget.Footer"],
-      },
-      {
-        facet: "subtree",
-        importPath: "@acme/ds",
-        component: "Widget",
-        when: { prop: "variant", values: ["dense"] },
-        forbid: ["Widget.Header"],
-      },
-      {
-        facet: "props",
-        importPath: "@acme/ds",
-        component: "Widget",
-        required: ["id"],
-      },
-      {
-        facet: "props",
-        importPath: "@acme/ds",
-        component: "Widget",
-        deprecated: { legacy: "modern" },
-      },
-      {
-        facet: "ancestor",
-        importPath: "@acme/ds",
-        component: "Button",
-        notInside: ["Button"],
-      },
-      {
-        facet: "ancestor",
-        importPath: "@acme/ds",
-        component: "Button",
-        notInside: ["Link"],
+        facet: "slots",
+        match: { kind: "name", name: "Card" },
+        closed: true,
+        slots: [
+          { alias: ".Text", match: { kind: "name", name: "Card.Text" } },
+          { alias: ".Text", match: { kind: "name", name: "Card.Other" } },
+        ],
       },
     ];
 
     expect(() => {
-      validateContractRows(table);
+      validateContractRows(rows);
+    }).toThrow(/duplicate slot alias "\.Text"/);
+  });
+
+  it("accepts count bounds and sibling references", () => {
+    expect(() => {
+      validateContractRows([
+        {
+          facet: "slots",
+          match: { kind: "name", name: "Card.Heading" },
+          closed: true,
+          slots: [
+            {
+              alias: ".Text",
+              match: { kind: "name", name: "Card.Heading.Text" },
+              count: { min: 1, max: 1 },
+            },
+            {
+              alias: ".Icon",
+              match: { kind: "name", name: "Card.Heading.Icon" },
+              excludes: [".Text"],
+              requires: [".Text"],
+            },
+          ],
+        },
+      ]);
     }).not.toThrow();
   });
 
-  describe("slots rows", () => {
-    const row = (extra: Partial<RowOf<"slots">>): ContractRows => [
+  it("rejects a negative count bound", () => {
+    const rows = [
       {
         facet: "slots",
-        importPath: "@acme/ds",
-        component: "Widget.Tray",
-        slots: ["Widget.Tray.Title"],
-        ...extra,
+        match: { kind: "name", name: "Card" },
+        closed: true,
+        slots: [
+          {
+            alias: ".Text",
+            match: { kind: "name", name: "Card.Text" },
+            count: { min: -1 },
+          },
+        ],
+      },
+    ] as unknown as ContractRows;
+
+    expect(() => {
+      validateContractRows(rows);
+    }).toThrow(/min count must be a non-negative number/);
+  });
+
+  it("rejects a sibling reference to an undeclared slot", () => {
+    const rows = [
+      {
+        facet: "slots",
+        match: { kind: "name", name: "Card" },
+        closed: true,
+        slots: [
+          {
+            alias: ".Text",
+            match: { kind: "name", name: "Card.Text" },
+            excludes: [".Ghost"],
+          },
+        ],
+      },
+    ] as unknown as ContractRows;
+
+    expect(() => {
+      validateContractRows(rows);
+    }).toThrow(/excludes names "\.Ghost", which is not a declared slot/);
+  });
+
+  it("rejects an unknown facet", () => {
+    const rows = [
+      { facet: "mystery", match: { kind: "name", name: "Card" } },
+    ] as unknown as ContractRows;
+
+    expect(() => {
+      validateContractRows(rows);
+    }).toThrow(/unknown facet/);
+  });
+
+  it("accepts a well-formed branch", () => {
+    const rows: ContractRows = [
+      {
+        facet: "slots",
+        match: { kind: "name", name: "Card" },
+        closed: true,
+        slots: [
+          { alias: ".Footer", match: { kind: "name", name: "Card.Footer" } },
+        ],
+        branches: [
+          {
+            when: { all: [{ prop: "onClick" }, { not: { prop: "flat" } }] },
+            because: "clickable cards have no footer",
+            forbidSlots: [".Footer"],
+          },
+        ],
       },
     ];
 
-    // Allowed slots intersect across rows, so an empty list is not the identity
-    // — it would empty the container's slot list and reject every child. An
-    // absent list is the identity, and is how a row says nothing about slots.
-    it("rejects an empty slots list", () => {
-      expect(() => {
-        validateContractRows(row({ slots: [] }));
-      }).toThrow("slots must not be empty");
-    });
-
-    it("accepts a row that declares no slots but turns strictness on", () => {
-      expect(() => {
-        validateContractRows([
-          {
-            facet: "slots",
-            importPath: "@acme/ds",
-            component: "Widget.Tray",
-            strict: true,
-          },
-        ]);
-      }).not.toThrow();
-    });
-
-    it("rejects a row that says nothing about the children facet at all", () => {
-      expect(() => {
-        validateContractRows([
-          {
-            facet: "slots",
-            importPath: "@acme/ds",
-            component: "Widget.Tray",
-          },
-        ]);
-      }).toThrow("must declare slots, a cross-slot rule, or strictness");
-    });
-
-    it("rejects a slot declared twice in one row", () => {
-      expect(() => {
-        validateContractRows(
-          row({ slots: ["Widget.Tray.Title", "Widget.Tray.Title"] }),
-        );
-      }).toThrow('lists duplicate slot "Widget.Tray.Title"');
-    });
-
-    it("rejects a fractional minCount", () => {
-      expect(() => {
-        validateContractRows(
-          row({ slots: [{ name: "Widget.Tray.Title", minCount: 1.5 }] }),
-        );
-      }).toThrow("minCount must be a non-negative integer");
-    });
-
-    it("rejects a maxCount of zero", () => {
-      expect(() => {
-        validateContractRows(
-          row({ slots: [{ name: "Widget.Tray.Title", maxCount: 0 }] }),
-        );
-      }).toThrow("maxCount must be a positive integer");
-    });
-
-    it("rejects minCount exceeding maxCount", () => {
-      expect(() => {
-        validateContractRows(
-          row({
-            slots: [{ name: "Widget.Tray.Title", minCount: 2, maxCount: 1 }],
-          }),
-        );
-      }).toThrow("minCount exceeds maxCount");
-    });
-
-    it("rejects a `requires` reference to a slot the row does not declare", () => {
-      expect(() => {
-        validateContractRows(
-          row({ requires: { "Widget.Tray.Title": "Widget.Tray.Action" } }),
-        );
-      }).toThrow('references "Widget.Tray.Action", which it does not declare');
-    });
-
-    it("rejects an `exclusive` reference to a slot the row does not declare", () => {
-      expect(() => {
-        validateContractRows(
-          row({ exclusive: [[["Widget.Tray.Title"], ["Widget.Tray.Action"]]] }),
-        );
-      }).toThrow('references "Widget.Tray.Action", which it does not declare');
-    });
-
-    // Cross-slot references resolve within a row, never across the table: the
-    // merge decides what survives, and it drops a reference whose target
-    // another active row intersected away.
-    it("rejects a reference to a slot only a sibling row declares", () => {
-      expect(() => {
-        validateContractRows([
-          {
-            facet: "slots",
-            importPath: "@acme/ds",
-            component: "Widget.Tray",
-            slots: ["Widget.Tray.Action"],
-          },
-          {
-            facet: "slots",
-            importPath: "@acme/ds",
-            component: "Widget.Tray",
-            slots: ["Widget.Tray.Title"],
-            requires: { "Widget.Tray.Title": "Widget.Tray.Action" },
-          },
-        ]);
-      }).toThrow('references "Widget.Tray.Action", which it does not declare');
-    });
+    expect(() => {
+      validateContractRows(rows);
+    }).not.toThrow();
   });
 
-  describe("subtree rows", () => {
-    const row = (extra: Partial<RowOf<"subtree">>): ContractRows => [
+  it("rejects a branch condition that names no prop", () => {
+    const rows = [
+      {
+        facet: "slots",
+        match: { kind: "name", name: "Card" },
+        closed: true,
+        slots: [],
+        branches: [{ when: {} }],
+      },
+    ] as unknown as ContractRows;
+
+    expect(() => {
+      validateContractRows(rows);
+    }).toThrow(/condition must name a prop/);
+  });
+
+  it("rejects a branch forbidding an undeclared slot", () => {
+    const rows = [
+      {
+        facet: "slots",
+        match: { kind: "name", name: "Card" },
+        closed: true,
+        slots: [],
+        branches: [{ when: { prop: "x" }, forbidSlots: [".Ghost"] }],
+      },
+    ] as unknown as ContractRows;
+
+    expect(() => {
+      validateContractRows(rows);
+    }).toThrow(/forbidSlots names "\.Ghost", not a declared slot/);
+  });
+
+  it("accepts subtree and ancestor rows", () => {
+    const rows: ContractRows = [
       {
         facet: "subtree",
-        importPath: "@acme/ds",
-        component: "Widget",
-        ...extra,
+        match: { kind: "name", name: "Card" },
+        descendants: [
+          {
+            alias: ".Item",
+            match: { kind: "name", name: "Card.Item" },
+            count: { min: 1 },
+          },
+        ],
+        forbidDescendants: [{ match: { kind: "name", name: "button" } }],
+        forbidDescendantProps: ["onClick"],
+        branches: [
+          {
+            when: { prop: "flat" },
+            forbidDescendants: [
+              { match: { kind: "name", name: "Card.Footer" } },
+            ],
+          },
+        ],
+      },
+      {
+        facet: "ancestor",
+        match: { kind: "name", name: "Card.Action" },
+        notInside: [{ match: { kind: "name", name: "Table" } }],
+        deprecated: { useInstead: "Button" },
       },
     ];
 
-    it("accepts a row that only requires descendants", () => {
-      expect(() => {
-        validateContractRows(row({ require: [{ name: "Tabs.List", min: 1 }] }));
-      }).not.toThrow();
-    });
-
-    it("rejects a row that forbids and requires nothing", () => {
-      expect(() => {
-        validateContractRows(row({}));
-      }).toThrow("must forbid an element or prop, or require a descendant");
-    });
-
-    it("rejects an empty forbid list", () => {
-      expect(() => {
-        validateContractRows(row({ forbid: [] }));
-      }).toThrow("forbid must not be empty");
-    });
-
-    it("rejects an empty forbidProps list", () => {
-      expect(() => {
-        validateContractRows(row({ forbidProps: [] }));
-      }).toThrow("forbidProps must not be empty");
-    });
-
-    it("rejects a nameless require entry", () => {
-      expect(() => {
-        validateContractRows(row({ require: [{ name: "" }] }));
-      }).toThrow("require entry must name an element");
-    });
-
-    it("rejects a require entry whose min exceeds its max", () => {
-      expect(() => {
-        validateContractRows(
-          row({ require: [{ name: "Tabs.List", min: 3, max: 2 }] }),
-        );
-      }).toThrow('require "Tabs.List" min exceeds max');
-    });
-
-    it("rejects a require entry with a fractional max", () => {
-      expect(() => {
-        validateContractRows(
-          row({ require: [{ name: "Tabs.List", max: 1.5 }] }),
-        );
-      }).toThrow('require "Tabs.List" max must be a positive integer');
-    });
+    expect(() => {
+      validateContractRows(rows);
+    }).not.toThrow();
   });
 
-  describe("props rows", () => {
-    const row = (extra: Partial<RowOf<"props">>): ContractRows => [
-      { facet: "props", importPath: "@acme/ds", component: "Widget", ...extra },
-    ];
+  it("rejects a forbidDescendants entry with a malformed match key", () => {
+    const rows = [
+      {
+        facet: "subtree",
+        match: { kind: "name", name: "Card" },
+        descendants: [],
+        forbidDescendants: [{ match: { kind: "symbol" } }],
+        forbidDescendantProps: [],
+      },
+    ] as unknown as ContractRows;
 
-    it("rejects a row declaring no prop contract", () => {
-      expect(() => {
-        validateContractRows(row({}));
-      }).toThrow("must declare at least one prop contract");
-    });
-
-    it("rejects an empty required group", () => {
-      expect(() => {
-        validateContractRows(row({ required: [[]] }));
-      }).toThrow("has an empty required group");
-    });
-
-    it("rejects an empty exclusive group", () => {
-      expect(() => {
-        validateContractRows(row({ exclusive: [[["a"], []]] }));
-      }).toThrow("has an empty exclusive group");
-    });
+    expect(() => {
+      validateContractRows(rows);
+    }).toThrow(/forbidDescendants match key must have kind "name"/);
   });
 
-  describe("ancestor rows", () => {
-    it("rejects an empty notInside list", () => {
-      expect(() => {
-        validateContractRows([
-          {
-            facet: "ancestor",
-            importPath: "@acme/ds",
-            component: "Button",
-            notInside: [],
-          },
-        ]);
-      }).toThrow("notInside must not be empty");
-    });
+  it("rejects a duplicate descendant alias", () => {
+    const rows = [
+      {
+        facet: "subtree",
+        match: { kind: "name", name: "Card" },
+        descendants: [
+          { alias: ".Item", match: { kind: "name", name: "Card.Item" } },
+          { alias: ".Item", match: { kind: "name", name: "Card.Other" } },
+        ],
+        forbidDescendants: [],
+        forbidDescendantProps: [],
+      },
+    ] as unknown as ContractRows;
 
-    it("rejects a nameless notInside entry", () => {
-      expect(() => {
-        validateContractRows([
-          {
-            facet: "ancestor",
-            importPath: "@acme/ds",
-            component: "Button",
-            notInside: [""],
-          },
-        ]);
-      }).toThrow("notInside entry must name an element");
-    });
+    expect(() => {
+      validateContractRows(rows);
+    }).toThrow(/duplicate descendant alias "\.Item"/);
   });
 });

@@ -3,6 +3,7 @@
 // and one module per facet's view of the tree.
 
 export { collectAncestors } from "./ancestors.js";
+export { classifyOpaqueRegion } from "./opaque.js";
 export { collectProps, hasSpreadAttribute } from "./props.js";
 export { resolveImportSource } from "./resolution.js";
 export { collectContainerChildren, collectPlacement } from "./slots.js";

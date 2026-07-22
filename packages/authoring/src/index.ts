@@ -1,23 +1,6 @@
-export type { Condition, PropCondition } from "./authoring/conditions.js";
-export type {
-  ContractBuilder,
-  ContractMethods,
-  Fragment,
-  PendingCount,
-  SlotBuilder,
-} from "./authoring/builder.js";
-export { contractsFor } from "./authoring/binding.js";
-export type { BoundContracts } from "./authoring/binding.js";
-export { mergeContracts } from "./authoring/merge-contracts.js";
-export type {
-  CompiledContracts,
-  Severity,
-} from "./compile/compiled-contracts.js";
-export { findUnsatisfiable } from "./check/find-unsatisfiable.js";
-export type {
-  ConflictingRow,
-  Narrowing,
-  NarrowingKind,
-  UnsatisfiableOptions,
-} from "./check/find-unsatisfiable.js";
-export type { ContractRow, ContractRows } from "@jsx-contracts/eslint-plugin";
+/**
+ * The type-safe authoring surface for JSX composition contracts (ADR 0003). It
+ * compiles to the plugin's rule table and types itself against it, carrying no
+ * runtime dependency on the plugin.
+ */
+export * from "./surface/index.js";

@@ -1,30 +1,38 @@
 /**
- * The rendered tree: everything the adapter collects and the core evaluates
- * against. One module for the whole seam vocabulary, so what a facet's
- * evaluator may ask of an element is stated where the adapter reads it, not
- * inside the evaluator that happens to consume it first.
- *
- * Pure data — no semantics. What the core makes of these facts (coexistence,
- * count bounds, activation) lives in the modules that apply them.
+ * The seam vocabulary: everything the adapter collects and the core evaluates
+ * against, stated in one place rather than inside whichever evaluator consumes
+ * it first. Pure data — the semantics live in the modules that apply it.
  */
 
 /** An opaque AST handle the adapter attaches for reporting. */
 export type Ref = object;
 
+/**
+ * `dynamic-children` is `{items.map(…)}`, `passthrough-children` is
+ * `{props.children}` or another variable, `unresolvable` is everything else.
+ * Not surfaced in the authoring options — kept so finer control can be added
+ * later without a surface change.
+ */
+type OpaqueCause = "dynamic-children" | "passthrough-children" | "unresolvable";
+
+export interface OpaqueRegion {
+  ref: Ref;
+  cause: OpaqueCause;
+  /** The blinding expression, rendered for a message (e.g. `"{items.map(…)}"`). */
+  text: string;
+}
+
 /** Which side of which conditional an element sits in. */
 export type Branch = `${number}:${"consequent" | "alternate"}`;
 
-/** Anything carrying branch tags: rendered-tree nodes and subtree occurrences. */
 export interface Branched {
   branches: Branch[];
 }
 
-/** One prop on an element. */
 export interface PropFact {
   name: string;
   /** False only for a literal `false`/`null`/`undefined` value. */
   present: boolean;
-  /** The resolved literal. */
   value?: string | number | boolean;
   /** Dotted text of a member expression or identifier (e.g. "Size.large"). */
   source?: string;
@@ -46,18 +54,17 @@ export interface RenderedNode {
   textRefs: Ref[];
 }
 
-/** The element a slot renders under, `null` where nothing encloses it. */
+/** `null` where nothing encloses the slot. */
 export type ParentFact = { name: string; importSource: string | null } | null;
 
-/** Where a slot element renders: directly, or through the reads of a variable. */
+/** Directly under a parent, or through the reads of a variable. */
 export type Placement =
   | { kind: "direct"; parent: ParentFact }
   | { kind: "hoisted"; parents: ParentFact[] };
 
 /**
- * One element in the lazy subtree. `branches` are the branch tags on the
- * transparent path from the parent element down to this node, which is what
- * keeps descendant counts branch-aware.
+ * `branches` are the tags on the transparent path down from the parent element,
+ * which is what keeps descendant counts branch-aware.
  */
 export interface SubtreeElement {
   kind: "element";
@@ -70,10 +77,7 @@ export interface SubtreeElement {
   children: SubtreeNode[];
 }
 
-/**
- * A reference to a JSX constant, resolved lazily. `initId` is equal across
- * every reference to the same constant.
- */
+/** A lazily resolved JSX constant. `initId` is equal across every reference to it. */
 export interface SubtreeRef {
   kind: "ref";
   initId: number;
@@ -88,27 +92,22 @@ interface SubtreeUnknown {
 
 export type SubtreeNode = SubtreeElement | SubtreeRef | SubtreeUnknown;
 
-/**
- * One enclosing JSX element: its dotted tag and the module its root identifier
- * resolves to, `null` for a non-import (matched by any gate).
- */
+/** `importSource` is `null` for a non-import, which any gate matches. */
 export interface AncestorFact {
   name: string;
   importSource: string | null;
 }
 
 /**
- * One element, as the adapter presents it — the seam itself: everything above
- * is what one of these thunks returns. Every accessor beyond `name` and
- * `importSource` is a thunk the adapter memoizes: the pipeline calls only the
- * ones the active rows actually need.
+ * The seam itself. Every accessor beyond `name` and `importSource` is a thunk
+ * the adapter memoizes, so the pipeline computes only what the active rows need.
  */
 export interface ElementFacts {
   name: string;
   importSource: string | null;
-  /** The whole element — where a container's `tooFew` and a misplaced slot report. */
+  /** Where a container's `tooFew` and a misplaced slot report. */
   elementRef: Ref;
-  /** The opening element — where prop- and element-level violations report. */
+  /** Where prop- and element-level violations report. */
   openingRef: Ref;
   props: () => PropFact[];
   hasSpread: () => boolean;

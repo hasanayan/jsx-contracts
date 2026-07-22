@@ -1,4 +1,4 @@
-import type { ContractRows } from "@jsx-contracts/eslint-plugin";
+import type { ContractRows, MatchKey } from "@jsx-contracts/eslint-plugin";
 
 /** The module the fixture imports its contracted components from. */
 export const GATE = "@acme/ds";
@@ -17,97 +17,102 @@ export const CONDITION_PROP = "variant";
 /** The value of {@link CONDITION_PROP} the gated rows match. */
 export const CONDITION_VALUE = "compact";
 
+/** A name match key, the only variant emitted today (ADR 0004 reserves the rest). */
+const name = (tag: string): MatchKey => ({ kind: "name", name: tag });
+
 export const table: ContractRows = [
   {
     facet: "slots",
-    component: "Widget",
-    importPath: GATE,
+    match: name("Widget"),
+    closed: false,
     slots: [
-      { name: "Widget.Header" },
-      { name: "Widget.Body", minCount: 1, maxCount: 8 },
-      { name: "Widget.Footer" },
-      { name: "Widget.Action", minCount: 0, maxCount: 4 },
+      { alias: ".Header", match: name("Widget.Header") },
+      { alias: ".Body", match: name("Widget.Body"), count: { min: 1, max: 8 } },
+      { alias: ".Footer", match: name("Widget.Footer"), requires: [".Header"] },
+      {
+        alias: ".Action",
+        match: name("Widget.Action"),
+        count: { min: 0, max: 4 },
+        excludes: [".Footer"],
+      },
     ],
-    requires: { "Widget.Footer": "Widget.Header" },
-    exclusive: [[["Widget.Footer"], ["Widget.Action"]]],
-  },
-  {
-    facet: "slots",
-    component: "Widget",
-    importPath: GATE,
-    strict: false,
-  },
-  {
-    facet: "slots",
-    component: "Widget",
-    importPath: GATE,
-    when: { prop: CONDITION_PROP, values: [CONDITION_VALUE] },
-    slots: [{ name: "Widget.Body", minCount: 1, maxCount: 8 }],
+    branches: [
+      {
+        when: { prop: CONDITION_PROP, values: [CONDITION_VALUE] },
+        extend: [
+          {
+            alias: ".Body",
+            match: name("Widget.Body"),
+            count: { min: 1, max: 8 },
+          },
+        ],
+      },
+    ],
   },
   {
     facet: "subtree",
-    component: "Widget",
-    importPath: GATE,
-    forbid: [{ name: "Legacy.Button" }],
-    forbidProps: ["dangerouslySetInnerHTML"],
+    match: name("Widget"),
+    descendants: [
+      { alias: ".Body", match: name("Widget.Body"), count: { min: 1 } },
+    ],
+    forbidDescendants: [{ match: name("Legacy.Button") }],
+    forbidDescendantProps: ["dangerouslySetInnerHTML"],
   },
   {
     facet: "subtree",
-    component: "Widget",
-    importPath: GATE,
-    require: [{ name: "Widget.Body", min: 1 }],
-  },
-  {
-    facet: "subtree",
-    component: "Widget.Body",
-    importPath: GATE,
-    when: {
-      all: [
-        { prop: CONDITION_PROP, values: [CONDITION_VALUE] },
-        { not: { prop: "raw" } },
-      ],
-    },
-    forbid: ["Legacy.Button", "iframe"],
-  },
-
-  {
-    facet: "props",
-    component: "Widget",
-    importPath: GATE,
-    required: ["id"],
-    deprecated: { theme: "use tone" },
+    match: name("Widget.Body"),
+    descendants: [],
+    forbidDescendants: [],
+    forbidDescendantProps: [],
+    branches: [
+      {
+        when: {
+          all: [
+            { prop: CONDITION_PROP, values: [CONDITION_VALUE] },
+            { not: { prop: "raw" } },
+          ],
+        },
+        forbidDescendants: [
+          { match: name("Legacy.Button") },
+          { match: name("iframe") },
+        ],
+      },
+    ],
   },
   {
     facet: "props",
-    component: "Widget",
-    importPath: GATE,
-    when: { prop: CONDITION_PROP, values: [CONDITION_VALUE] },
-    exclusive: [[["dense"], ["spacious"]]],
+    match: name("Widget"),
+    props: [
+      { prop: "id", required: true },
+      { prop: "theme", deprecated: { useInstead: "tone" } },
+    ],
+    branches: [
+      {
+        when: { prop: CONDITION_PROP, values: [CONDITION_VALUE] },
+        props: [{ prop: "dense", excludes: ["spacious"] }],
+      },
+    ],
   },
   {
     facet: "props",
-    component: "Widget.Action",
-    importPath: GATE,
-    required: [["label", "icon"]],
-  },
-  {
-    facet: "props",
-    component: "Legacy.Button",
-    importPath: GATE,
-    deprecatedComponent: "use Widget.Action",
-  },
-
-  {
-    facet: "ancestor",
-    component: "Widget.Action",
-    importPath: GATE,
-    notInside: ["Legacy.Panel"],
+    match: name("Widget.Action"),
+    props: [],
+    requiresAnyOf: [["label", "icon"]],
   },
   {
     facet: "ancestor",
-    component: "Widget.Footer",
-    importPath: GATE,
-    when: { any: [{ prop: "sticky" }, { prop: CONDITION_PROP }] },
-    notInside: [{ name: "Legacy.Panel", importPath: GATE }],
+    match: name("Legacy.Button"),
+    notInside: [],
+    deprecated: { useInstead: "Widget.Action" },
+  },
+  {
+    facet: "ancestor",
+    match: name("Widget.Action"),
+    notInside: [{ match: name("Legacy.Panel") }],
+  },
+  {
+    facet: "ancestor",
+    match: name("Widget.Footer"),
+    notInside: [{ match: name("Legacy.Panel") }],
   },
 ];

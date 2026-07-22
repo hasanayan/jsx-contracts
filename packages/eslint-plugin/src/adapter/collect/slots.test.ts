@@ -1,5 +1,4 @@
-// Drives the slots-facet collectors through the `analyze` harness (a live
-// SourceCode) and asserts the JSX -> RenderedNode model directly.
+// Drives the slots-facet collectors through the `analyze` harness.
 
 import { describe, expect, it } from "vitest";
 

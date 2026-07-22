@@ -1,60 +1,60 @@
 import type { ESLint } from "eslint";
 
-import { ancestorGranular } from "./adapter/rules/ancestor.js";
-import { propsGranular } from "./adapter/rules/props.js";
-import { slotsGranular } from "./adapter/rules/slots.js";
-import { subtreeGranular } from "./adapter/rules/subtree.js";
+import { ancestorRules } from "./adapter/rules/ancestor.js";
+import { propsRules } from "./adapter/rules/props.js";
+import { slotsRules } from "./adapter/rules/slots.js";
+import { subtreeRules } from "./adapter/rules/subtree.js";
 
-// The payload types every rule accepts, published so a generated or
-// hand-written table can be type-checked against the real thing.
+// The row schema (ADR 0003). The authoring collector compiles to these; a
+// hand-written or generated table can be type-checked against them.
 export type {
   AncestorRow,
-  ConditionValue,
-  ContractRow,
   ContractRows,
+  ContractRow,
+  Count,
+  Descendant,
   Facet,
-  ForbiddenElement,
+  Forbidden,
+  ConditionValue,
+  MatchKey,
+  NameMatch,
+  PropDeprecation,
+  PropsBranch,
   PropsRow,
-  RequiredDescendant,
-  SlotConfig,
+  PropSpec,
+  SlotBranch,
   SlotsRow,
+  Slot,
+  SubtreeBranch,
   SubtreeRow,
-  WhenCondition,
+  WhenProp,
+  When,
 } from "./contracts/rule-table/rows.js";
-export type { SlotsMessageId } from "./adapter/rules/slots.js";
-export type { SubtreeMessageId } from "./adapter/rules/subtree.js";
+export type {
+  ClosureMessageId,
+  SlotsMessageId,
+} from "./adapter/rules/slots.js";
 export type { PropsMessageId } from "./adapter/rules/props.js";
+export type { SubtreeMessageId } from "./adapter/rules/subtree.js";
 export type { AncestorMessageId } from "./adapter/rules/ancestor.js";
 
 /**
- * The plugin's thirteen rules — one per facet feature: `slots.children`,
- * `slots.count`, `slots.placement`, `slots.requires`, `slots.exclusive`,
- * `slots.strict`, `subtree.forbid`, `subtree.forbidProps`, `subtree.count`,
- * `props.required`, `props.exclusive`, `props.deprecated`, and
- * `ancestor.forbid`. Each reports just its slice, so a single feature can be
- * switched off or targeted with an eslint-disable comment. Register them with
- * `contracts.rules()`.
+ * One rule per facet. Each takes the whole rule table and reports only its own
+ * facet, so a single feature can be switched off or eslint-disabled.
  */
-const granularRules = {
-  ...slotsGranular,
-  ...subtreeGranular,
-  ...propsGranular,
-  ...ancestorGranular,
-};
+export const rules = {
+  ...slotsRules,
+  ...propsRules,
+  ...subtreeRules,
+  ...ancestorRules,
+} as unknown as NonNullable<ESLint.Plugin["rules"]>;
 
 /**
- * The single owner of the facet-feature rule-id list. Every other spelling —
- * the plugin's rules record, and the flat-config keys `@jsx-contracts/authoring`
- * emits — derives from or is pinned against this union, so renaming, adding or
- * removing a rule here is a type error there rather than a silent dead key.
+ * The single owner of the rule-id list: every other spelling derives from or is
+ * pinned against it, so a rename here is a type error there, not a dead key.
  */
-export type RuleId = keyof typeof granularRules;
+export type RuleId = keyof typeof rules;
 
-export const rules = granularRules as unknown as NonNullable<
-  ESLint.Plugin["rules"]
->;
-
-/** The `@jsx-contracts` ESLint plugin. Register under that plugin name. */
 const plugin: ESLint.Plugin = {
   meta: { name: "@jsx-contracts/eslint-plugin", version: "0.0.0" },
   rules,

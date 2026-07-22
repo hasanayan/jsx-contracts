@@ -1,4 +1,4 @@
-// Drives the resolver through the `analyze` harness (a live SourceCode).
+// Drives the resolver through the `analyze` harness.
 
 import { describe, expect, it } from "vitest";
 

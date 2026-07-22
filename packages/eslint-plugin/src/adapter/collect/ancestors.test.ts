@@ -1,5 +1,4 @@
-// Drives the ancestor collector through the `analyze` harness (a live
-// SourceCode).
+// Drives the ancestor collector through the `analyze` harness.
 
 import { describe, expect, it } from "vitest";
 

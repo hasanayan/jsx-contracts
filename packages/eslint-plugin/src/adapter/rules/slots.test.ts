@@ -1,15 +1,12 @@
-import type { RunTests } from "@typescript-eslint/rule-tester";
+// Seam 2 (rule): rows drive a real ESLint rule; a closed container's
+// undeclared child produces the prompting closure message.
+
 import { RuleTester } from "@typescript-eslint/rule-tester";
-import type { TSESLint } from "@typescript-eslint/utils";
 import { afterAll, describe, it } from "vitest";
 
-import type {
-  ContractRows,
-  SlotsRow,
-} from "../../contracts/rule-table/rows.js";
+import type { ContractRows } from "../../contracts/rule-table/rows.js";
 
-import type { SlotsMessageId } from "./slots.js";
-import { slotsGranular } from "./slots.js";
+import { slotsClosureRule } from "./slots.js";
 
 RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
@@ -18,1159 +15,311 @@ RuleTester.itOnly = it.only;
 
 const ruleTester = new RuleTester({
   languageOptions: {
-    parserOptions: {
-      ecmaFeatures: { jsx: true },
-    },
+    parserOptions: { ecmaFeatures: { jsx: true } },
   },
 });
 
-// The suites here were authored against a facet's parent rule, which reports
-// every message kind. The plugin registers only the granular rules, each
-// surfacing one feature's messages, so a case runs under every granular rule
-// that owns one of its asserted messages — its `errors` narrowed to that rule's
-// messages, a case spanning several rules split across them. Valid cases run
-// under every rule, preserving the parent's "no message of any kind" guarantee.
-function runGranular<MessageId extends string>(
-  suite: string,
-  granular: Readonly<
-    Record<string, TSESLint.RuleModule<MessageId, [ContractRows]>>
-  >,
-  owns: Readonly<Record<string, readonly MessageId[]>>,
-  tests: RunTests<MessageId, [ContractRows]>,
-): void {
-  for (const [id, rule] of Object.entries(granular)) {
-    const owned = new Set<MessageId>(owns[id] ?? []);
-
-    const invalid = tests.invalid
-      .map((testCase) => ({
-        ...testCase,
-        errors: testCase.errors.filter((error) => owned.has(error.messageId)),
-      }))
-      .filter((testCase) => testCase.errors.length > 0);
-
-    ruleTester.run(`${suite} (${id})`, rule, { valid: tests.valid, invalid });
-  }
-}
-
-// Which message ids each granular slots rule reports (mirrors slots.ts).
-const slotsOwns: Record<string, readonly SlotsMessageId[]> = {
-  "slots.children": ["invalidChild"],
-  "slots.count": ["tooFew", "tooMany"],
-  "slots.placement": ["misplaced"],
-  "slots.requires": ["requiresSlot"],
-  "slots.exclusive": ["exclusiveSlots"],
-  "slots.strict": ["unresolvableChild"],
-};
-
-const widgetOptions: ContractRows = [
+const headingRows: ContractRows = [
   {
     facet: "slots",
-    importPath: "*/acme-ds/components/widget",
-    component: "Widget.Tray",
+    match: { kind: "name", name: "Card.Heading" },
+    closed: true,
     slots: [
-      "Widget.Tray.ActionPrimary",
-      "Widget.Tray.ActionSecondary",
-      "Widget.Tray.Link",
-      "Widget.Tray.Menu",
+      { alias: ".Text", match: { kind: "name", name: "Card.Heading.Text" } },
+      { alias: ".Icon", match: { kind: "name", name: "Card.Heading.Icon" } },
+    ],
+    because: "A heading is text with an optional icon.",
+  },
+];
+
+const looseRows: ContractRows = [
+  {
+    facet: "slots",
+    match: { kind: "name", name: "Card.Heading" },
+    closed: false,
+    slots: [
+      { alias: ".Text", match: { kind: "name", name: "Card.Heading.Text" } },
+    ],
+  },
+];
+
+const boundedRows: ContractRows = [
+  {
+    facet: "slots",
+    match: { kind: "name", name: "Card.Heading" },
+    closed: true,
+    slots: [
       {
-        name: "Widget.Tray.Badge",
-        importPath: "*/acme-ds/components/badge",
+        alias: ".Text",
+        match: { kind: "name", name: "Card.Heading.Text" },
+        count: { min: 1, max: 1 },
+      },
+      {
+        alias: ".Icon",
+        match: { kind: "name", name: "Card.Heading.Icon" },
+        excludes: [".Avatar"],
+      },
+      {
+        alias: ".Avatar",
+        match: { kind: "name", name: "Card.Heading.Avatar" },
+      },
+      {
+        alias: ".Actions",
+        match: { kind: "name", name: "Card.Heading.Actions" },
+        requires: [".Text"],
       },
     ],
-    requires: { "Widget.Tray.ActionSecondary": "Widget.Tray.ActionPrimary" },
-    exclusive: [
-      [
-        ["Widget.Tray.Link"],
-        ["Widget.Tray.ActionPrimary", "Widget.Tray.ActionSecondary"],
-      ],
-    ],
-  },
-  {
-    facet: "slots",
-    importPath: "*/acme-ds/components/widget",
-    component: "Widget.Tray.Menu",
-    slots: ["Widget.Tray.Menu.Item"],
-  },
-  {
-    facet: "slots",
-    importPath: "*/acme-ds/components/widget",
-    component: "Group",
-    slots: ["Group.Item"],
-  },
-  {
-    facet: "slots",
-    importPath: "*/acme-ds/components/widget",
-    component: "GroupSelf",
-    slots: ["GroupSelf", "GroupSelf.Item"],
   },
 ];
 
-const literalOptions: ContractRows = [
+const branchedRows: ContractRows = [
   {
     facet: "slots",
-    importPath: "~/acme-ds/components/widget",
-    component: "Widget.Tray",
-    slots: ["Widget.Tray.Link"],
-  },
-];
-
-const strictWidgetOptions: ContractRows = widgetOptions.map((config) =>
-  config.component === "Widget.Tray" ? { ...config, strict: true } : config,
-);
-
-// A strict container whose one slot admits several occurrences, so the same
-// hoisted slot constant can legitimately be rendered more than once.
-const strictRepeatOptions: ContractRows = [
-  {
-    facet: "slots",
-    importPath: "*/acme-ds/components/widget",
-    component: "Tray",
-    slots: [{ name: "Tray.Item", maxCount: 5 }],
-    strict: true,
-  },
-];
-
-const overrideSlotOptions: ContractRows = [
-  {
-    facet: "slots",
-    importPath: "*/acme-ds/components/widget",
-    component: "Widget.Tray",
+    match: { kind: "name", name: "Card" },
+    closed: true,
     slots: [
-      "Widget.Tray.ActionPrimary",
-      { name: "ExternalBadge", importPath: "*/acme-ds/components/badge" },
+      { alias: ".Body", match: { kind: "name", name: "Card.Body" } },
+      { alias: ".Footer", match: { kind: "name", name: "Card.Footer" } },
     ],
-    requires: { "Widget.Tray.ActionPrimary": "ExternalBadge" },
+    branches: [
+      {
+        when: { prop: "onClick" },
+        because: "A clickable card has no footer.",
+        forbidSlots: [".Footer"],
+      },
+      {
+        when: { prop: "variant", values: ["rich"] },
+        extend: [
+          { alias: ".Media", match: { kind: "name", name: "Card.Media" } },
+        ],
+      },
+      {
+        when: { prop: "loading" },
+        requireSlots: [".Body"],
+      },
+    ],
   },
 ];
 
-const chipMaxTwoOptions: ContractRows = [
+const strictBoundedRows: ContractRows = [
   {
     facet: "slots",
-    importPath: "*/acme-ds/components/widget",
-    component: "Widget.Tray",
-    slots: [{ name: "Widget.Tray.Chip", maxCount: 2 }],
+    match: { kind: "name", name: "Card.Heading" },
+    closed: true,
+    strictAnalysis: true,
+    slots: [
+      {
+        alias: ".Text",
+        match: { kind: "name", name: "Card.Heading.Text" },
+        count: { min: 1, max: 1 },
+      },
+    ],
   },
 ];
 
-const chipMaxOneOptions: ContractRows = [
+const strictLooseRows: ContractRows = [
   {
     facet: "slots",
-    importPath: "*/acme-ds/components/widget",
-    component: "Widget.Tray",
-    slots: [{ name: "Widget.Tray.Chip", maxCount: 1 }],
+    match: { kind: "name", name: "Card.Heading" },
+    closed: false,
+    strictAnalysis: true,
+    slots: [
+      { alias: ".Text", match: { kind: "name", name: "Card.Heading.Text" } },
+    ],
   },
 ];
 
-const chipMinOneContainer: SlotsRow = {
-  facet: "slots",
-  importPath: "*/acme-ds/components/widget",
-  component: "Widget.Tray",
-  slots: [{ name: "Widget.Tray.Chip", minCount: 1 }],
-};
-
-const chipMinOneOptions: ContractRows = [chipMinOneContainer];
-
-const chipMinOneStrictOptions: ContractRows = [
-  { ...chipMinOneContainer, strict: true },
-];
-
-const chipMinTwoOptions: ContractRows = [
+// Closed but unbounded: only closure is at risk, so a region names it alone.
+const strictClosedRows: ContractRows = [
   {
     facet: "slots",
-    importPath: "*/acme-ds/components/widget",
-    component: "Widget.Tray",
-    slots: [{ name: "Widget.Tray.Chip", minCount: 2 }],
+    match: { kind: "name", name: "Card.Heading" },
+    closed: true,
+    strictAnalysis: true,
+    slots: [
+      { alias: ".Text", match: { kind: "name", name: "Card.Heading.Text" } },
+    ],
   },
 ];
 
-runGranular<SlotsMessageId>("slots", slotsGranular, slotsOwns, {
+ruleTester.run("slots.closure strictAnalysis", slotsClosureRule, {
   valid: [
     {
-      name: "primary action alone",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-          </Widget.Tray>
-        );
-      `,
+      name: "no opaque region: fully static children pass",
+      code: "<Card.Heading><Card.Heading.Text /></Card.Heading>",
+      options: [strictBoundedRows],
     },
     {
-      name: "a shared slot constant rendered twice in a strict container",
-      options: [strictRepeatOptions],
-      code: `
-        const item = <Tray.Item>x</Tray.Item>;
-        const tray = <Tray>{item}{item}</Tray>;
-      `,
+      name: "an opaque region that touches no rule is silent",
+      code: "<Card.Heading>{items.map((i) => (<Card.Heading.Text key={i} />))}</Card.Heading>",
+      options: [strictLooseRows],
     },
     {
-      name: "primary and secondary actions",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-            <Widget.Tray.ActionSecondary>Cancel</Widget.Tray.ActionSecondary>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "link alone",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.Link>View documentation</Widget.Tray.Link>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "slot behind an inline conditional inside the container",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            {compact ? null : <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>}
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "slot behind a logical expression inside a fragment",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <>{active && <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>}</>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "hoisted conditional slot read only inside the container",
-      options: [widgetOptions],
-      code: `
-        function Toolbar({ compact }) {
-          const action = compact ? null : (
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-          );
-          return <Widget.Tray>{action}</Widget.Tray>;
-        }
-      `,
-    },
-    {
-      name: "hoisted slot read by multiple containers",
-      options: [widgetOptions],
-      code: `
-        function Toolbar({ compact }) {
-          const link = <Widget.Tray.Link>Docs</Widget.Tray.Link>;
-          return compact ? (
-            <Widget.Tray>{link}</Widget.Tray>
-          ) : (
-            <Widget.Tray>{link}</Widget.Tray>
-          );
-        }
-      `,
-    },
-    {
-      name: "link and actions in mutually exclusive ternary branches",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            {external ? (
-              <Widget.Tray.Link>View documentation</Widget.Tray.Link>
-            ) : (
-              <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-            )}
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "two primaries in mutually exclusive ternary branches",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            {deployed ? (
-              <Widget.Tray.ActionPrimary>Redeploy</Widget.Tray.ActionPrimary>
-            ) : (
-              <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-            )}
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "conditional secondary alongside a primary",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-            {cancellable && (
-              <Widget.Tray.ActionSecondary>Cancel</Widget.Tray.ActionSecondary>
-            )}
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "hoisted primary read in the container satisfies the secondary",
-      options: [widgetOptions],
-      code: `
-        function Toolbar({ deployed }) {
-          const primary = deployed ? (
-            <Widget.Tray.ActionPrimary>Redeploy</Widget.Tray.ActionPrimary>
-          ) : (
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-          );
-          return (
-            <Widget.Tray>
-              {primary}
-              <Widget.Tray.ActionSecondary>Cancel</Widget.Tray.ActionSecondary>
-            </Widget.Tray>
-          );
-        }
-      `,
-    },
-    {
-      name: "unresolvable container content skips the presence check",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            {renderActions()}
-            <Widget.Tray.ActionSecondary>Cancel</Widget.Tray.ActionSecondary>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "foreign import is ignored",
-      options: [widgetOptions],
-      code: `
-        import Widget from "../components/basic/widget";
-        const tray = (
-          <Widget.Tray>
-            <div>anything goes</div>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "import from another root is ignored",
-      options: [widgetOptions],
-      code: `
-        import Widget from "~/other-ds/components/widget";
-        const tray = (
-          <Widget.Tray>
-            <div>content</div>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "literal importPath does not match a longer path ending with it",
-      options: [literalOptions],
-      code: `
-        import Widget from "x~/acme-ds/components/widget";
-        const tray = (
-          <Widget.Tray>
-            <div>content</div>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "overridden slot imported from a non-matching module is ignored",
-      options: [widgetOptions],
-      code: `
-        import Widget from "~/acme-ds/components/widget";
-        const widget = (
-          <Panel>
-            <Widget.Tray.Badge>New</Widget.Tray.Badge>
-          </Panel>
-        );
-      `,
-    },
-    {
-      name: "nested containers compose",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-            <Widget.Tray.Menu>
-              <Widget.Tray.Menu.Item>Duplicate</Widget.Tray.Menu.Item>
-            </Widget.Tray.Menu>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "unresolvable content in a non-strict container stays lenient",
-      options: [widgetOptions],
-      code: `
-        const tray = <Widget.Tray>{renderStuff()}</Widget.Tray>;
-      `,
-    },
-    {
-      name: "override slot from its correct module satisfies a contents requires relation",
-      options: [overrideSlotOptions],
-      code: `
-        import Widget from "~/acme-ds/components/widget";
-        import ExternalBadge from "~/acme-ds/components/badge";
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-            <ExternalBadge>New</ExternalBadge>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "two chips within a maxCount of two",
-      options: [chipMaxTwoOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.Chip>One</Widget.Tray.Chip>
-            <Widget.Tray.Chip>Two</Widget.Tray.Chip>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "a single chip satisfies a minCount of one",
-      options: [chipMinOneOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.Chip>One</Widget.Tray.Chip>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "two chips satisfy a minCount of one with no upper bound",
-      options: [chipMinOneOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.Chip>One</Widget.Tray.Chip>
-            <Widget.Tray.Chip>Two</Widget.Tray.Chip>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "three chips satisfy a minCount of two",
-      options: [chipMinTwoOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.Chip>One</Widget.Tray.Chip>
-            <Widget.Tray.Chip>Two</Widget.Tray.Chip>
-            <Widget.Tray.Chip>Three</Widget.Tray.Chip>
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "a chip in both ternary branches stays within a maxCount of one",
-      options: [chipMaxOneOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            {deployed ? (
-              <Widget.Tray.Chip>Redeploy</Widget.Tray.Chip>
-            ) : (
-              <Widget.Tray.Chip>Deploy</Widget.Tray.Chip>
-            )}
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "a chip in both ternary branches satisfies a minCount of one",
-      options: [chipMinOneOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            {deployed ? (
-              <Widget.Tray.Chip>Redeploy</Widget.Tray.Chip>
-            ) : (
-              <Widget.Tray.Chip>Deploy</Widget.Tray.Chip>
-            )}
-          </Widget.Tray>
-        );
-      `,
-    },
-    {
-      name: "unresolvable content in a non-strict container skips the minCount check",
-      options: [chipMinOneOptions],
-      code: `
-        const tray = <Widget.Tray>{renderStuff()}</Widget.Tray>;
-      `,
+      name: "an opaque region is fine without the switch",
+      code: "<Card.Heading>{items.map((i) => (<Card.Heading.Text key={i} />))}</Card.Heading>",
+      options: [boundedRows],
     },
   ],
   invalid: [
     {
-      name: "aliased import with an invalid child",
-      options: [widgetOptions],
-      code: `
-        import Widget from "~/acme-ds/components/widget";
-        const tray = (
-          <Widget.Tray>
-            <div>content</div>
-          </Widget.Tray>
-        );
-      `,
-      errors: [{ messageId: "invalidChild" }],
-    },
-    {
-      name: "relative import with an invalid child",
-      options: [widgetOptions],
-      filename: "/repo/packages/ui-app/src/routes/foo/route.tsx",
-      code: `
-        import Widget from "../../acme-ds/components/widget";
-        const tray = (
-          <Widget.Tray>
-            <div>content</div>
-          </Widget.Tray>
-        );
-      `,
-      errors: [{ messageId: "invalidChild" }],
-    },
-    {
-      name: "literal importPath exact-matches an aliased specifier",
-      options: [literalOptions],
-      code: `
-        import Widget from "~/acme-ds/components/widget";
-        const tray = (
-          <Widget.Tray>
-            <div>content</div>
-          </Widget.Tray>
-        );
-      `,
-      errors: [{ messageId: "invalidChild" }],
-    },
-    {
-      name: "overridden slot imported from its overridden module is enforced",
-      options: [widgetOptions],
-      code: `
-        import Widget from "~/acme-ds/components/badge";
-        const widget = (
-          <Panel>
-            <Widget.Tray.Badge>New</Widget.Tray.Badge>
-          </Panel>
-        );
-      `,
+      name: "dynamic children blind a count, naming both sides",
+      code: "<Card.Heading>{items.map((i) => (<X key={i} />))}</Card.Heading>",
+      options: [strictBoundedRows],
       errors: [
         {
-          messageId: "misplaced",
-          data: { container: "Widget.Tray", name: "Widget.Tray.Badge" },
-        },
-      ],
-    },
-    {
-      name: "slot placed outside the container",
-      options: [widgetOptions],
-      code: `
-        const widget = (
-          <Panel>
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-          </Panel>
-        );
-      `,
-      errors: [
-        {
-          messageId: "misplaced",
+          messageId: "opaqueRegion",
           data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.ActionPrimary",
+            rule: "<Card.Heading>'s declared children",
+            cause: "dynamic children",
+            region: "{items.map(…)}",
+          },
+        },
+        {
+          messageId: "opaqueRegion",
+          data: {
+            rule: "the <Card.Heading.Text> count",
+            cause: "dynamic children",
+            region: "{items.map(…)}",
           },
         },
       ],
     },
     {
-      name: "slot wrapped in an intermediate element inside the container",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <div>
-              <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-            </div>
-          </Widget.Tray>
-        );
-      `,
+      name: "passthrough children blind a closed container's closure",
+      code: "<Card.Heading><Card.Heading.Text />{props.children}</Card.Heading>",
+      options: [strictClosedRows],
       errors: [
-        { messageId: "invalidChild" },
         {
-          messageId: "misplaced",
+          messageId: "opaqueRegion",
           data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.ActionPrimary",
+            rule: "<Card.Heading>'s declared children",
+            cause: "passthrough children",
+            region: "{props.children}",
+          },
+        },
+      ],
+    },
+  ],
+});
+
+ruleTester.run("slots.closure branches", slotsClosureRule, {
+  valid: [
+    {
+      name: "a footer is fine when the card is not clickable",
+      code: "<Card><Card.Body /><Card.Footer /></Card>",
+      options: [branchedRows],
+    },
+    {
+      name: "an extend slot is allowed when its branch is active",
+      code: '<Card variant="rich"><Card.Body /><Card.Media /></Card>',
+      options: [branchedRows],
+    },
+    {
+      name: "requireSlot is satisfied when the required slot is present",
+      code: "<Card loading><Card.Body /></Card>",
+      options: [branchedRows],
+    },
+  ],
+  invalid: [
+    {
+      name: "an active forbid bars the slot, naming the witness and because",
+      code: "<Card onClick={go}><Card.Footer /></Card>",
+      options: [branchedRows],
+      errors: [
+        {
+          messageId: "forbiddenSlot",
+          data: {
+            child: "Card.Footer",
+            container: "Card",
+            witness: "`Card` has `onClick`",
+            because: " A clickable card has no footer.",
           },
         },
       ],
     },
     {
-      name: "slot returned bare from a component",
-      options: [widgetOptions],
-      code: `
-        function TrayFragment() {
-          return <Widget.Tray.Link>Docs</Widget.Tray.Link>;
-        }
-      `,
+      name: "a conditionally-allowed slot names its condition when the branch is inactive",
+      code: "<Card><Card.Body /><Card.Media /></Card>",
+      options: [branchedRows],
       errors: [
         {
-          messageId: "misplaced",
-          data: { container: "Widget.Tray", name: "Widget.Tray.Link" },
-        },
-      ],
-    },
-    {
-      name: "slot passed as a prop",
-      options: [widgetOptions],
-      code: `
-        const widget = (
-          <Wrapper
-            action={<Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>}
-          />
-        );
-      `,
-      errors: [
-        {
-          messageId: "misplaced",
+          messageId: "conditionalClosure",
           data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.ActionPrimary",
+            child: "Card.Media",
+            container: "Card",
+            condition: "`Card`'s `variant` is `rich`",
+            because: "",
           },
         },
       ],
     },
     {
-      name: "hoisted slot that escapes into a non-container element",
-      options: [widgetOptions],
-      code: `
-        function Toolbar() {
-          const action = <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>;
-          return <Panel>{action}</Panel>;
-        }
-      `,
+      name: "requireSlot raises the minimum: a loading card missing its body",
+      code: "<Card loading><Card.Footer /></Card>",
+      options: [branchedRows],
+      errors: [{ messageId: "tooFew" }],
+    },
+  ],
+});
+
+ruleTester.run("slots.closure", slotsClosureRule, {
+  valid: [
+    {
+      name: "declared children pass",
+      code: "<Card.Heading><Card.Heading.Text /><Card.Heading.Icon /></Card.Heading>",
+      options: [headingRows],
+    },
+    {
+      name: "a loose container accepts anything",
+      code: "<Card.Heading><Tooltip /></Card.Heading>",
+      options: [looseRows],
+    },
+    {
+      name: "an unconfigured container is ignored",
+      code: "<Sidebar><Tooltip /></Sidebar>",
+      options: [headingRows],
+    },
+    {
+      name: "bounds, requires and excludes all satisfied",
+      code: "<Card.Heading><Card.Heading.Text /><Card.Heading.Icon /><Card.Heading.Actions /></Card.Heading>",
+      options: [boundedRows],
+    },
+  ],
+  invalid: [
+    {
+      name: "an undeclared child prompts, naming the element and the because",
+      code: "<Card.Heading><Card.Heading.Text /><Tooltip /></Card.Heading>",
+      options: [headingRows],
       errors: [
         {
-          messageId: "misplaced",
+          messageId: "closure",
           data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.ActionPrimary",
+            child: "Tooltip",
+            container: "Card.Heading",
+            because: " A heading is text with an optional icon.",
           },
         },
       ],
     },
     {
-      name: "hoisted slot returned bare",
-      options: [widgetOptions],
-      code: `
-        function TrayFragment() {
-          const link = <Widget.Tray.Link>Docs</Widget.Tray.Link>;
-          return link;
-        }
-      `,
+      name: "a required text is missing (tooFew) and an actions has no text",
+      code: "<Card.Heading><Card.Heading.Actions /></Card.Heading>",
+      options: [boundedRows],
+      errors: [{ messageId: "tooFew" }, { messageId: "requiresSlot" }],
+    },
+    {
+      name: "two texts exceed exactly(1)",
+      code: "<Card.Heading><Card.Heading.Text /><Card.Heading.Text /></Card.Heading>",
+      options: [boundedRows],
+      errors: [{ messageId: "tooMany" }],
+    },
+    {
+      name: "an icon and an avatar exclude each other, symmetrically",
+      code: "<Card.Heading><Card.Heading.Text /><Card.Heading.Icon /><Card.Heading.Avatar /></Card.Heading>",
+      options: [boundedRows],
       errors: [
-        {
-          messageId: "misplaced",
-          data: { container: "Widget.Tray", name: "Widget.Tray.Link" },
-        },
-      ],
-    },
-    {
-      name: "hoisted slot with one container read and one escaping read",
-      options: [widgetOptions],
-      code: `
-        function Toolbar({ compact }) {
-          const link = <Widget.Tray.Link>Docs</Widget.Tray.Link>;
-          return compact ? <Widget.Tray>{link}</Widget.Tray> : <Panel>{link}</Panel>;
-        }
-      `,
-      errors: [
-        {
-          messageId: "misplaced",
-          data: { container: "Widget.Tray", name: "Widget.Tray.Link" },
-        },
-      ],
-    },
-    {
-      name: "two primary actions",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-            <Widget.Tray.ActionPrimary>Publish</Widget.Tray.ActionPrimary>
-          </Widget.Tray>
-        );
-      `,
-      errors: [
-        {
-          messageId: "tooMany",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.ActionPrimary",
-            maxCount: "one",
-          },
-        },
-      ],
-    },
-    {
-      name: "two primaries that can render together across conditions",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            {deployed && (
-              <Widget.Tray.ActionPrimary>Redeploy</Widget.Tray.ActionPrimary>
-            )}
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-          </Widget.Tray>
-        );
-      `,
-      errors: [
-        {
-          messageId: "tooMany",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.ActionPrimary",
-            maxCount: "one",
-          },
-        },
-      ],
-    },
-    {
-      name: "a div element as a container child",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <div>Custom content</div>
-          </Widget.Tray>
-        );
-      `,
-      errors: [{ messageId: "invalidChild" }],
-    },
-    {
-      name: "text content in the container",
-      options: [widgetOptions],
-      code: `
-        const tray = <Widget.Tray>Just some text</Widget.Tray>;
-      `,
-      errors: [{ messageId: "invalidChild" }],
-    },
-    {
-      name: "each stray text chunk is reported on its own node",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            before
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-            after
-          </Widget.Tray>
-        );
-      `,
-      errors: [{ messageId: "invalidChild" }, { messageId: "invalidChild" }],
-    },
-    {
-      name: "an unlisted spelling is not a slot",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <WidgetTray.Link>Docs</WidgetTray.Link>
-          </Widget.Tray>
-        );
-      `,
-      errors: [{ messageId: "invalidChild" }],
-    },
-    {
-      name: "secondary action without a primary",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.ActionSecondary>Cancel</Widget.Tray.ActionSecondary>
-          </Widget.Tray>
-        );
-      `,
-      errors: [
-        {
-          messageId: "requiresSlot",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.ActionSecondary",
-            required: "Widget.Tray.ActionPrimary",
-          },
-        },
-      ],
-    },
-    {
-      name: "secondary in the branch without a primary",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            {deployed ? (
-              <Widget.Tray.ActionPrimary>Redeploy</Widget.Tray.ActionPrimary>
-            ) : (
-              <Widget.Tray.ActionSecondary>Cancel</Widget.Tray.ActionSecondary>
-            )}
-          </Widget.Tray>
-        );
-      `,
-      errors: [
-        {
-          messageId: "requiresSlot",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.ActionSecondary",
-            required: "Widget.Tray.ActionPrimary",
-          },
-        },
-      ],
-    },
-    {
-      name: "link alongside a primary action",
-      options: [widgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-            <Widget.Tray.Link>View documentation</Widget.Tray.Link>
-          </Widget.Tray>
-        );
-      `,
-      errors: [
-        {
-          messageId: "exclusiveSlots",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.Link",
-            others:
-              "<Widget.Tray.ActionPrimary> and <Widget.Tray.ActionSecondary>",
-          },
-        },
-      ],
-    },
-    {
-      name: "nested container misplaced and holding an invalid child",
-      options: [widgetOptions],
-      code: `
-        function TrayFragment() {
-          return (
-            <Widget.Tray.Menu>
-              <div>content</div>
-            </Widget.Tray.Menu>
-          );
-        }
-      `,
-      errors: [
-        {
-          messageId: "misplaced",
-          data: { container: "Widget.Tray", name: "Widget.Tray.Menu" },
-        },
-        { messageId: "invalidChild" },
-      ],
-    },
-    {
-      name: "a container nested in itself is an invalid child when not self-listed",
-      options: [widgetOptions],
-      code: `
-        const group = (
-          <Group>
-            <Group>
-              <Group.Item>Item</Group.Item>
-            </Group>
-          </Group>
-        );
-      `,
-      errors: [{ messageId: "invalidChild" }],
-    },
-    {
-      name: "a self-listed container is misplaced at the top level",
-      options: [widgetOptions],
-      code: `
-        const group = (
-          <GroupSelf>
-            <GroupSelf.Item>Item</GroupSelf.Item>
-          </GroupSelf>
-        );
-      `,
-      errors: [
-        {
-          messageId: "misplaced",
-          data: { container: "GroupSelf", name: "GroupSelf" },
-        },
-      ],
-    },
-    {
-      name: "a self-listed container accepts nesting but the outer stays misplaced",
-      options: [widgetOptions],
-      code: `
-        const group = (
-          <GroupSelf>
-            <GroupSelf>
-              <GroupSelf.Item>Item</GroupSelf.Item>
-            </GroupSelf>
-          </GroupSelf>
-        );
-      `,
-      errors: [
-        {
-          messageId: "misplaced",
-          data: { container: "GroupSelf", name: "GroupSelf" },
-        },
-      ],
-    },
-    {
-      name: "strict container reports a self-referential constant as unresolvable",
-      options: [strictRepeatOptions],
-      code: `
-        const loop = <>{loop}</>;
-        const tray = (
-          <Tray>
-            {loop}
-            <Tray.Item>x</Tray.Item>
-          </Tray>
-        );
-      `,
-      errors: [{ messageId: "unresolvableChild", data: { container: "Tray" } }],
-    },
-    {
-      name: "strict container reports unresolvable content",
-      options: [strictWidgetOptions],
-      code: `
-        const tray = <Widget.Tray>{renderStuff()}</Widget.Tray>;
-      `,
-      errors: [
-        {
-          messageId: "unresolvableChild",
-          data: { container: "Widget.Tray" },
-        },
-      ],
-    },
-    {
-      name: "strict container reports a reassigned variable as unresolvable content",
-      options: [strictWidgetOptions],
-      code: `
-        let action = <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>;
-        action = fallback;
-        const tray = <Widget.Tray>{action}</Widget.Tray>;
-      `,
-      errors: [
-        {
-          messageId: "unresolvableChild",
-          data: { container: "Widget.Tray" },
-        },
-      ],
-    },
-    {
-      name: "strict container reports unresolvable content and a genuinely absent requires",
-      options: [strictWidgetOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            {renderStuff()}
-            <Widget.Tray.ActionSecondary>Cancel</Widget.Tray.ActionSecondary>
-          </Widget.Tray>
-        );
-      `,
-      errors: [
-        {
-          messageId: "unresolvableChild",
-          data: { container: "Widget.Tray" },
-        },
-        {
-          messageId: "requiresSlot",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.ActionSecondary",
-            required: "Widget.Tray.ActionPrimary",
-          },
-        },
-      ],
-    },
-    {
-      name: "foreign override slot inside a genuine container is an invalid child",
-      options: [widgetOptions],
-      code: `
-        import Widget from "~/acme-ds/components/widget";
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.Badge>New</Widget.Tray.Badge>
-          </Widget.Tray>
-        );
-      `,
-      errors: [{ messageId: "invalidChild" }],
-    },
-    {
-      name: "foreign override slot does not satisfy a requires relation",
-      options: [overrideSlotOptions],
-      code: `
-        import Widget from "~/acme-ds/components/widget";
-        import ExternalBadge from "~/acme-ds/components/other";
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.ActionPrimary>Deploy</Widget.Tray.ActionPrimary>
-            <ExternalBadge>New</ExternalBadge>
-          </Widget.Tray>
-        );
-      `,
-      errors: [
-        {
-          messageId: "requiresSlot",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.ActionPrimary",
-            required: "ExternalBadge",
-          },
-        },
-        { messageId: "invalidChild" },
-      ],
-    },
-    {
-      name: "three chips exceed a maxCount of two",
-      options: [chipMaxTwoOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.Chip>One</Widget.Tray.Chip>
-            <Widget.Tray.Chip>Two</Widget.Tray.Chip>
-            <Widget.Tray.Chip>Three</Widget.Tray.Chip>
-          </Widget.Tray>
-        );
-      `,
-      errors: [
-        {
-          messageId: "tooMany",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.Chip",
-            maxCount: "2",
-          },
-        },
-      ],
-    },
-    {
-      name: "two chips in the same branch exceed a maxCount of one",
-      options: [chipMaxOneOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            {deployed ? (
-              <>
-                <Widget.Tray.Chip>Redeploy</Widget.Tray.Chip>
-                <Widget.Tray.Chip>Deploy</Widget.Tray.Chip>
-              </>
-            ) : null}
-          </Widget.Tray>
-        );
-      `,
-      errors: [
-        {
-          messageId: "tooMany",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.Chip",
-            maxCount: "one",
-          },
-        },
-      ],
-    },
-    {
-      name: "no chips at all violate a minCount of one",
-      options: [chipMinOneOptions],
-      code: `
-        const tray = <Widget.Tray />;
-      `,
-      errors: [
-        {
-          messageId: "tooFew",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.Chip",
-            minCount: "one",
-          },
-        },
-      ],
-    },
-    {
-      name: "one chip violates a minCount of two",
-      options: [chipMinTwoOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            <Widget.Tray.Chip>One</Widget.Tray.Chip>
-          </Widget.Tray>
-        );
-      `,
-      errors: [
-        {
-          messageId: "tooFew",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.Chip",
-            minCount: "2",
-          },
-        },
-      ],
-    },
-    {
-      name: "a chip in a single ternary branch does not satisfy a minCount of one",
-      options: [chipMinOneOptions],
-      code: `
-        const tray = (
-          <Widget.Tray>
-            {deployed ? <Widget.Tray.Chip>Deploy</Widget.Tray.Chip> : null}
-          </Widget.Tray>
-        );
-      `,
-      errors: [
-        {
-          messageId: "tooFew",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.Chip",
-            minCount: "one",
-          },
-        },
-      ],
-    },
-    {
-      name: "a strict container reports both unresolvable content and a missing minCount slot",
-      options: [chipMinOneStrictOptions],
-      code: `
-        const tray = <Widget.Tray>{renderStuff()}</Widget.Tray>;
-      `,
-      errors: [
-        {
-          messageId: "tooFew",
-          data: {
-            container: "Widget.Tray",
-            name: "Widget.Tray.Chip",
-            minCount: "one",
-          },
-        },
-        {
-          messageId: "unresolvableChild",
-          data: { container: "Widget.Tray" },
-        },
+        { messageId: "exclusiveSlots" },
+        { messageId: "exclusiveSlots" },
       ],
     },
   ],
