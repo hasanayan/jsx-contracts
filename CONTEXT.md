@@ -126,10 +126,16 @@ members)` — the public coordinate, produced by shipped contracts
   or remove it."
 - **Description IR** (ADR 0006) — `describeContract(rows) → ContractDescription`:
   a public data tree in authoring, derived from compiled rows, that renderers
-  (the `@jsx-contracts/storybook` doc block, prose helpers) consume. Base
-  section plus branches as deltas; identity appears only as display strings.
-  Display-name and condition-to-prose rendering is one shared layer, used by
-  both lint messages and the IR's prose helper.
+  (the `@jsx-contracts/storybook` doc block, prose helpers) consume. Rows are
+  grouped by subject identity, so every facet a contract declares folds into one
+  entry: a **base** section — children (slots, closure, `strictAnalysis`), prop
+  rules, `requiresAnyOf`, descendants, subtree bans, `notInside`, `deprecated` —
+  plus **branches as deltas**, one per `when`. A single authored `when` the
+  compiler split across facet rows is reunited into one delta, keyed by its
+  condition. A facet the contract does not use is simply absent, never an empty
+  placeholder. Identity appears only as display strings; prop names stay author
+  strings. Display-name and condition-to-prose rendering is one shared layer,
+  used by both lint messages and the IR's prose helper.
 - **Unsatisfiability check** — `findUnsatisfiable`, the authoring side's
   build-time pass: reports branches that can hold at once and disagree — one
   extends what another forbids, two override one slot differently, a required

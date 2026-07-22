@@ -4,31 +4,45 @@
  * rather than builder objects is what keeps documentation from drifting away
  * from enforcement.
  *
- * The format lives in `@jsx-contracts/core`: the `MatchKey` shape and its
- * `displayName` reader come from there, so documentation and enforcement read
- * the same names.
+ * Rows are grouped by subject identity, so every facet a contract declares —
+ * children, props, descendants, the component-level verbs — folds into one
+ * `DescribedContract`. A single authored `when` the compiler split across facet
+ * rows is reunited into one branch delta here, keyed by its condition.
+ *
+ * The format lives in `@jsx-contracts/core`: the `MatchKey` shape, its
+ * `displayName` reader and `matchKeyId` are from there, so documentation and
+ * enforcement read the same names and group by the same identity.
  */
 
 import type {
+  ContractRow,
   ContractRows,
+  Count,
+  Forbidden,
+  PropSpec,
+  PropsRow,
   Slot,
   SlotBranch,
   SlotsRow,
+  SubtreeRow,
+  When,
 } from "@jsx-contracts/core";
-import { displayName } from "@jsx-contracts/core";
+import { displayName, matchKeyId } from "@jsx-contracts/core";
 
 import type {
   BaseSection,
+  ChildrenSection,
   ContractDescription,
+  Deprecation,
   DescribedBranch,
   DescribedContract,
+  DescribedDescendant,
+  DescribedProp,
   DescribedSlot,
   SlotBounds,
 } from "./description.js";
 
-function boundsOf(slot: Slot): SlotBounds | undefined {
-  const { count } = slot;
-
+function boundsOf(count: Count | undefined): SlotBounds | undefined {
   if (count === undefined) {
     return undefined;
   }
@@ -118,7 +132,7 @@ function excludesByName(
 function describeSlot(slot: Slot, byAlias: Map<string, string>): DescribedSlot {
   const described: DescribedSlot = { name: displayName(slot.match) };
 
-  const bounds = boundsOf(slot);
+  const bounds = boundsOf(slot.count);
 
   if (bounds !== undefined) {
     described.bounds = bounds;
@@ -133,10 +147,41 @@ function describeSlot(slot: Slot, byAlias: Map<string, string>): DescribedSlot {
   return described;
 }
 
-function describeBase(
+/** A prop spec passed through verbatim: names, never identity, symmetry not folded. */
+function describeProp(spec: PropSpec): DescribedProp {
+  const described: DescribedProp = { name: spec.prop };
+
+  if (spec.required === true) {
+    described.required = true;
+  }
+
+  if (spec.requires !== undefined && spec.requires.length > 0) {
+    described.requires = spec.requires;
+  }
+
+  if (spec.excludes !== undefined && spec.excludes.length > 0) {
+    described.excludes = spec.excludes;
+  }
+
+  if (spec.deprecated !== undefined) {
+    described.deprecated = describeDeprecation(spec.deprecated);
+  }
+
+  return described;
+}
+
+function describeDeprecation(hint: { useInstead?: string }): Deprecation {
+  return hint.useInstead === undefined ? {} : { useInstead: hint.useInstead };
+}
+
+function forbiddenNames(forbidden: Forbidden[]): string[] {
+  return forbidden.map((entry) => displayName(entry.match));
+}
+
+function describeChildren(
   row: SlotsRow,
   byAlias: Map<string, string>,
-): BaseSection {
+): ChildrenSection {
   const excludes = excludesByName(row, byAlias);
 
   const slots = row.slots.map((slot): DescribedSlot => {
@@ -150,33 +195,159 @@ function describeBase(
     return described;
   });
 
-  return { closed: row.closed, slots };
+  const children: ChildrenSection = { closed: row.closed, slots };
+
+  if (row.strictAnalysis === true) {
+    children.strictAnalysis = true;
+  }
+
+  return children;
+}
+
+function describeBase(
+  rowsBySubject: RowsBySubject,
+  byAlias: Map<string, string>,
+): BaseSection {
+  const base: BaseSection = {};
+  const { slots, props, subtree, ancestor } = rowsBySubject;
+
+  if (slots !== undefined) {
+    base.children = describeChildren(slots, byAlias);
+  }
+
+  if (props !== undefined && props.props.length > 0) {
+    base.props = props.props.map(describeProp);
+  }
+
+  if (props?.requiresAnyOf !== undefined && props.requiresAnyOf.length > 0) {
+    base.requiresAnyOf = props.requiresAnyOf.map((group) => [...group]);
+  }
+
+  if (subtree !== undefined && subtree.descendants.length > 0) {
+    base.descendants = subtree.descendants.map((d): DescribedDescendant => {
+      const described: DescribedDescendant = { name: displayName(d.match) };
+      const bounds = boundsOf(d.count);
+
+      if (bounds !== undefined) {
+        described.bounds = bounds;
+      }
+
+      return described;
+    });
+  }
+
+  if (subtree !== undefined && subtree.forbidDescendants.length > 0) {
+    base.forbidsDescendants = forbiddenNames(subtree.forbidDescendants);
+  }
+
+  if (subtree !== undefined && subtree.forbidDescendantProps.length > 0) {
+    base.forbidsDescendantProps = [...subtree.forbidDescendantProps];
+  }
+
+  if (ancestor !== undefined && ancestor.notInside.length > 0) {
+    base.notInside = forbiddenNames(ancestor.notInside);
+  }
+
+  if (ancestor?.deprecated !== undefined) {
+    base.deprecated = describeDeprecation(ancestor.deprecated);
+  }
+
+  return base;
 }
 
 /**
- * A branch as its delta: condition AST, the slots it forbids/requires/extends
- * (aliases resolved to display names), and `because` verbatim. An extend entry
- * can name a new alias, so its own vocabulary widens the alias map before its
- * forbid/require references resolve.
+ * Reunites the branches the compiler split across facet rows: one authored `when`
+ * becomes a slots branch, a props branch and a subtree branch that share a
+ * condition, and here they fold back into one delta keyed by that condition.
+ * Order is first-seen, so declaration order within a facet is preserved and the
+ * children facet leads.
  */
-function describeBranch(
-  branch: SlotBranch,
+function describeBranches(
+  rowsBySubject: RowsBySubject,
   byAlias: Map<string, string>,
-): DescribedBranch {
+): DescribedBranch[] | undefined {
+  const branches: DescribedBranch[] = [];
+  const byCondition = new Map<string, DescribedBranch>();
+
+  const branchFor = (
+    when: When,
+    because: string | undefined,
+  ): DescribedBranch => {
+    const key = JSON.stringify(when);
+    const existing = byCondition.get(key);
+
+    if (existing !== undefined) {
+      if (existing.because === undefined && because !== undefined) {
+        existing.because = because;
+      }
+
+      return existing;
+    }
+
+    const branch: DescribedBranch = { when };
+
+    if (because !== undefined) {
+      branch.because = because;
+    }
+
+    byCondition.set(key, branch);
+    branches.push(branch);
+
+    return branch;
+  };
+
+  for (const slotBranch of rowsBySubject.slots?.branches ?? []) {
+    applySlotDelta(
+      branchFor(slotBranch.when, slotBranch.because),
+      slotBranch,
+      byAlias,
+    );
+  }
+
+  for (const propsBranch of rowsBySubject.props?.branches ?? []) {
+    const branch = branchFor(propsBranch.when, propsBranch.because);
+
+    if (propsBranch.props.length > 0) {
+      branch.props = propsBranch.props.map(describeProp);
+    }
+  }
+
+  for (const subtreeBranch of rowsBySubject.subtree?.branches ?? []) {
+    const branch = branchFor(subtreeBranch.when, subtreeBranch.because);
+    const forbids = forbiddenNames(subtreeBranch.forbidDescendants ?? []);
+
+    if (forbids.length > 0) {
+      branch.forbidsDescendants = forbids;
+    }
+
+    if (
+      subtreeBranch.forbidDescendantProps !== undefined &&
+      subtreeBranch.forbidDescendantProps.length > 0
+    ) {
+      branch.forbidsDescendantProps = [...subtreeBranch.forbidDescendantProps];
+    }
+  }
+
+  return branches.length === 0 ? undefined : branches;
+}
+
+/**
+ * The slots delta: an extend entry can name a new alias, so its own vocabulary
+ * widens the alias map before its forbid/require references resolve.
+ */
+function applySlotDelta(
+  branch: DescribedBranch,
+  slotBranch: SlotBranch,
+  byAlias: Map<string, string>,
+): void {
   const aliases = new Map(byAlias);
 
-  for (const slot of branch.extend ?? []) {
+  for (const slot of slotBranch.extend ?? []) {
     aliases.set(slot.alias, displayName(slot.match));
   }
 
-  const described: DescribedBranch = { when: branch.when };
-
-  if (branch.because !== undefined) {
-    described.because = branch.because;
-  }
-
-  if (branch.extend !== undefined && branch.extend.length > 0) {
-    described.extend = branch.extend.map((slot): DescribedSlot => {
+  if (slotBranch.extend !== undefined && slotBranch.extend.length > 0) {
+    branch.extend = slotBranch.extend.map((slot): DescribedSlot => {
       const extended = describeSlot(slot, aliases);
       const excluded = resolveRefs(slot.excludes ?? [], aliases);
 
@@ -188,52 +359,89 @@ function describeBranch(
     });
   }
 
-  const forbids = resolveRefs(branch.forbidSlots ?? [], aliases);
+  const forbids = resolveRefs(slotBranch.forbidSlots ?? [], aliases);
 
   if (forbids.length > 0) {
-    described.forbids = forbids;
+    branch.forbids = forbids;
   }
 
-  const requires = resolveRefs(branch.requireSlots ?? [], aliases);
+  const requires = resolveRefs(slotBranch.requireSlots ?? [], aliases);
 
   if (requires.length > 0) {
-    described.requires = requires;
+    branch.requires = requires;
   }
+}
 
-  return described;
+interface RowsBySubject {
+  subject: string;
+  slots?: SlotsRow;
+  props?: PropsRow;
+  subtree?: SubtreeRow;
+  ancestor?: Extract<ContractRow, { facet: "ancestor" }>;
 }
 
 /**
- * Groups rows by subject and describes each. Only the children facet feeds the
- * base section and its branch deltas today; other facets join additively as
- * later ADR 0006 tickets land, so a subject with no children facet contributes
- * no entry yet rather than an empty one.
+ * Groups rows by subject identity (`matchKeyId`, so two gates on the same display
+ * name stay apart) in first-seen order. Every facet folds into the one contract.
  */
-export function describeContract(rows: ContractRows): ContractDescription {
-  const contracts: DescribedContract[] = [];
+function groupBySubject(rows: ContractRows): RowsBySubject[] {
+  const groups: RowsBySubject[] = [];
+  const byId = new Map<string, RowsBySubject>();
 
   for (const row of rows) {
-    if (row.facet !== "slots") {
-      continue;
+    const id = matchKeyId(row.match);
+    let group = byId.get(id);
+
+    if (group === undefined) {
+      group = { subject: displayName(row.match) };
+      byId.set(id, group);
+      groups.push(group);
     }
 
+    switch (row.facet) {
+      case "slots":
+        group.slots = row;
+        break;
+
+      case "props":
+        group.props = row;
+        break;
+
+      case "subtree":
+        group.subtree = row;
+        break;
+
+      case "ancestor":
+        group.ancestor = row;
+        break;
+    }
+  }
+
+  return groups;
+}
+
+export function describeContract(rows: ContractRows): ContractDescription {
+  const contracts = groupBySubject(rows).map((group): DescribedContract => {
     const byAlias = new Map(
-      row.slots.map((slot) => [slot.alias, displayName(slot.match)]),
+      (group.slots?.slots ?? []).map((slot) => [
+        slot.alias,
+        displayName(slot.match),
+      ]),
     );
 
     const contract: DescribedContract = {
-      subject: displayName(row.match),
-      base: describeBase(row, byAlias),
+      subject: group.subject,
+      base: describeBase(group, byAlias),
     };
 
-    if (row.branches !== undefined && row.branches.length > 0) {
-      contract.branches = row.branches.map((branch) =>
-        describeBranch(branch, byAlias),
-      );
+    const branches = describeBranches(group, byAlias);
+
+    if (branches !== undefined) {
+      contract.branches = branches;
     }
 
-    contracts.push(contract);
-  }
+    return contract;
+  });
 
   return { contracts };
 }

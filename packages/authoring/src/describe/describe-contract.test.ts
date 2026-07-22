@@ -23,7 +23,7 @@ function describeOf(
   return describeContract(defineContracts(build).rows);
 }
 
-describe("describeContract base section", () => {
+describe("describeContract children facet", () => {
   it("names slots by identity-derived display strings, never aliases", () => {
     const description = describeOf(({ contract }) => {
       contract("Card.Heading", FROM).slots({ ".Text": true, ".Icon": true });
@@ -34,11 +34,13 @@ describe("describeContract base section", () => {
         {
           subject: "Card.Heading",
           base: {
-            closed: true,
-            slots: [
-              { name: "Card.Heading.Text" },
-              { name: "Card.Heading.Icon" },
-            ],
+            children: {
+              closed: true,
+              slots: [
+                { name: "Card.Heading.Text" },
+                { name: "Card.Heading.Icon" },
+              ],
+            },
           },
         },
       ],
@@ -56,7 +58,7 @@ describe("describeContract base section", () => {
       });
     }).contracts;
 
-    expect(entry?.base?.slots).toEqual([
+    expect(entry?.base.children?.slots).toEqual([
       { name: "Card.Heading.Bare" },
       { name: "Card.Heading.One", bounds: { kind: "exactly", count: 1 } },
       { name: "Card.Heading.Min", bounds: { kind: "atLeast", count: 2 } },
@@ -77,7 +79,7 @@ describe("describeContract base section", () => {
       });
     }).contracts;
 
-    expect(entry?.base?.slots).toEqual([
+    expect(entry?.base.children?.slots).toEqual([
       { name: "Card.Heading.Text", requires: ["Card.Heading.Icon"] },
       { name: "Card.Heading.Icon", excludes: ["Card.Heading.Avatar"] },
       { name: "Card.Heading.Avatar", excludes: ["Card.Heading.Icon"] },
@@ -93,8 +95,23 @@ describe("describeContract base section", () => {
       contract("Card.Heading", FROM).slots({ ".Text": true }).loose();
     });
 
-    expect(closed.contracts[0]?.base?.closed).toBe(true);
-    expect(loose.contracts[0]?.base?.closed).toBe(false);
+    expect(closed.contracts[0]?.base.children?.closed).toBe(true);
+    expect(loose.contracts[0]?.base.children?.closed).toBe(false);
+  });
+
+  it("carries strictAnalysis only when it is on", () => {
+    const strict = describeOf(({ contract }) => {
+      contract("Card", FROM).slots({ ".Body": true }).strictAnalysis();
+    });
+
+    const lenient = describeOf(({ contract }) => {
+      contract("Card", FROM).slots({ ".Body": true });
+    });
+
+    expect(strict.contracts[0]?.base.children?.strictAnalysis).toBe(true);
+    expect(lenient.contracts[0]?.base.children).not.toHaveProperty(
+      "strictAnalysis",
+    );
   });
 
   it("describes minimal contracts minimally — inapplicable sections absent", () => {
@@ -102,21 +119,118 @@ describe("describeContract base section", () => {
       contract("Card.Heading", FROM).slots({ ".Text": true });
     });
 
-    const slot = description.contracts[0]?.base?.slots[0];
+    const [entry] = description.contracts;
+    const slot = entry?.base.children?.slots[0];
 
     // No branches, no props, no requires/excludes: the slot is name-only.
     expect(slot).toEqual({ name: "Card.Heading.Text" });
     expect(slot).not.toHaveProperty("bounds");
-    expect(slot).not.toHaveProperty("requires");
-    expect(slot).not.toHaveProperty("excludes");
+    expect(entry?.base).not.toHaveProperty("props");
+    expect(entry?.base).not.toHaveProperty("descendants");
+    expect(entry?.base).not.toHaveProperty("notInside");
+    expect(entry).not.toHaveProperty("branches");
   });
+});
 
-  it("omits subjects with no children facet", () => {
+describe("describeContract props facet", () => {
+  it("describes a props-only contract — no children section, prop rules present", () => {
     const description = describeOf(({ contract }) => {
-      contract("Card", FROM).props({ href: (p) => p.excludes("onClick") });
+      contract("Button", FROM).props({
+        href: (p) => p.excludes("onClick"),
+        variant: (p) => p.deprecated("tone"),
+        as: (p) => p.required(),
+        icon: (p) => p.requires("label"),
+        old: (p) => p.deprecated(),
+      });
     });
 
-    expect(description.contracts).toEqual([]);
+    expect(description.contracts).toEqual([
+      {
+        subject: "Button",
+        base: {
+          props: [
+            { name: "href", excludes: ["onClick"] },
+            { name: "variant", deprecated: { useInstead: "tone" } },
+            { name: "as", required: true },
+            { name: "icon", requires: ["label"] },
+            { name: "old", deprecated: {} },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("carries requiresAnyOf groups as prop-name arrays", () => {
+    const [entry] = describeOf(({ contract }) => {
+      contract("Button", FROM)
+        .requiresAnyOf("href", "onClick")
+        .requiresAnyOf("aria-label", "title");
+    }).contracts;
+
+    expect(entry?.base.requiresAnyOf).toEqual([
+      ["href", "onClick"],
+      ["aria-label", "title"],
+    ]);
+
+    expect(entry?.base).not.toHaveProperty("props");
+  });
+});
+
+describe("describeContract subtree facet", () => {
+  it("describes descendants with bounds, forbidden descendants, and forbidden props", () => {
+    const [entry] = describeOf(({ contract }) => {
+      contract("Tabs", FROM)
+        .descendants({ ".Tab": (d) => d.min(1), ".Panel": true })
+        .forbidDescendants("button", ".Actions")
+        .forbidDescendantProps("onClick", "tabIndex");
+    }).contracts;
+
+    expect(entry?.base.descendants).toEqual([
+      { name: "Tabs.Tab", bounds: { kind: "atLeast", count: 1 } },
+      { name: "Tabs.Panel" },
+    ]);
+
+    expect(entry?.base.forbidsDescendants).toEqual(["button", "Tabs.Actions"]);
+    expect(entry?.base.forbidsDescendantProps).toEqual(["onClick", "tabIndex"]);
+  });
+});
+
+describe("describeContract ancestor facet", () => {
+  it("describes notInside and component-level deprecation", () => {
+    const [entry] = describeOf(({ contract }) => {
+      contract("Card", FROM).notInside("Table", ".Body").deprecated("Panel");
+    }).contracts;
+
+    expect(entry?.base.notInside).toEqual(["Table", "Card.Body"]);
+    expect(entry?.base.deprecated).toEqual({ useInstead: "Panel" });
+  });
+
+  it("carries an empty deprecation hint when no replacement is named", () => {
+    const [entry] = describeOf(({ contract }) => {
+      contract("Card", FROM).deprecated();
+    }).contracts;
+
+    expect(entry?.base.deprecated).toEqual({});
+    expect(entry?.base).not.toHaveProperty("notInside");
+  });
+});
+
+describe("describeContract folds every facet into one contract", () => {
+  it("merges children, props, descendants and ancestor rows under one subject", () => {
+    const [entry, ...rest] = describeOf(({ contract }) => {
+      contract("Card", FROM)
+        .slots({ ".Body": true })
+        .props({ href: (p) => p.required() })
+        .descendants({ ".Item": true })
+        .notInside("Table");
+    }).contracts;
+
+    expect(rest).toEqual([]);
+    expect(entry?.subject).toBe("Card");
+    expect(entry?.base.children?.slots).toEqual([{ name: "Card.Body" }]);
+    expect(entry?.base.props).toEqual([{ name: "href", required: true }]);
+    expect(entry?.base.descendants).toEqual([{ name: "Card.Item" }]);
+    expect(entry?.base.notInside).toEqual(["Table"]);
   });
 });
 
@@ -158,6 +272,34 @@ describe("describeContract branch deltas", () => {
 
     expect(entry?.branches?.[0]?.extend).toEqual([
       { name: "Card.Media", bounds: { kind: "atMost", count: 1 } },
+    ]);
+  });
+
+  it("reunites one authored `when` that touches slots, props and subtree", () => {
+    const [entry] = describeOf(({ contract }) => {
+      contract("Card", FROM)
+        .slots({ ".Body": true, ".Footer": true })
+        .when(
+          prop("onClick").isPresent(),
+          (c) =>
+            c
+              .forbidSlot(".Footer")
+              .props({ href: (p) => p.required() })
+              .forbidDescendants("button")
+              .forbidDescendantProps("tabIndex"),
+          { because: "A clickable card is a link." },
+        );
+    }).contracts;
+
+    expect(entry?.branches).toEqual([
+      {
+        when: { prop: "onClick" },
+        because: "A clickable card is a link.",
+        forbids: ["Card.Footer"],
+        props: [{ name: "href", required: true }],
+        forbidsDescendants: ["button"],
+        forbidsDescendantProps: ["tabIndex"],
+      },
     ]);
   });
 
@@ -205,6 +347,40 @@ describe("toSentences", () => {
     ]);
   });
 
+  it("renders every base facet declaratively", () => {
+    const description = describeOf(({ contract }) => {
+      contract("Card", FROM)
+        .slots({ ".Body": true })
+        .strictAnalysis()
+        .props({
+          href: (p) => p.required(),
+          onClick: (p) => p.excludes("href"),
+          size: (p) => p.deprecated("scale"),
+        })
+        .requiresAnyOf("href", "onClick")
+        .descendants({ ".Item": (d) => d.min(1) })
+        .forbidDescendants("Dialog")
+        .forbidDescendantProps("tabIndex")
+        .notInside("Table")
+        .deprecated("Panel");
+    });
+
+    expect(toSentences(description)).toEqual([
+      "<Card> is closed: only its declared children may appear.",
+      "<Card> uses strict analysis: an opaque region that could break a rule is reported, not assumed fine.",
+      "<Card> accepts <Card.Body>.",
+      "<Card>'s `href` prop is required.",
+      "<Card>'s `onClick` prop excludes `href`.",
+      "<Card>'s `size` prop is deprecated — use `scale` instead.",
+      "<Card> requires at least one of `href` or `onClick`.",
+      "<Card> requires at least one <Card.Item> somewhere below.",
+      "<Card> forbids <Dialog> anywhere below.",
+      "<Card> forbids `tabIndex` on any descendant.",
+      "<Card> may not appear inside <Table>.",
+      "<Card> is deprecated — use <Panel> instead.",
+    ]);
+  });
+
   it("renders branch deltas declaratively with the shared condition prose", () => {
     const description = describeOf(({ contract }) => {
       contract("Card", FROM)
@@ -223,6 +399,25 @@ describe("toSentences", () => {
       "<Card> accepts <Card.Footer>.",
       "When `Card` has `onClick`: forbids <Card.Footer> (A clickable card has no footer.).",
       "When `Card`'s `variant` is `rich`: requires <Card.Body>; also accepts at most one <Card.Media>.",
+    ]);
+  });
+
+  it("renders a multi-facet branch delta as one sentence", () => {
+    const description = describeOf(({ contract }) => {
+      contract("Card", FROM)
+        .slots({ ".Footer": true })
+        .when(prop("onClick").isPresent(), (c) =>
+          c
+            .forbidSlot(".Footer")
+            .props({ href: (p) => p.required() })
+            .forbidDescendantProps("tabIndex"),
+        );
+    });
+
+    expect(toSentences(description)).toEqual([
+      "<Card> is closed: only its declared children may appear.",
+      "<Card> accepts <Card.Footer>.",
+      "When `Card` has `onClick`: forbids <Card.Footer>; its `href` prop is required; forbids `tabIndex` on any descendant.",
     ]);
   });
 

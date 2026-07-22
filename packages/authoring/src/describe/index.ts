@@ -9,10 +9,14 @@ export { renderCondition } from "@jsx-contracts/core";
 export { describeContract } from "./describe-contract.js";
 export type {
   BaseSection,
+  ChildrenSection,
   ContractDescription,
   DescribedBranch,
   DescribedContract,
+  DescribedDescendant,
+  DescribedProp,
   DescribedSlot,
+  Deprecation,
   SlotBounds,
 } from "./description.js";
 export { toSentences } from "./prose.js";
