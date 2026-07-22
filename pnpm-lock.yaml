@@ -75,15 +75,9 @@ importers:
       '@jsx-contracts/eslint-plugin':
         specifier: workspace:*
         version: link:../eslint-plugin
-      '@typescript-eslint/utils':
-        specifier: 8.62.1
-        version: 8.62.1(eslint@9.39.4(jiti@2.7.0))(typescript@6.0.3)
       eslint:
         specifier: 9.39.4
         version: 9.39.4(jiti@2.7.0)
-      typescript-eslint:
-        specifier: 8.62.1
-        version: 8.62.1(eslint@9.39.4(jiti@2.7.0))(typescript@6.0.3)
       vitest:
         specifier: 4.1.9
         version: 4.1.9(@types/node@24.13.2)(jsdom@27.0.0)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))

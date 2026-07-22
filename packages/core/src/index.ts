@@ -1,8 +1,10 @@
 /**
  * `@jsx-contracts/core` — the contract format, owned by neither consumer. The
  * plugin enforces this shape; authoring compiles to it. The row schema, its JSON
- * schema, the runtime validator and the condition prose live here so all three
- * spellings of the format have a single home and no import cycle can form.
+ * schema, the runtime validator, the condition prose, the canonical condition
+ * form (`normalizeWhen`) and the prop-absence rule (`matchesWhileAbsent`) live
+ * here so all three spellings of the format share one home and no import cycle
+ * can form.
  */
 
 export type {
@@ -36,5 +38,10 @@ export { contractRowsSchema } from "./rows-schema.js";
 export { validateContractRows } from "./validate-rows.js";
 
 export { renderCondition } from "./condition-prose.js";
+
+export type { NormalizedWhen } from "./normalize-when.js";
+export { normalizeWhen } from "./normalize-when.js";
+
+export { matchesWhileAbsent } from "./prop-absence.js";
 
 export { countWord, formatList } from "./message-text.js";

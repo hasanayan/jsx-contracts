@@ -35,9 +35,7 @@
   },
   "devDependencies": {
     "@jsx-contracts/eslint-plugin": "workspace:*",
-    "@typescript-eslint/utils": "8.62.1",
     "eslint": "9.39.4",
-    "typescript-eslint": "8.62.1",
     "vitest": "4.1.9"
   }
 }

@@ -9,13 +9,17 @@
  * may miss a conflict but never invents one.
  */
 
-import type { Slot, SlotBranch, SlotsRow, When } from "@jsx-contracts/core";
-import { displayName } from "@jsx-contracts/core";
+import type {
+  NormalizedWhen,
+  Slot,
+  SlotBranch,
+  SlotsRow,
+  When,
+} from "@jsx-contracts/core";
+import { displayName, normalizeWhen } from "@jsx-contracts/core";
 
 import type { Exclusivity } from "../check/exclusivity.js";
 import { createExclusivity } from "../check/exclusivity.js";
-import type { NormalizedCondition } from "../pinned/condition-semantics.js";
-import { normalizeCondition } from "../pinned/condition-semantics.js";
 
 import type { RuleSet } from "./define-contracts.js";
 
@@ -94,7 +98,7 @@ interface Layer {
   /** The condition gating this layer; absent on the always-active base map. */
   when: When | undefined;
   /** Canonical form of `when`, for the co-satisfiability test. */
-  normalized: NormalizedCondition | undefined;
+  normalized: NormalizedWhen | undefined;
   /** Aliases this layer requires: base minimums, or a branch's `requireSlot`. */
   requires: Set<string>;
   /** Aliases this layer forbids. */
@@ -124,7 +128,7 @@ function baseLayer(row: SlotsRow): Layer {
 function branchLayer(branch: SlotBranch): Layer {
   return {
     when: branch.when,
-    normalized: normalizeCondition(branch.when),
+    normalized: normalizeWhen(branch.when),
     requires: new Set(branch.requireSlots ?? []),
     forbids: new Set(branch.forbidSlots ?? []),
     extend: new Map((branch.extend ?? []).map((slot) => [slot.alias, slot])),

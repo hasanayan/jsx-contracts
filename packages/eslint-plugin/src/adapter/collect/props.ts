@@ -1,39 +1,58 @@
 import type { TSESLint, TSESTree } from "@typescript-eslint/utils";
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 
+import type { ConditionValue } from "@jsx-contracts/core";
+import { matchesWhileAbsent } from "@jsx-contracts/core";
+
 import type { PropFact } from "../../contracts/rendered-tree/rendered-tree.js";
 
 type SourceCode = Readonly<TSESLint.SourceCode>;
 
-// Absent only when literally `false`, `null`, or `undefined`. Exported — not
-// through the package's "." barrel, so it stays private to consumers — solely
-// for the cross-package agreement test, which reaches it via this package's
-// built output to pin the authoring package's re-encoding of this absence rule against it
-// (see docs/adr/0002-*).
-export function isAttributePresent(
+// The condition literal this attribute value denotes, or `undefined` if it
+// denotes none the absence rule can weigh in on. `false` and the `undefined`
+// identifier are the forms `matchesWhileAbsent` decides; every present form
+// (bare, string, truthy, unresolvable) falls through to `undefined`. An explicit
+// `{null}` denotes `null` — absent, but no condition literal reaches it, so it
+// is read here and never handed to the rule.
+function attributeLiteral(
   value: TSESTree.JSXAttribute["value"],
-): boolean {
-  if (value === null) {
-    return true;
-  }
-
-  if (value.type !== AST_NODE_TYPES.JSXExpressionContainer) {
-    return true;
+): ConditionValue | null | undefined {
+  if (value?.type !== AST_NODE_TYPES.JSXExpressionContainer) {
+    return undefined;
   }
 
   const { expression } = value;
 
+  if (expression.type === AST_NODE_TYPES.Literal) {
+    return expression.value === false || expression.value === null
+      ? expression.value
+      : undefined;
+  }
+
   if (
-    expression.type === AST_NODE_TYPES.Literal &&
-    (expression.value === false || expression.value === null)
+    expression.type === AST_NODE_TYPES.Identifier &&
+    expression.name === "undefined"
   ) {
+    return "undefined";
+  }
+
+  return undefined;
+}
+
+// A syntactic reader over the format's absence rule: resolve the attribute down
+// to a condition literal, then ask `@jsx-contracts/core` whether it means
+// absent. An explicit `{null}` is absent on its own — no condition literal is
+// `null`, so the rule has no arm for it.
+export function isAttributePresent(
+  value: TSESTree.JSXAttribute["value"],
+): boolean {
+  const literal = attributeLiteral(value);
+
+  if (literal === null) {
     return false;
   }
 
-  return !(
-    expression.type === AST_NODE_TYPES.Identifier &&
-    expression.name === "undefined"
-  );
+  return literal === undefined || !matchesWhileAbsent(literal);
 }
 
 function propFact(
