@@ -178,6 +178,39 @@ describe("the from gate", () => {
     expect(barred("@third/party/button")).toEqual([]);
   });
 
+  it("routes two same-named components to their own contracts", () => {
+    const twoDesignSystems = defineContracts(({ contract }) => {
+      contract("Button", "@acme/ds").slots({ ".Label": true });
+      contract("Button", "@other/ui").slots({ ".Text": true });
+    });
+
+    const linter = new Linter();
+
+    const lint = (specifier: string): Linter.LintMessage[] =>
+      linter.verify(
+        `
+        import { Button } from "${specifier}";
+
+        export const example = (
+          <Button>
+            <Button.Label />
+          </Button>
+        );
+      `,
+        {
+          plugins: { "@jsx-contracts": plugin },
+          languageOptions,
+          rules: twoDesignSystems.rules(),
+        },
+      );
+
+    // Acme's Button declares `.Label`, so it is satisfied.
+    expect(lint("@acme/ds")).toEqual([]);
+
+    // Other's Button declares `.Text`, so `<Button.Label>` is undeclared there.
+    expect(lint("@other/ui").map((m) => m.messageId)).toEqual(["closure"]);
+  });
+
   it("reads a forbidden ancestor's gate too", () => {
     const inside = verify(`
       import { Card } from "@acme/design-system/card";

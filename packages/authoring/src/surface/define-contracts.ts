@@ -273,6 +273,15 @@ function subjectOf(state: ContractState): Subject {
   return { name: state.name, from: state.from };
 }
 
+/**
+ * A subject's identity is its name *and* its gate — two design systems' `Button`
+ * are distinct components, and the engine already matches on the pair. A NUL
+ * cannot appear in either half, so it separates them without collision.
+ */
+export function subjectKey(name: string, from: string | undefined): string {
+  return `${name} ${from ?? ""}`;
+}
+
 /** Every row of a contract carries the subject's own gate. */
 function subjectMatch(state: ContractState): MatchKey {
   return { kind: "name", name: state.name, from: state.from };
@@ -922,10 +931,10 @@ export function defineContracts(
       );
     }
 
-    if (states.has(name)) {
+    if (states.has(subjectKey(name, from))) {
       throw new Error(
-        `defineContracts: duplicate contract for "${name}" — one component, ` +
-          "one contract.",
+        `defineContracts: duplicate contract for "${name}" under gate ` +
+          `"${from}" — one component, one contract.`,
       );
     }
 
@@ -945,7 +954,7 @@ export function defineContracts(
       branches: [],
     };
 
-    states.set(name, state);
+    states.set(subjectKey(name, from), state);
 
     return makeBuilder(state, () => frozen);
   };

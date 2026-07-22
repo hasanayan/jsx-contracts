@@ -107,13 +107,27 @@ describe("defineContracts", () => {
     expect(set.rows).toHaveLength(0);
   });
 
-  it("throws on a duplicate component name within the collector", () => {
+  it("throws on a duplicate component name under the same gate within the collector", () => {
     expect(() =>
       defineContracts(({ contract }) => {
         contract("Card", CARD_FROM);
         contract("Card", CARD_FROM);
       }),
-    ).toThrow(/duplicate contract for "Card"/);
+    ).toThrow(
+      /duplicate contract for "Card" under gate "~\/components\/Card\.tsx"/,
+    );
+  });
+
+  it("registers one name under two gates as two subjects", () => {
+    const set = defineContracts(({ contract }) => {
+      contract("Button", "@acme/ds").props({ label: (p) => p.required() });
+      contract("Button", "@other/ui").deprecated();
+    });
+
+    expect(set.rows.map((row) => [row.match.name, row.match.from])).toEqual([
+      ["Button", "@acme/ds"],
+      ["Button", "@other/ui"],
+    ]);
   });
 
   it("throws when a contract declares slots twice", () => {
@@ -193,7 +207,7 @@ describe("mergeContracts", () => {
     ]);
   });
 
-  it("throws on a cross-file duplicate component", () => {
+  it("throws on a cross-file duplicate component under the same gate", () => {
     expect(() =>
       mergeContracts(
         defineContracts(({ contract }) => {
@@ -203,6 +217,24 @@ describe("mergeContracts", () => {
           contract("Card", CARD_FROM).slots({ ".Icon": true });
         }),
       ),
-    ).toThrow(/duplicate contract for "Card"/);
+    ).toThrow(
+      /duplicate contract for "Card" under gate "~\/components\/Card\.tsx"/,
+    );
+  });
+
+  it("merges one name under two gates without throwing", () => {
+    const merged = mergeContracts(
+      defineContracts(({ contract }) => {
+        contract("Button", "@acme/ds").slots({ ".Label": true });
+      }),
+      defineContracts(({ contract }) => {
+        contract("Button", "@other/ui").slots({ ".Text": true });
+      }),
+    );
+
+    expect(merged.rows.map((row) => [row.match.name, row.match.from])).toEqual([
+      ["Button", "@acme/ds"],
+      ["Button", "@other/ui"],
+    ]);
   });
 });
