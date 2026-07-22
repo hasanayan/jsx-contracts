@@ -58,7 +58,9 @@ const git = (...args: string[]) =>
 // into it. Captured once so a stray checkout mid-run cannot retarget the merge.
 const integrationBranch = git("rev-parse", "--abbrev-ref", "HEAD");
 
-console.log(`Integrating into: ${integrationBranch} (local only, never pushed)`);
+console.log(
+  `Integrating into: ${integrationBranch} (local only, never pushed)`,
+);
 
 for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   console.log(`\n=== Iteration ${iteration}/${MAX_ITERATIONS} ===\n`);
@@ -150,7 +152,9 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   // -------------------------------------------------------------------------
   try {
     git("merge", "--ff-only", branch);
-    console.log(`Merged ${branch} into ${integrationBranch}: ${git("rev-parse", "--short", "HEAD")}`);
+    console.log(
+      `Merged ${branch} into ${integrationBranch}: ${git("rev-parse", "--short", "HEAD")}`,
+    );
   } catch (error) {
     console.error(
       `Could not fast-forward ${integrationBranch} to ${branch}. The work is safe on that branch; merge it by hand. Stopping.`,

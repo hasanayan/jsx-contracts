@@ -4,7 +4,6 @@ import type {
 } from "../pinned/condition-semantics.js";
 import { matchesWhileAbsent } from "../pinned/condition-semantics.js";
 
-/** The interning key of a normalized tree: its content, canonically ordered. */
 function conditionKey(when: NormalizedCondition): string {
   return JSON.stringify(when);
 }
@@ -14,9 +13,8 @@ function disjoint(left: Literal[], right: Literal[]): boolean {
 }
 
 /**
- * Whether `premise` holding forces `conclusion` to hold, syntactically. Used by
- * the negation arm: `a` and `not(b)` are exclusive exactly when `a` implies
- * `b`. Incomplete on purpose — an undecided pair reads as "no".
+ * The negation arm: `a` and `not(b)` are exclusive exactly when `a` implies `b`.
+ * Incomplete on purpose — an undecided pair reads as "no".
  */
 function implies(
   premise: NormalizedCondition,
@@ -26,7 +24,6 @@ function implies(
     return true;
   }
 
-  // The exact steps first; the lossy decompositions after.
   if ("all" in conclusion) {
     return conclusion.all.every((operand) => implies(premise, operand));
   }
@@ -58,8 +55,7 @@ function implies(
 
   const wider = conclusion.values;
 
-  // A value test implies the presence test it narrows, unless it matches while
-  // absent.
+  // A value test implies the presence test it narrows, unless it matches while absent.
   if (wider === undefined) {
     return premise.values?.some(matchesWhileAbsent) !== true;
   }
@@ -71,7 +67,6 @@ function exclusive(
   left: NormalizedCondition,
   right: NormalizedCondition,
 ): boolean {
-  // Negation first: `not` needs the whole other tree to decide.
   if ("not" in left) {
     return implies(right, left.not);
   }
@@ -96,7 +91,7 @@ function exclusive(
     return right.any.every((operand) => exclusive(left, operand));
   }
 
-  // Two prop tests: only disjoint value sets on one prop decide anything.
+  // Only disjoint value sets on one prop decide anything.
   return (
     left.prop === right.prop &&
     left.values !== undefined &&
@@ -105,20 +100,13 @@ function exclusive(
   );
 }
 
-/**
- * Whether two rows' when-conditions cannot both hold. A when-less row is always
- * active, so it is exclusive with nothing.
- */
+/** A when-less row is always active, so it is exclusive with nothing. */
 export type Exclusivity = (
   left: NormalizedCondition | undefined,
   right: NormalizedCondition | undefined,
 ) => boolean;
 
-/**
- * The exclusivity test, with its answers memoized. Pairs are keyed by content,
- * never by object identity, so a pair is decided once however many row pairs
- * carry it.
- */
+/** Keyed by content, never object identity, so a pair is decided once. */
 export function createExclusivity(): Exclusivity {
   const answers = new Map<string, boolean>();
 

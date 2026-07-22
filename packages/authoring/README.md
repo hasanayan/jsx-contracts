@@ -98,7 +98,8 @@ argument; violation messages always name the element the consumer wrote, never
 the alias.
 
 Spec verbs, each local to the slot it constrains: `is()` (once per entry,
-position free); `min(n)` / `max(n)` / `exactly(n)` (a bare slot is 0–∞);
+position free); `min(n)` / `max(n)` / `exactly(n)` (a bare slot is 0–∞, and a
+`min` above its own `max` throws — no count could satisfy it);
 `requires(...siblings)`; `excludes(...siblings)`. `excludes` is the entire
 exclusivity surface — symmetry is computed, groups are written on each member,
 N-way comes free. Sibling references are typed against the map's own keys, so a

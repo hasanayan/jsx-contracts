@@ -1,18 +1,15 @@
-// Seam 3: the end-to-end suite. One representative authored contract per facet,
-// its flat-config entry, and the violations a real ESLint Linter reports over
-// the built plugin. Deliberately thin — the per-facet enumeration lives in the
-// seam 1/2 unit tests; this proves the whole path holds together on the new
-// surface. The conditional-branch and strict-analysis paths have their own
-// end-to-end files (`branches-integration.test.ts`, `v2/integration.test.ts`).
+// Seam 3: one authored contract per facet, end to end over the built plugin.
+// Deliberately thin — the enumeration lives in the seam 1/2 tests. Branches and
+// strict analysis have their own end-to-end files.
 
 import { Linter } from "eslint";
 import { describe, expect, it } from "vitest";
 
 import plugin from "@jsx-contracts/eslint-plugin";
 
-import type { RuleSetV2 } from "../v2/define-contracts.js";
-import { defineContracts } from "../v2/define-contracts.js";
-import { mergeContracts } from "../v2/merge-contracts.js";
+import type { RuleSet } from "../surface/define-contracts.js";
+import { defineContracts } from "../surface/define-contracts.js";
+import { mergeContracts } from "../surface/merge-contracts.js";
 
 const GATE = "~/components/ds.tsx";
 
@@ -22,7 +19,7 @@ const languageOptions = {
   parserOptions: { ecmaFeatures: { jsx: true } },
 } as const;
 
-function verify(ruleSet: RuleSetV2, code: string): Linter.LintMessage[] {
+function verify(ruleSet: RuleSet, code: string): Linter.LintMessage[] {
   const linter = new Linter();
 
   return linter.verify(code, {

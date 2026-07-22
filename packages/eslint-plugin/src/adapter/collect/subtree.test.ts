@@ -1,5 +1,4 @@
-// Drives the subtree collector through the `analyze` harness (a live
-// SourceCode) and asserts the lazy subtree model directly.
+// Drives the subtree collector through the `analyze` harness.
 
 import { describe, expect, it } from "vitest";
 

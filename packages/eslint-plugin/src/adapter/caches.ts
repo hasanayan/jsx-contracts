@@ -1,10 +1,9 @@
 import { memoized } from "../memoized.js";
 
 /**
- * Content-keyed interning. ESLint deep-clones rule options for every rule and
- * every file, so object identity can never key a shared cache; this maps every
- * clone with the same JSON content onto the first-seen instance. The map lives
- * for the process, one entry per distinct payload content.
+ * ESLint deep-clones rule options for every rule and every file, so object
+ * identity can never key a shared cache. This maps every clone with the same
+ * JSON content onto the first-seen instance, for the life of the process.
  */
 export function createInterner<Options extends object>(): (
   options: Options,
@@ -15,10 +14,7 @@ export function createInterner<Options extends object>(): (
     memoized(canonical, JSON.stringify(options), () => options);
 }
 
-/**
- * A two-level weak memo: AST node → canonical options → result. `Result`
- * excludes `undefined` so a cached value is never mistaken for a miss.
- */
+/** AST node → canonical options → result. */
 export type NodeMemo<Result extends NonNullable<unknown>> = (
   node: object,
   options: object,
@@ -30,7 +26,6 @@ export function createNodeMemo<
 >(): NodeMemo<Result> {
   const byNode = new WeakMap<object, WeakMap<object, Result>>();
 
-  // Two levels, so two applications of the one-level memo.
   return (node, options, compute) =>
     memoized(
       memoized(byNode, node, () => new WeakMap<object, Result>()),

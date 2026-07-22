@@ -1,4 +1,4 @@
-// Drives the prop collectors through the `analyze` harness (a live SourceCode).
+// Drives the prop collectors through the `analyze` harness.
 
 import { AST_NODE_TYPES } from "@typescript-eslint/utils";
 import { describe, expect, it } from "vitest";

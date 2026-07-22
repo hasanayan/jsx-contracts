@@ -1,8 +1,6 @@
 /**
- * The type-safe authoring surface for JSX composition contracts (ADR 0003):
- * `defineContracts` and the `contract(name, from)` primitive it injects,
- * `mergeContracts`, `findUnsatisfiable`, and the condition constructors. The
- * package compiles to the plugin's v2 rule table, which it types itself
- * against — it carries no runtime dependency on the plugin.
+ * The type-safe authoring surface for JSX composition contracts (ADR 0003). It
+ * compiles to the plugin's rule table and types itself against it, carrying no
+ * runtime dependency on the plugin.
  */
-export * from "./v2/index.js";
+export * from "./surface/index.js";

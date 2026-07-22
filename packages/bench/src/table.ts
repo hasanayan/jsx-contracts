@@ -1,4 +1,4 @@
-import type { ContractRowsV2, MatchKey } from "@jsx-contracts/eslint-plugin";
+import type { ContractRows, MatchKey } from "@jsx-contracts/eslint-plugin";
 
 /** The module the fixture imports its contracted components from. */
 export const GATE = "@acme/ds";
@@ -20,7 +20,7 @@ export const CONDITION_VALUE = "compact";
 /** A name match key, the only variant emitted today (ADR 0004 reserves the rest). */
 const name = (tag: string): MatchKey => ({ kind: "name", name: tag });
 
-export const table: ContractRowsV2 = [
+export const table: ContractRows = [
   {
     facet: "slots",
     match: name("Widget"),

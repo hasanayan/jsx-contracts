@@ -5,10 +5,9 @@ import type { OpaqueRegion } from "../../contracts/rendered-tree/rendered-tree.j
 
 type SourceCode = Readonly<TSESLint.SourceCode>;
 
-/** Past this many characters a rendered expression is truncated with an ellipsis. */
 const maxExprLength = 32;
 
-/** Collapse whitespace and cap length, so a multiline expression stays one tidy token. */
+// So a multiline expression stays one tidy token.
 function abbreviate(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim();
 
@@ -17,12 +16,7 @@ function abbreviate(text: string): string {
     : flat;
 }
 
-/**
- * Classify one statically-opaque child node into its internal cause and the
- * blinding expression a message renders. A call is dynamic children
- * (`{items.map(…)}`), a member or identifier is passthrough children
- * (`{props.children}`), and anything else is unresolvable.
- */
+/** Classify an opaque child into its cause and the expression a message renders. */
 export function classifyOpaqueRegion(
   sourceCode: SourceCode,
   node: TSESTree.Node,
@@ -34,8 +28,7 @@ export function classifyOpaqueRegion(
     return { ref: node, cause: "dynamic-children", text: `{${inner}}` };
   }
 
-  // A variable or member access is children handed through; anything else the
-  // collector cannot see through at all.
+  // A variable or member access is children handed through.
   const cause =
     node.type === AST_NODE_TYPES.MemberExpression ||
     node.type === AST_NODE_TYPES.Identifier
