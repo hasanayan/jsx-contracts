@@ -169,8 +169,11 @@ A closure violation prompts rather than scolds: "`<Tooltip>` is not in
 Two commitments in the rows, cheap now and expensive later:
 
 - **The match key is one discriminated field** — the name variant now, the
-  identity variant reserved (ADR 0004). Nothing else consumes the key's
-  insides.
+  identity variant reserved (ADR 0004). The name variant carries the element's
+  name and its optional import gate, and exactly two functions read a key's
+  insides: `displayName` for messages and `match.ts` for matching. Every facet
+  carries keys it never inspects and asks `match.ts` whether a rule is about an
+  element, so the reserved variant lands in those two places and nowhere else.
 - **Fact evaluation stays blanket** — the three-valued fact model
   (present / absent / unknown) is ADR 0005's, and the engine rewrite lands
   there with the type checker in one pass. Here the blanket spread rules

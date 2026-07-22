@@ -94,6 +94,11 @@ backend (parser services today, TS 7's API later) must be swappable without
 engine changes, and per-import batching fits both shapes.
 
 Deleted with specifier matching: the adapter's import-source scope machinery
-(`ResolutionIndex`'s specifier recovery) and `import-gate.ts` — the checker
-resolves what they hand-rolled, and re-export chains, tsconfig paths and
-package `exports` maps come with it.
+(`ResolutionIndex`'s specifier recovery), `import-gate.ts`, and the gate branch
+of `match.ts` — the checker resolves what they hand-rolled, and re-export
+chains, tsconfig paths and package `exports` maps come with it. What stays is
+`match.ts` itself: every facet already routes "is this rule about this element"
+through it, so the identity variant is a new branch there rather than a change
+to any facet. The rule indexes keep their name buckets, which the identity
+regime narrows rather than replaces — a written tag stops being the display
+name once renamed imports resolve, so the bucket key becomes the identity.
