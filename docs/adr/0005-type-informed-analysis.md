@@ -73,7 +73,6 @@ one so it lands additively.
 ## Consequences
 
 The props facet and condition evaluation learn three-valued logic; `unknown`
-propagates the way spread-skip does today. The ADR 0002 mirror of
-prop-absence semantics (`matchesWhileAbsent`) becomes three-valued, and its
-agreement corpus extends to the new encodings — the pin is the guard against
-the two copies drifting.
+propagates the way spread-skip does today. `core`'s prop-absence rule
+(`matchesWhileAbsent`) becomes three-valued, and its tests extend to the new
+encodings.

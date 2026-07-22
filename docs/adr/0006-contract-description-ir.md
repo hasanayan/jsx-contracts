@@ -49,6 +49,6 @@ Storybook): a doc block rendering the IR as sections and tables. Wiring is
 story file; no automatic story-to-contract resolution. Under ADR 0004,
 `<ContractDocs of={Card} />` becomes lookup by identity.
 
-The authoring package's only runtime dependency is `@jsx-contracts/core` (ADR
-0002): the IR and prose helper are pure data-to-data; everything React-flavored
+The authoring package's only runtime dependency is `@jsx-contracts/core`: the
+IR and prose helper are pure data-to-data; everything React-flavored
 lives in the glue package.

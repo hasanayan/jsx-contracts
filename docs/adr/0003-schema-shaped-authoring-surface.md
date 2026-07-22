@@ -180,7 +180,7 @@ Two commitments in the rows, cheap now and expensive later:
   remain the semantics; `strictAnalysis` classifies findings by cause at the
   granularity syntax proves (an opaque region intersecting a rule), and
   nothing public — row fields, findings, messages — claims per-prop
-  precision the engine does not have. The ADR 0002 prop-absence mirror is
+  precision the engine does not have. The shared prop-absence rule is
   rewritten against the new condition AST unchanged in meaning, and goes
   three-valued only with ADR 0005.
 

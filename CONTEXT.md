@@ -214,7 +214,7 @@ Four published packages:
   owned by neither consumer. It holds the row types, their JSON schema, the
   runtime validator, the condition-to-English prose (`renderCondition`), the
   canonical condition form (`normalizeWhen`) and the prop-absence rule
-  (`matchesWhileAbsent`) both consumers share (ADR 0002), the match-key readers
+  (`matchesWhileAbsent`) both consumers share, the match-key readers
   (`displayName`, `matchKeyId`) and the shared string helpers (`formatList`,
   `countWord`) — the single source of truth for what a contract is; the row's
   three encodings are pinned to agree by a shared fixture corpus.
@@ -229,8 +229,8 @@ Four published packages:
   contracts into the rule table — shorthand expansion, when-conjunction,
   facet fan-out, the frozen result and its `rules()`. `check/` is the
   unsatisfiability check and the syntactic exclusivity it decides pairs with,
-  both reasoning over the format's own `normalizeWhen` and `matchesWhileAbsent`
-  (ADR 0002). `integration/` drives a real linter.
+  both reasoning over the format's own `normalizeWhen` and `matchesWhileAbsent`.
+  `integration/` drives a real linter.
   `index.ts` is the public seam, which re-exports the format's `renderCondition`.
   Depends only on `@jsx-contracts/core` at runtime. Vitest-tested.
 - **Storybook** (`packages/storybook`, `@jsx-contracts/storybook`) — the

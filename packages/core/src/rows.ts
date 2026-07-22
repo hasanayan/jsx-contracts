@@ -64,7 +64,7 @@ export interface WhenProp {
 
 /**
  * Always objects — no bare-string shorthand — so the engine's canonical
- * normalization (`when-condition-pool`) serves both surfaces (docs/adr/0002-*).
+ * normalization (`when-condition-pool`) serves both surfaces.
  */
 export type When = WhenProp | { all: When[] } | { any: When[] } | { not: When };
 
