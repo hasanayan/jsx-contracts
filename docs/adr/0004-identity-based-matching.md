@@ -25,9 +25,12 @@ identities, and an opt-in diagnostic reporting the exemption once per file
 untyped project is that degradation everywhere, which is why it is refused at
 startup rather than silently shipped.
 
-TS symbol resolution (`getAliasedSymbol` via parser services) is the only
-identity mechanism — no bundled resolver, no fallback matcher, so the same
-config never lints differently across setups: it lints or it refuses.
+One identity mechanism per runtime, and no fallback within a run: TS symbol
+resolution (`getAliasedSymbol` via parser services) resolves every identity or
+the file degrades, and nothing hand-rolled resolves what it could not. Two
+mechanisms that can disagree about a barrel in the same pass are what makes a
+config lint differently across setups; a single backend is what makes it lint
+or refuse. This constrains fallbacks, not backends — see Lint side.
 
 ## Identity keys
 
@@ -91,7 +94,13 @@ Identity resolution sits behind one narrow adapter seam:
 per file (not per element) and cached. This is deliberate insurance: TS 7
 replaces the in-process compiler API with an out-of-process one, so the
 backend (parser services today, TS 7's API later) must be swappable without
-engine changes, and per-import batching fits both shapes.
+engine changes, and per-import batching fits both shapes. A resolver-based
+backend — oxc-resolver plus a re-export walker, for a non-ESLint runtime —
+fits the same seam and is not foreclosed; it would be selected per runtime,
+never consulted as a fallback when the checker comes back unknown. Nothing
+about it is on the roadmap: identity is only half of what a port needs, since
+ADR 0005's prop facts require a type checker that such runtimes do not expose
+to plugins.
 
 Deleted with specifier matching: the adapter's import-source scope machinery
 (`ResolutionIndex`'s specifier recovery), `import-gate.ts`, and the gate branch
