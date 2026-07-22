@@ -12,6 +12,12 @@ export interface NameMatch {
   kind: "name";
   /** The element's full dotted tag, e.g. `"Card.Heading"`. */
   name: string;
+  /**
+   * The import gate: a literal specifier or a `*`-glob the element's own import
+   * must match. Absent gates on the name alone. Applied by `match.ts`, which is
+   * the only other reader of a key's insides.
+   */
+  from?: string;
 }
 
 /** Only {@link NameMatch} today; the union widens with ADR 0004. */
@@ -31,8 +37,6 @@ export interface Slot {
   /** Authoring-scoped: sibling references and branch deltas name it, messages never do. */
   alias: string;
   match: MatchKey;
-  /** From `is(name, from)` — carried for ADR 0004, not yet matched against. */
-  from?: string;
   count?: Count;
   /** Sibling aliases, resolved to display names by the engine. */
   requires?: string[];
@@ -127,16 +131,12 @@ export interface PropsRow {
  */
 export interface Forbidden {
   match: MatchKey;
-  /** Carried for ADR 0004, not yet matched against. */
-  from?: string;
 }
 
 /** A slot's triple model minus the sibling relations, which only fit direct children. */
 export interface Descendant {
   alias: string;
   match: MatchKey;
-  /** Carried for ADR 0004, not yet matched against. */
-  from?: string;
   count?: Count;
 }
 

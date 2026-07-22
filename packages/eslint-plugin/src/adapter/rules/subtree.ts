@@ -8,7 +8,10 @@ import { ESLintUtils } from "@typescript-eslint/utils";
 
 import { createConditionPool } from "../../contracts/activation/when-condition-pool.js";
 import { contractRowsSchema } from "../../contracts/rule-table/rows-schema.js";
-import type { ContractRows } from "../../contracts/rule-table/rows.js";
+import type {
+  ContractRows,
+  MatchKey,
+} from "../../contracts/rule-table/rows.js";
 import { displayName } from "../../contracts/rule-table/rows.js";
 import type {
   PreparedSubtree,
@@ -21,6 +24,8 @@ import {
 import { validateContractRows } from "../../contracts/rule-table/validate-rows.js";
 import { tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
+
+import { admitting, push } from "./row-index.js";
 
 export type { SubtreeMessageId };
 
@@ -40,14 +45,16 @@ const messages = {
 } as const;
 
 interface PreparedSubtreeRule {
+  match: MatchKey;
   prepared: PreparedSubtree;
   /** Aligned with the row's branches. */
   branchIds: number[];
   pool: ReturnType<typeof createConditionPool>;
 }
 
-function indexSubtree(rows: ContractRows): Map<string, PreparedSubtreeRule> {
-  const index = new Map<string, PreparedSubtreeRule>();
+// By name; the row's gate is read against the element afterwards.
+function indexSubtree(rows: ContractRows): Map<string, PreparedSubtreeRule[]> {
+  const index = new Map<string, PreparedSubtreeRule[]>();
 
   for (const row of rows) {
     if (row.facet !== "subtree") {
@@ -65,7 +72,8 @@ function indexSubtree(rows: ContractRows): Map<string, PreparedSubtreeRule> {
       return id;
     });
 
-    index.set(displayName(row.match), {
+    push(index, displayName(row.match), {
+      match: row.match,
       prepared: prepareSubtree(row),
       branchIds,
       pool,
@@ -102,9 +110,9 @@ export const subtreeContractRule = createRule<[ContractRows], SubtreeMessageId>(
             return;
           }
 
-          const prepared = index.get(tag);
+          const candidates = index.get(tag);
 
-          if (prepared === undefined) {
+          if (candidates === undefined) {
             return;
           }
 
@@ -115,22 +123,28 @@ export const subtreeContractRule = createRule<[ContractRows], SubtreeMessageId>(
             hasSpread: facts.hasSpread,
           };
 
-          const isActive = (branchIndex: number): boolean => {
-            const id = prepared.branchIds[branchIndex];
-
-            return id !== undefined && prepared.pool.holdsAt(subject, id);
-          };
-
-          for (const violation of evaluateSubtree(
-            prepared.prepared,
-            isActive,
-            facts.subtreeRoot(),
+          for (const prepared of admitting(
+            candidates,
+            facts.importSource,
+            (candidate) => candidate.match,
           )) {
-            context.report({
-              node: violation.ref as TSESTree.Node,
-              messageId: violation.messageId,
-              data: violation.data,
-            });
+            const isActive = (branchIndex: number): boolean => {
+              const id = prepared.branchIds[branchIndex];
+
+              return id !== undefined && prepared.pool.holdsAt(subject, id);
+            };
+
+            for (const violation of evaluateSubtree(
+              prepared.prepared,
+              isActive,
+              facts.subtreeRoot(),
+            )) {
+              context.report({
+                node: violation.ref as TSESTree.Node,
+                messageId: violation.messageId,
+                data: violation.data,
+              });
+            }
           }
         },
       };

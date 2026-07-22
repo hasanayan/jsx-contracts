@@ -16,11 +16,16 @@ import {
   prepareProps,
 } from "../../contracts/rule-table/props.js";
 import { contractRowsSchema } from "../../contracts/rule-table/rows-schema.js";
-import type { ContractRows } from "../../contracts/rule-table/rows.js";
+import type {
+  ContractRows,
+  MatchKey,
+} from "../../contracts/rule-table/rows.js";
 import { displayName } from "../../contracts/rule-table/rows.js";
 import { validateContractRows } from "../../contracts/rule-table/validate-rows.js";
 import { tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
+
+import { admitting, push } from "./row-index.js";
 
 export type { PropsMessageId };
 
@@ -41,14 +46,16 @@ const messages = {
 } as const;
 
 interface PreparedPropsRule {
+  match: MatchKey;
   prepared: PreparedProps;
   /** Aligned with the row's branches. */
   branchIds: number[];
   pool: ReturnType<typeof createConditionPool>;
 }
 
-function indexProps(rows: ContractRows): Map<string, PreparedPropsRule> {
-  const index = new Map<string, PreparedPropsRule>();
+// By name; the row's gate is read against the element afterwards.
+function indexProps(rows: ContractRows): Map<string, PreparedPropsRule[]> {
+  const index = new Map<string, PreparedPropsRule[]>();
 
   for (const row of rows) {
     if (row.facet !== "props") {
@@ -66,7 +73,8 @@ function indexProps(rows: ContractRows): Map<string, PreparedPropsRule> {
       return id;
     });
 
-    index.set(displayName(row.match), {
+    push(index, displayName(row.match), {
+      match: row.match,
       prepared: prepareProps(row),
       branchIds,
       pool,
@@ -102,9 +110,9 @@ export const propsContractRule = createRule<[ContractRows], PropsMessageId>({
           return;
         }
 
-        const prepared = index.get(tag);
+        const candidates = index.get(tag);
 
-        if (prepared === undefined) {
+        if (candidates === undefined) {
           return;
         }
 
@@ -115,24 +123,30 @@ export const propsContractRule = createRule<[ContractRows], PropsMessageId>({
           hasSpread: facts.hasSpread,
         };
 
-        const isActive = (branchIndex: number): boolean => {
-          const id = prepared.branchIds[branchIndex];
-
-          return id !== undefined && prepared.pool.holdsAt(subject, id);
-        };
-
-        for (const violation of evaluateProps(
-          prepared.prepared,
-          isActive,
-          facts.props(),
-          facts.hasSpread(),
-          node,
+        for (const prepared of admitting(
+          candidates,
+          facts.importSource,
+          (candidate) => candidate.match,
         )) {
-          context.report({
-            node: violation.ref as TSESTree.Node,
-            messageId: violation.messageId,
-            data: violation.data,
-          });
+          const isActive = (branchIndex: number): boolean => {
+            const id = prepared.branchIds[branchIndex];
+
+            return id !== undefined && prepared.pool.holdsAt(subject, id);
+          };
+
+          for (const violation of evaluateProps(
+            prepared.prepared,
+            isActive,
+            facts.props(),
+            facts.hasSpread(),
+            node,
+          )) {
+            context.report({
+              node: violation.ref as TSESTree.Node,
+              messageId: violation.messageId,
+              data: violation.data,
+            });
+          }
         }
       },
     };

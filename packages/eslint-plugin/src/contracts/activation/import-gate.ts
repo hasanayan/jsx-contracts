@@ -14,11 +14,3 @@ export function createImportMatcher(importPath: string): ImportMatcher {
 
   return (specifier): boolean => regExp.test(specifier);
 }
-
-/** A null source (not an import) matches any gate. */
-export function matchesGate(
-  matcher: ImportMatcher,
-  importSource: string | null,
-): boolean {
-  return importSource === null || matcher(importSource);
-}

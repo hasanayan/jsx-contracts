@@ -1,8 +1,8 @@
 import { defineContracts, prop } from "@jsx-contracts/authoring";
 
-// The module the fixture's components are imported from. Carried on every row;
-// name matching is what enforces the contracts today (ADR 0004 reserves gate
-// matching).
+// The module the fixture's components are imported from. Carried on every row
+// and matched against each element's own import: a `Widget` from anywhere else
+// is a different component and none of this applies to it.
 const GATE = "*/playground/src/widget.js";
 
 export const contracts = defineContracts(({ contract }) => {

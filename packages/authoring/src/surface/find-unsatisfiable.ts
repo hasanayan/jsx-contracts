@@ -155,7 +155,6 @@ function conflictingBranch(layer: Layer): ConflictingBranch {
 function specKey(slot: Slot): string {
   return JSON.stringify({
     match: slot.match,
-    from: slot.from,
     count: slot.count,
     requires: slot.requires,
     excludes: slot.excludes,

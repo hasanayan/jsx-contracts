@@ -6,11 +6,15 @@ import { describe, expect, it } from "vitest";
 
 import plugin from "@jsx-contracts/eslint-plugin";
 
+import { importing } from "../testing/gated-code.js";
+
 import { prop } from "./conditions.js";
 import { defineContracts } from "./define-contracts.js";
 
+const GATE = "~/components/Card.tsx";
+
 const cardRules = defineContracts(({ contract }) => {
-  contract("Card", "~/components/Card.tsx")
+  contract("Card", GATE)
     .slots({ ".Body": true, ".Footer": true })
     .when(prop("onClick").isPresent(), (c) => c.forbidSlot(".Footer"), {
       because: "A clickable card has no footer.",
@@ -27,7 +31,7 @@ const languageOptions = {
 function verify(code: string): Linter.LintMessage[] {
   const linter = new Linter();
 
-  return linter.verify(code, {
+  return linter.verify(importing(GATE, code), {
     plugins: { "@jsx-contracts": plugin },
     languageOptions,
     rules: cardRules.rules(),

@@ -7,7 +7,8 @@
 import type { AncestorFact, Ref } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
 
-import type { AncestorRow } from "./rows.js";
+import { matchesElement } from "./match.js";
+import type { AncestorRow, MatchKey } from "./rows.js";
 import { displayName } from "./rows.js";
 
 export type AncestorMessageId = "forbiddenAncestor" | "deprecatedComponent";
@@ -16,7 +17,7 @@ type AncestorViolation = Violation<AncestorMessageId>;
 
 export interface PreparedAncestor {
   component: string;
-  notInside: string[];
+  notInside: MatchKey[];
   because: string | undefined;
   deprecated: { useInstead?: string } | undefined;
 }
@@ -24,7 +25,7 @@ export interface PreparedAncestor {
 export function prepareAncestor(row: AncestorRow): PreparedAncestor {
   return {
     component: displayName(row.match),
-    notInside: row.notInside.map((entry) => displayName(entry.match)),
+    notInside: row.notInside.map((entry) => entry.match),
     because: row.because,
     deprecated: row.deprecated,
   };
@@ -49,8 +50,10 @@ export function evaluateAncestor(
   const violations: AncestorViolation[] = [];
   const because = trailing(prepared.because);
 
-  for (const name of prepared.notInside) {
-    const nearest = ancestors.find((ancestor) => ancestor.name === name);
+  for (const match of prepared.notInside) {
+    const nearest = ancestors.find((ancestor) =>
+      matchesElement(match, ancestor),
+    );
 
     if (nearest !== undefined) {
       violations.push({

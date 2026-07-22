@@ -28,6 +28,7 @@ const matchKey: JsonSchema = {
       properties: {
         kind: { type: "string", enum: ["name"] },
         name: { type: "string" },
+        from: { type: "string" },
       },
       required: ["kind", "name"],
       additionalProperties: false,
@@ -49,7 +50,6 @@ const slot: JsonSchema = {
   properties: {
     alias: { type: "string" },
     match: matchKey,
-    from: { type: "string" },
     count,
     requires: { type: "array", items: { type: "string" } },
     excludes: { type: "array", items: { type: "string" } },
@@ -105,7 +105,7 @@ const propsBranch: JsonSchema = {
 // Already expanded, so the match key is always a whole name.
 const forbidden: JsonSchema = {
   type: "object",
-  properties: { match: matchKey, from: { type: "string" } },
+  properties: { match: matchKey },
   required: ["match"],
   additionalProperties: false,
 };
@@ -115,7 +115,6 @@ const descendant: JsonSchema = {
   properties: {
     alias: { type: "string" },
     match: matchKey,
-    from: { type: "string" },
     count,
   },
   required: ["alias", "match"],

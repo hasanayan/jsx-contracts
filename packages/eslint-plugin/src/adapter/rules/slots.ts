@@ -37,6 +37,8 @@ import { validateContractRows } from "../../contracts/rule-table/validate-rows.j
 import { classifyOpaqueRegion, tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
 
+import { admitting, push } from "./row-index.js";
+
 export type SlotsMessageId =
   ClosureMessageId | BoundsMessageId | StrictMessageId;
 export type { ClosureMessageId };
@@ -75,8 +77,13 @@ interface PreparedSlots {
   bounds: PreparedBounds;
 }
 
-function indexSlots(rows: ContractRows): Map<string, PreparedSlots> {
-  const index = new Map<string, PreparedSlots>();
+/**
+ * By name, because that is what a tag gives cheaply; the row's own gate is read
+ * against the element afterwards, so two same-named contracts from different
+ * modules stay distinct.
+ */
+function indexSlots(rows: ContractRows): Map<string, PreparedSlots[]> {
+  const index = new Map<string, PreparedSlots[]>();
 
   for (const row of rows) {
     if (row.facet !== "slots") {
@@ -94,7 +101,7 @@ function indexSlots(rows: ContractRows): Map<string, PreparedSlots> {
       return id;
     });
 
-    index.set(displayName(row.match), {
+    push(index, displayName(row.match), {
       row,
       branchIds,
       pool,
@@ -132,75 +139,81 @@ export const slotsClosureRule = createRule<[ContractRows], SlotsMessageId>({
           return;
         }
 
-        const prepared = index.get(tag);
+        const candidates = index.get(tag);
 
-        if (prepared === undefined) {
+        if (candidates === undefined) {
           return;
         }
 
         const facts = elementFacts(sourceCode, filename, node, tag);
         const root = facts.slotsRoot();
 
-        // A branched row folds its vocabulary against this element first.
-        let closure = prepared.closure;
-        let bounds = prepared.bounds;
-
-        if (prepared.branchIds.length > 0) {
-          const subject = {
-            elementRef: node,
-            props: facts.props,
-            hasSpread: facts.hasSpread,
-          };
-
-          const vocab = computeEffectiveVocabulary(
-            prepared.row,
-            (branchIndex) => {
-              const id = prepared.branchIds[branchIndex];
-
-              return id !== undefined && prepared.pool.holdsAt(subject, id);
-            },
-          );
-
-          closure = closureOf(vocab);
-          bounds = prepareBounds({ ...prepared.row, slots: vocab.slots });
-        }
-
-        for (const violation of evaluateClosure(closure, root)) {
+        const report = (violation: {
+          ref: unknown;
+          messageId: SlotsMessageId;
+          data: Record<string, string>;
+        }): void => {
           context.report({
             node: violation.ref as TSESTree.Node,
             messageId: violation.messageId,
             data: violation.data,
           });
-        }
+        };
 
-        for (const violation of evaluateBounds(bounds, root)) {
-          context.report({
-            node: violation.ref as TSESTree.Node,
-            messageId: violation.messageId,
-            data: violation.data,
-          });
-        }
+        for (const prepared of admitting(
+          candidates,
+          facts.importSource,
+          (candidate) => candidate.row.match,
+        )) {
+          // A branched row folds its vocabulary against this element first.
+          let closure = prepared.closure;
+          let bounds = prepared.bounds;
 
-        // Orthogonal to closure and bounds, and only when the switch is on.
-        if (
-          prepared.row.strictAnalysis === true &&
-          root.unknownRefs.length > 0
-        ) {
-          const regions = root.unknownRefs.map((ref) =>
-            classifyOpaqueRegion(sourceCode, ref as TSESTree.Node),
-          );
+          if (prepared.branchIds.length > 0) {
+            const subject = {
+              elementRef: node,
+              props: facts.props,
+              hasSpread: facts.hasSpread,
+            };
 
-          for (const violation of evaluateStrictAnalysis(
-            true,
-            closure,
-            bounds,
-            regions,
-          )) {
-            context.report({
-              node: violation.ref as TSESTree.Node,
-              messageId: violation.messageId,
-              data: violation.data,
-            });
+            const vocab = computeEffectiveVocabulary(
+              prepared.row,
+              (branchIndex) => {
+                const id = prepared.branchIds[branchIndex];
+
+                return id !== undefined && prepared.pool.holdsAt(subject, id);
+              },
+            );
+
+            closure = closureOf(vocab);
+            bounds = prepareBounds({ ...prepared.row, slots: vocab.slots });
+          }
+
+          for (const violation of evaluateClosure(closure, root)) {
+            report(violation);
+          }
+
+          for (const violation of evaluateBounds(bounds, root)) {
+            report(violation);
+          }
+
+          // Orthogonal to closure and bounds, and only when the switch is on.
+          if (
+            prepared.row.strictAnalysis === true &&
+            root.unknownRefs.length > 0
+          ) {
+            const regions = root.unknownRefs.map((ref) =>
+              classifyOpaqueRegion(sourceCode, ref as TSESTree.Node),
+            );
+
+            for (const violation of evaluateStrictAnalysis(
+              true,
+              closure,
+              bounds,
+              regions,
+            )) {
+              report(violation);
+            }
           }
         }
       },

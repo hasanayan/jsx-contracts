@@ -6,8 +6,12 @@
 import type { RenderedNode } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
 
-import type { EffectiveVocabulary } from "./effective-vocabulary.js";
-import type { SlotsRow } from "./rows.js";
+import type {
+  EffectiveVocabulary,
+  GatedByName,
+} from "./effective-vocabulary.js";
+import { matchesElement } from "./match.js";
+import type { MatchKey, SlotsRow } from "./rows.js";
 import { displayName } from "./rows.js";
 
 /**
@@ -22,19 +26,38 @@ type ClosureViolation = Violation<ClosureMessageId>;
 export interface PreparedClosure {
   container: string;
   closed: boolean;
-  vocabulary: Set<string>;
+  /** Keys, not names: a child of a declared name from another module is not declared. */
+  vocabulary: MatchKey[];
   because: string | undefined;
-  /** Display name → the witness of the active branch barring it. */
-  forbidden: Map<string, { witness: string; because?: string }>;
-  /** Display name → the condition an inactive branch would allow it under. */
-  conditional: Map<string, { condition: string; because?: string }>;
+  /** The witnesses of the active branches barring a name, one per gate. */
+  forbidden: GatedByName<{
+    match: MatchKey;
+    witness: string;
+    because?: string;
+  }>;
+  /** The conditions an inactive branch would allow a name under, one per gate. */
+  conditional: GatedByName<{
+    match: MatchKey;
+    condition: string;
+    because?: string;
+  }>;
+}
+
+/** The entry in `name`'s bucket that this child actually is, if any. */
+function gatedFor<T extends { match: MatchKey }>(
+  bucket: GatedByName<T>,
+  child: RenderedNode,
+): T | undefined {
+  return bucket
+    .get(child.name)
+    ?.find((entry) => matchesElement(entry.match, child));
 }
 
 export function prepareClosure(row: SlotsRow): PreparedClosure {
   return {
     container: displayName(row.match),
     closed: row.closed,
-    vocabulary: new Set(row.slots.map((slot) => displayName(slot.match))),
+    vocabulary: row.slots.map((slot) => slot.match),
     because: row.because,
     forbidden: new Map(),
     conditional: new Map(),
@@ -45,7 +68,7 @@ export function closureOf(vocab: EffectiveVocabulary): PreparedClosure {
   return {
     container: vocab.container,
     closed: vocab.closed,
-    vocabulary: new Set(vocab.slots.map((slot) => displayName(slot.match))),
+    vocabulary: vocab.slots.map((slot) => slot.match),
     because: vocab.because,
     forbidden: vocab.forbidden,
     conditional: vocab.conditional,
@@ -67,11 +90,11 @@ export function evaluateClosure(
   const violations: ClosureViolation[] = [];
 
   for (const child of root.children) {
-    if (prepared.vocabulary.has(child.name)) {
+    if (prepared.vocabulary.some((match) => matchesElement(match, child))) {
       continue;
     }
 
-    const barred = prepared.forbidden.get(child.name);
+    const barred = gatedFor(prepared.forbidden, child);
 
     if (barred !== undefined) {
       violations.push({
@@ -93,7 +116,7 @@ export function evaluateClosure(
       continue;
     }
 
-    const gated = prepared.conditional.get(child.name);
+    const gated = gatedFor(prepared.conditional, child);
 
     if (gated !== undefined) {
       violations.push({

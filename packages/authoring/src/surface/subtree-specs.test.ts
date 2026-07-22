@@ -90,9 +90,9 @@ describe("forbidDescendants — all four entry forms", () => {
 
     expect(subtree.forbidDescendants).toEqual([
       { match: { kind: "name", name: "button" } },
-      { match: { kind: "name", name: "Card.Actions" } },
+      { match: { kind: "name", name: "Card.Actions", from: FROM } },
       { match: { kind: "name", name: "Dialog.Panel" } },
-      { match: { kind: "name", name: "Tooltip" }, from: "@acme/ui" },
+      { match: { kind: "name", name: "Tooltip", from: "@acme/ui" } },
     ]);
   });
 
@@ -102,7 +102,7 @@ describe("forbidDescendants — all four entry forms", () => {
     }, "subtree");
 
     expect(subtree.forbidDescendants).toEqual([
-      { match: { kind: "name", name: "Card.Footer" }, from: FROM },
+      { match: { kind: "name", name: "Card.Footer", from: FROM } },
     ]);
   });
 });
@@ -120,15 +120,18 @@ describe("descendants map → subtree row", () => {
     expect(subtree.descendants).toEqual([
       {
         alias: ".Tab",
-        match: { kind: "name", name: "Tabs.Tab" },
+        match: { kind: "name", name: "Tabs.Tab", from: FROM },
         count: { min: 1 },
       },
       {
         alias: ".Panel",
-        match: { kind: "name", name: "Tabs.Panel" },
+        match: { kind: "name", name: "Tabs.Panel", from: FROM },
         count: { min: 2, max: 2 },
       },
-      { alias: ".Bare", match: { kind: "name", name: "Tabs.Bare" } },
+      {
+        alias: ".Bare",
+        match: { kind: "name", name: "Tabs.Bare", from: FROM },
+      },
     ]);
   });
 
@@ -169,7 +172,7 @@ describe("notInside and deprecated → ancestor row", () => {
 
     expect(ancestor.notInside).toEqual([
       { match: { kind: "name", name: "Table" } },
-      { match: { kind: "name", name: "Card.Body" } },
+      { match: { kind: "name", name: "Card.Body", from: FROM } },
     ]);
 
     expect(ancestor.deprecated).toEqual({ useInstead: "Panel" });
@@ -208,7 +211,9 @@ describe("subtree bans as a branch delta", () => {
       {
         when: { prop: "onClick" },
         because: "A clickable card is a leaf.",
-        forbidDescendants: [{ match: { kind: "name", name: "Card.Footer" } }],
+        forbidDescendants: [
+          { match: { kind: "name", name: "Card.Footer", from: FROM } },
+        ],
         forbidDescendantProps: ["tabIndex"],
       },
     ]);

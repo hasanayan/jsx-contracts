@@ -10,6 +10,7 @@ import plugin from "@jsx-contracts/eslint-plugin";
 import type { RuleSet } from "../surface/define-contracts.js";
 import { defineContracts } from "../surface/define-contracts.js";
 import { mergeContracts } from "../surface/merge-contracts.js";
+import { importing } from "../testing/gated-code.js";
 
 const GATE = "~/components/ds.tsx";
 
@@ -22,7 +23,7 @@ const languageOptions = {
 function verify(ruleSet: RuleSet, code: string): Linter.LintMessage[] {
   const linter = new Linter();
 
-  return linter.verify(code, {
+  return linter.verify(importing(GATE, code), {
     plugins: { "@jsx-contracts": plugin },
     languageOptions,
     rules: ruleSet.rules(),

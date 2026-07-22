@@ -6,11 +6,14 @@
  */
 
 import { renderCondition } from "./condition-prose.js";
-import type { Slot, SlotBranch, SlotsRow } from "./rows.js";
+import { matchKeyId } from "./match.js";
+import type { MatchKey, Slot, SlotBranch, SlotsRow } from "./rows.js";
 import { displayName } from "./rows.js";
 
 interface Exclusion {
   because?: string;
+  /** Carried so the reader can gate the name it is keyed by. */
+  match: MatchKey;
 }
 
 interface ForbiddenSlot extends Exclusion {
@@ -21,13 +24,45 @@ interface Conditional extends Exclusion {
   condition: string;
 }
 
+/**
+ * Bucketed by display name for the reader's lookup, but a bucket holds every
+ * gate declared under that name — `Button` from two design systems is two
+ * entries, and the reader picks by matching the element.
+ */
+export type GatedByName<T> = Map<string, T[]>;
+
 export interface EffectiveVocabulary {
   container: string;
   closed: boolean;
   because?: string;
   slots: Slot[];
-  forbidden: Map<string, ForbiddenSlot>;
-  conditional: Map<string, Conditional>;
+  forbidden: GatedByName<ForbiddenSlot>;
+  conditional: GatedByName<Conditional>;
+}
+
+function add<T extends { match: MatchKey }>(
+  target: GatedByName<T>,
+  entry: T,
+): void {
+  const name = displayName(entry.match);
+  const bucket = target.get(name);
+
+  if (bucket === undefined) {
+    target.set(name, [entry]);
+  } else {
+    bucket.push(entry);
+  }
+}
+
+function holds<T extends { match: MatchKey }>(
+  target: GatedByName<T>,
+  match: MatchKey,
+): boolean {
+  const id = matchKeyId(match);
+
+  return (target.get(displayName(match)) ?? []).some(
+    (entry) => matchKeyId(entry.match) === id,
+  );
 }
 
 // Clones, so the base row is untouched.
@@ -49,8 +84,8 @@ export function computeEffectiveVocabulary(
     row.slots.map((slot) => [slot.alias, slot]),
   );
 
-  const forbidden = new Map<string, ForbiddenSlot>();
-  const conditional = new Map<string, Conditional>();
+  const forbidden: GatedByName<ForbiddenSlot> = new Map();
+  const conditional: GatedByName<Conditional> = new Map();
 
   const active: SlotBranch[] = [];
   const inactive: SlotBranch[] = [];
@@ -81,7 +116,8 @@ export function computeEffectiveVocabulary(
         continue;
       }
 
-      forbidden.set(displayName(slot.match), {
+      add(forbidden, {
+        match: slot.match,
         witness: renderCondition(branch.when, container),
         because: branch.because,
       });
@@ -91,18 +127,21 @@ export function computeEffectiveVocabulary(
   }
 
   const slots = [...byAlias.values()];
-  const allowed = new Set(slots.map((slot) => displayName(slot.match)));
+  const allowed = new Set(slots.map((slot) => matchKeyId(slot.match)));
 
-  // Named so a violation can point at the condition that would allow it.
+  // Named so a violation can point at the condition that would allow it. Keyed
+  // by identity, not name: one gate being allowed says nothing about another's.
   for (const branch of inactive) {
     for (const slot of branch.extend ?? []) {
-      const name = displayName(slot.match);
-
-      if (allowed.has(name) || conditional.has(name)) {
+      if (
+        allowed.has(matchKeyId(slot.match)) ||
+        holds(conditional, slot.match)
+      ) {
         continue;
       }
 
-      conditional.set(name, {
+      add(conditional, {
+        match: slot.match,
         condition: renderCondition(branch.when, container),
         because: branch.because,
       });

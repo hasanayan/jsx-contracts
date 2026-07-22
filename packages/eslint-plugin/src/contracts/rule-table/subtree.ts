@@ -19,7 +19,8 @@ import type {
 import type { Violation } from "../violation.js";
 
 import { renderCondition } from "./condition-prose.js";
-import type { SubtreeRow } from "./rows.js";
+import { matchesElement } from "./match.js";
+import type { Forbidden, MatchKey, SubtreeRow } from "./rows.js";
 import { displayName } from "./rows.js";
 
 export type SubtreeMessageId =
@@ -30,14 +31,17 @@ export type SubtreeMessageId =
 
 type SubtreeViolation = Violation<SubtreeMessageId>;
 
+/** `match` is absent for a prop ban, where `name` is a prop and gates nothing. */
 interface PreparedBan {
   name: string;
+  match?: MatchKey;
   witness: string | undefined;
   because: string | undefined;
 }
 
 interface PreparedRequire {
   name: string;
+  match: MatchKey;
   bounds: CountBounds;
 }
 
@@ -59,12 +63,26 @@ function bansOf(
   return names.map((name) => ({ name, witness, because }));
 }
 
+function elementBansOf(
+  entries: Forbidden[],
+  witness: string | undefined,
+  because: string | undefined,
+): PreparedBan[] {
+  return entries.map((entry) => ({
+    name: displayName(entry.match),
+    match: entry.match,
+    witness,
+    because,
+  }));
+}
+
 // Renders each branch's witness once.
 export function prepareSubtree(row: SubtreeRow): PreparedSubtree {
   const component = displayName(row.match);
 
   const require: PreparedRequire[] = row.descendants.map((descendant) => ({
     name: displayName(descendant.match),
+    match: descendant.match,
     bounds: resolveBounds(descendant.count?.min, descendant.count?.max),
   }));
 
@@ -73,17 +91,11 @@ export function prepareSubtree(row: SubtreeRow): PreparedSubtree {
   return {
     component,
     require,
-    baseForbid: bansOf(
-      row.forbidDescendants.map((entry) => displayName(entry.match)),
-      undefined,
-      undefined,
-    ),
+    baseForbid: elementBansOf(row.forbidDescendants, undefined, undefined),
     baseForbidProps: bansOf(row.forbidDescendantProps, undefined, undefined),
     branchForbid: branches.map((branch) =>
-      bansOf(
-        (branch.forbidDescendants ?? []).map((entry) =>
-          displayName(entry.match),
-        ),
+      elementBansOf(
+        branch.forbidDescendants ?? [],
         renderCondition(branch.when, component),
         branch.because,
       ),
@@ -118,17 +130,22 @@ export function evaluateSubtree(
 ): SubtreeViolation[] {
   const violations: SubtreeViolation[] = [];
 
-  // First match wins, so a base ban's blank witness beats a branch's.
-  const forbid = new Map<string, PreparedBan>();
-  const forbidProps = new Map<string, PreparedBan>();
+  // Collected in order and read first-match-wins, so a base ban's blank witness
+  // beats a branch's, and two bans on one name under different gates coexist.
+  const forbid = new Map<string, PreparedBan[]>();
+  const forbidProps = new Map<string, PreparedBan[]>();
 
   const collect = (
-    target: Map<string, PreparedBan>,
+    target: Map<string, PreparedBan[]>,
     bans: PreparedBan[],
   ): void => {
     for (const ban of bans) {
-      if (!target.has(ban.name)) {
-        target.set(ban.name, ban);
+      const existing = target.get(ban.name);
+
+      if (existing === undefined) {
+        target.set(ban.name, [ban]);
+      } else {
+        existing.push(ban);
       }
     }
   };
@@ -160,15 +177,23 @@ export function evaluateSubtree(
 
   let sawUnknown = false;
 
-  function matchesForbid(name: string): PreparedBan | undefined {
-    return name === "" ? undefined : forbid.get(name);
+  function matchesForbid(node: SubtreeElement): PreparedBan | undefined {
+    if (node.name === "") {
+      return undefined;
+    }
+
+    return forbid
+      .get(node.name)
+      ?.find(
+        (ban) => ban.match !== undefined && matchesElement(ban.match, node),
+      );
   }
 
   function matchesForbidProps(
     props: SubtreeElement["props"],
   ): PreparedBan | undefined {
     for (const prop of props) {
-      const ban = forbidProps.get(prop.name);
+      const ban = forbidProps.get(prop.name)?.[0];
 
       if (ban !== undefined && prop.present) {
         return ban;
@@ -218,7 +243,7 @@ export function evaluateSubtree(
     const branches = [...inherited, ...node.branches];
 
     // A forbidden element prunes the walk below it on every pass.
-    const banned = matchesForbid(node.name);
+    const banned = matchesForbid(node);
 
     if (banned !== undefined) {
       if (reportForbid) {
@@ -257,7 +282,7 @@ export function evaluateSubtree(
     }
 
     for (const bucket of buckets) {
-      if (node.name !== "" && node.name === bucket.entry.name) {
+      if (node.name !== "" && matchesElement(bucket.entry.match, node)) {
         bucket.found.push({ ref: node.ref, branches });
       }
     }

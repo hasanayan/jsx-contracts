@@ -65,10 +65,13 @@ describe("computeEffectiveVocabulary", () => {
     const vocab = computeEffectiveVocabulary(base, (i) => i === 0);
 
     expect(names(vocab)).toEqual(["Card.Body"]);
-    expect(vocab.forbidden.get("Card.Footer")).toEqual({
-      witness: "`Card` has `onClick`",
-      because: "clickable cards have no footer",
-    });
+    expect(vocab.forbidden.get("Card.Footer")).toEqual([
+      {
+        match: { kind: "name", name: "Card.Footer" },
+        witness: "`Card` has `onClick`",
+        because: "clickable cards have no footer",
+      },
+    ]);
   });
 
   it("forbid wins over an extend regardless of order", () => {
@@ -107,9 +110,87 @@ describe("computeEffectiveVocabulary", () => {
   it("names a slot only an inactive branch would allow, with its condition", () => {
     const vocab = computeEffectiveVocabulary(base, () => false);
 
-    expect(vocab.conditional.get("Card.Media")).toEqual({
-      condition: "`Card`'s `variant` is `rich`",
-      because: undefined,
-    });
+    expect(vocab.conditional.get("Card.Media")).toEqual([
+      {
+        match: { kind: "name", name: "Card.Media" },
+        condition: "`Card`'s `variant` is `rich`",
+        because: undefined,
+      },
+    ]);
+  });
+});
+
+// Display names collide across gates — one `Button` per design system — so a
+// bucket holds every gate declared under the name rather than the last one.
+describe("two gates under one display name", () => {
+  const twoButtons: SlotsRow = {
+    facet: "slots",
+    match: { kind: "name", name: "Card", from: "*/ds/card" },
+    closed: true,
+    slots: [
+      { alias: "Ours", match: { kind: "name", name: "Button", from: "*/ds" } },
+      {
+        alias: "Theirs",
+        match: { kind: "name", name: "Button", from: "@other/ui" },
+      },
+    ],
+    branches: [
+      { when: { prop: "onClick" }, forbidSlots: ["Ours", "Theirs"] },
+      {
+        when: { prop: "variant", values: ["rich"] },
+        extend: [
+          {
+            alias: "Ours",
+            match: { kind: "name", name: "Button", from: "*/ds" },
+          },
+          {
+            alias: "Theirs",
+            match: { kind: "name", name: "Button", from: "@other/ui" },
+          },
+        ],
+      },
+    ],
+  };
+
+  it("keeps a ban per gate rather than letting the last one win", () => {
+    const vocab = computeEffectiveVocabulary(twoButtons, (i) => i === 0);
+
+    expect(vocab.slots).toEqual([]);
+    expect(
+      vocab.forbidden.get("Button")?.map((entry) => entry.match.from),
+    ).toEqual(["*/ds", "@other/ui"]);
+  });
+
+  it("an allowed gate does not silence another gate's condition", () => {
+    // `Ours` is allowed outright; `Theirs` shares its display name and is only
+    // offered by an inactive branch, so it still needs naming.
+    const oursAllowed: SlotsRow = {
+      facet: "slots",
+      match: { kind: "name", name: "Card", from: "*/ds/card" },
+      closed: true,
+      slots: [
+        {
+          alias: "Ours",
+          match: { kind: "name", name: "Button", from: "*/ds" },
+        },
+      ],
+      branches: [
+        {
+          when: { prop: "variant", values: ["rich"] },
+          extend: [
+            {
+              alias: "Theirs",
+              match: { kind: "name", name: "Button", from: "@other/ui" },
+            },
+          ],
+        },
+      ],
+    };
+
+    const vocab = computeEffectiveVocabulary(oursAllowed, () => false);
+
+    expect(
+      vocab.conditional.get("Button")?.map((entry) => entry.match.from),
+    ).toEqual(["@other/ui"]);
   });
 });

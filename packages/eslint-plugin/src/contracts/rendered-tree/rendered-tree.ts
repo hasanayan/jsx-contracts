@@ -42,7 +42,8 @@ export interface PropFact {
 
 /**
  * The slots-facet tree: element children are opaque, not recursed into. `name`
- * is "" for a namespaced element; a null `importSource` matches any gate.
+ * is "" for a namespaced element; `importSource` is null for a non-import, which
+ * satisfies no gate.
  */
 export interface RenderedNode {
   name: string;
@@ -92,7 +93,7 @@ interface SubtreeUnknown {
 
 export type SubtreeNode = SubtreeElement | SubtreeRef | SubtreeUnknown;
 
-/** `importSource` is `null` for a non-import, which any gate matches. */
+/** `importSource` is `null` for a non-import, which satisfies no gate. */
 export interface AncestorFact {
   name: string;
   importSource: string | null;

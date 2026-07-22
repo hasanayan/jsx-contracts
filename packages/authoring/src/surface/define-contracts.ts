@@ -10,6 +10,7 @@ import type {
   ContractRows,
   Descendant,
   Forbidden,
+  MatchKey,
   PropDeprecation,
   PropSpec as PropSpecRow,
   PropsBranch,
@@ -257,21 +258,51 @@ function recorder(draft: SlotDraft): SlotSpecBuilder {
   return builder;
 }
 
-function resolveName(name: string, subject: string): string {
-  return name.startsWith(".") ? `${subject}${name}` : name;
+/**
+ * The contract a relative name is written against: its full name and its gate.
+ * A dotted name is a member of the subject, so it is gated with the subject —
+ * `".Heading"` under a gated `contract("Card", …)` means Card's own Heading, not
+ * any element that happens to be called `Card.Heading`.
+ */
+interface Subject {
+  name: string;
+  from: string;
 }
 
-function assembleSlot(
-  alias: string,
+function subjectOf(state: ContractState): Subject {
+  return { name: state.name, from: state.from };
+}
+
+/** Every row of a contract carries the subject's own gate. */
+function subjectMatch(state: ContractState): MatchKey {
+  return { kind: "name", name: state.name, from: state.from };
+}
+
+function isRelative(name: string): boolean {
+  return name.startsWith(".");
+}
+
+function resolveName(name: string, subject: Subject): string {
+  return isRelative(name) ? `${subject.name}${name}` : name;
+}
+
+function resolveMatch(
   name: string,
   from: string | undefined,
-  draft: SlotDraft,
-): Slot {
-  const slot: Slot = { alias, match: { kind: "name", name } };
+  subject: Subject,
+): MatchKey {
+  const gate = from ?? (isRelative(name) ? subject.from : undefined);
+  const match: MatchKey = { kind: "name", name: resolveName(name, subject) };
 
-  if (from !== undefined) {
-    slot.from = from;
+  if (gate !== undefined) {
+    match.from = gate;
   }
+
+  return match;
+}
+
+function assembleSlot(alias: string, match: MatchKey, draft: SlotDraft): Slot {
+  const slot: Slot = { alias, match };
 
   if (draft.min !== undefined || draft.max !== undefined) {
     // One declaration contradicting itself, so it throws here rather than
@@ -314,14 +345,13 @@ function assembleSlot(
  * explicit `is()` double-binds), bare capitalized must call `is()`, bare
  * lowercase is an intrinsic standing as written.
  */
-function buildSlot(alias: string, spec: SlotSpec, subject: string): Slot {
-  const dotted = alias.startsWith(".");
+function buildSlot(alias: string, spec: SlotSpec, subject: Subject): Slot {
+  const dotted = isRelative(alias);
 
   if (spec === true) {
     return assembleSlot(
       alias,
-      resolveName(alias, subject),
-      undefined,
+      resolveMatch(alias, undefined, subject),
       emptyDraft(),
     );
   }
@@ -338,14 +368,13 @@ function buildSlot(alias: string, spec: SlotSpec, subject: string): Slot {
       );
     }
 
-    return assembleSlot(alias, resolveName(alias, subject), undefined, draft);
+    return assembleSlot(alias, resolveMatch(alias, undefined, subject), draft);
   }
 
   if (draft.isCalled) {
     return assembleSlot(
       alias,
-      resolveName(draft.isName ?? alias, subject),
-      draft.isFrom,
+      resolveMatch(draft.isName ?? alias, draft.isFrom, subject),
       draft,
     );
   }
@@ -357,11 +386,11 @@ function buildSlot(alias: string, spec: SlotSpec, subject: string): Slot {
     );
   }
 
-  // A bare lowercase key is an intrinsic: no identity to bind.
-  return assembleSlot(alias, alias, undefined, draft);
+  // A bare lowercase key is an intrinsic: no identity to bind, so no gate.
+  return assembleSlot(alias, { kind: "name", name: alias }, draft);
 }
 
-function parseSlots(map: SlotsMap, subject: string): Slot[] {
+function parseSlots(map: SlotsMap, subject: Subject): Slot[] {
   return Object.entries(map).map(([alias, spec]) =>
     buildSlot(alias, spec, subject),
   );
@@ -455,14 +484,10 @@ function parseProps(map: PropsMap): PropSpecRow[] {
 
 // Reuses the slot key-form machinery, then drops the sibling relations a
 // descendant has no use for.
-function parseDescendants(map: DescendantsMap, subject: string): Descendant[] {
+function parseDescendants(map: DescendantsMap, subject: Subject): Descendant[] {
   return Object.entries(map).map(([alias, spec]) => {
     const slot = buildSlot(alias, spec as unknown as SlotSpec, subject);
     const descendant: Descendant = { alias: slot.alias, match: slot.match };
-
-    if (slot.from !== undefined) {
-      descendant.from = slot.from;
-    }
 
     if (slot.count !== undefined) {
       descendant.count = slot.count;
@@ -472,28 +497,23 @@ function parseDescendants(map: DescendantsMap, subject: string): Descendant[] {
   });
 }
 
-function buildForbidden(entry: ForbidEntry, subject: string): Forbidden {
+function buildForbidden(entry: ForbidEntry, subject: Subject): Forbidden {
   const name = typeof entry === "string" ? entry : entry.name;
   const from = typeof entry === "string" ? undefined : entry.from;
 
-  const forbidden: Forbidden = {
-    match: { kind: "name", name: resolveName(name, subject) },
-  };
-
-  if (from !== undefined) {
-    forbidden.from = from;
-  }
-
-  return forbidden;
+  return { match: resolveMatch(name, from, subject) };
 }
 
-function parseForbidList(entries: ForbidEntry[], subject: string): Forbidden[] {
+function parseForbidList(
+  entries: ForbidEntry[],
+  subject: Subject,
+): Forbidden[] {
   return entries.map((entry) => buildForbidden(entry, subject));
 }
 
 function deltaRecorder(
   draft: BranchDraft,
-  subject: string,
+  subject: Subject,
 ): BranchDeltaBuilder {
   const builder: BranchDeltaBuilder = {
     forbidSlot(alias): BranchDeltaBuilder {
@@ -535,7 +555,7 @@ function buildBranch(
   condition: Condition,
   delta: BranchDelta,
   options: BranchOptions | undefined,
-  subject: string,
+  subject: Subject,
 ): BranchDraft {
   const draft: BranchDraft = {
     when: condition.when,
@@ -642,7 +662,7 @@ function compileStates(states: ContractState[]): ContractRows {
     if (state.slots !== undefined || slotBranches.length > 0) {
       const row: SlotsRow = {
         facet: "slots",
-        match: { kind: "name", name: state.name },
+        match: subjectMatch(state),
         slots: state.slots ?? [],
         closed: !state.loose,
       };
@@ -670,7 +690,7 @@ function compileStates(states: ContractState[]): ContractRows {
     ) {
       const row: PropsRow = {
         facet: "props",
-        match: { kind: "name", name: state.name },
+        match: subjectMatch(state),
         props: state.props ?? [],
       };
 
@@ -693,7 +713,7 @@ function compileStates(states: ContractState[]): ContractRows {
     ) {
       const row: SubtreeRow = {
         facet: "subtree",
-        match: { kind: "name", name: state.name },
+        match: subjectMatch(state),
         descendants: state.descendants ?? [],
         forbidDescendants: state.forbidDescendants,
         forbidDescendantProps: state.forbidDescendantProps,
@@ -709,7 +729,7 @@ function compileStates(states: ContractState[]): ContractRows {
     if (state.notInside.length > 0 || state.deprecated !== undefined) {
       const row: AncestorRow = {
         facet: "ancestor",
-        match: { kind: "name", name: state.name },
+        match: subjectMatch(state),
         notInside: state.notInside,
       };
 
@@ -777,7 +797,7 @@ function makeBuilder(
       }
 
       // `K` exists for sibling typing only; the parser reads the loose shape.
-      state.slots = parseSlots(map, state.name);
+      state.slots = parseSlots(map, subjectOf(state));
 
       return builder;
     },
@@ -829,13 +849,15 @@ function makeBuilder(
         );
       }
 
-      state.descendants = parseDescendants(map, state.name);
+      state.descendants = parseDescendants(map, subjectOf(state));
 
       return builder;
     },
     forbidDescendants(...entries): ContractBuilder {
       guard();
-      state.forbidDescendants.push(...parseForbidList(entries, state.name));
+      state.forbidDescendants.push(
+        ...parseForbidList(entries, subjectOf(state)),
+      );
 
       return builder;
     },
@@ -847,7 +869,7 @@ function makeBuilder(
     },
     notInside(...ancestors): ContractBuilder {
       guard();
-      state.notInside.push(...parseForbidList(ancestors, state.name));
+      state.notInside.push(...parseForbidList(ancestors, subjectOf(state)));
 
       return builder;
     },
@@ -866,7 +888,9 @@ function makeBuilder(
     },
     when(condition, delta, options): ContractBuilder {
       guard();
-      state.branches.push(buildBranch(condition, delta, options, state.name));
+      state.branches.push(
+        buildBranch(condition, delta, options, subjectOf(state)),
+      );
 
       return builder;
     },

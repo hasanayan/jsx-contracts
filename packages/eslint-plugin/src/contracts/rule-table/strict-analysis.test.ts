@@ -11,7 +11,7 @@ import { evaluateStrictAnalysis } from "./strict-analysis.js";
 const closed: PreparedClosure = {
   container: "Card.Heading",
   closed: true,
-  vocabulary: new Set(["Card.Heading.Text"]),
+  vocabulary: [{ kind: "name", name: "Card.Heading.Text" }],
   because: undefined,
   forbidden: new Map(),
   conditional: new Map(),
@@ -24,6 +24,7 @@ const countedBounds: PreparedBounds = {
   slots: [
     {
       name: "Card.Heading.Text",
+      match: { kind: "name", name: "Card.Heading.Text" },
       bounds: { minCount: 1, maxCount: 1 },
       requires: [],
       excludes: [],
@@ -36,6 +37,7 @@ const unboundedBounds: PreparedBounds = {
   slots: [
     {
       name: "Card.Heading.Text",
+      match: { kind: "name", name: "Card.Heading.Text" },
       bounds: undefined,
       requires: [],
       excludes: [],

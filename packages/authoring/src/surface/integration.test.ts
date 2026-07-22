@@ -5,10 +5,14 @@ import { describe, expect, it } from "vitest";
 
 import plugin from "@jsx-contracts/eslint-plugin";
 
+import { importing } from "../testing/gated-code.js";
+
 import { defineContracts } from "./define-contracts.js";
 
+const GATE = "~/components/Card.tsx";
+
 const cardRules = defineContracts(({ contract }) => {
-  contract("Card.Heading", "~/components/Card.tsx").slots({
+  contract("Card.Heading", GATE).slots({
     ".Text": true,
     ".Icon": true,
   });
@@ -23,7 +27,7 @@ const languageOptions = {
 function verify(code: string): Linter.LintMessage[] {
   const linter = new Linter();
 
-  return linter.verify(code, {
+  return linter.verify(importing(GATE, code), {
     plugins: { "@jsx-contracts": plugin },
     languageOptions,
     rules: cardRules.rules(),
@@ -64,18 +68,19 @@ describe("defineContracts end to end", () => {
 
   it("reports a strict container blinded by dynamic children", () => {
     const strictRules = defineContracts(({ contract }) => {
-      contract("Card.Heading", "~/components/Card.tsx")
-        .slots({ ".Text": true })
-        .strictAnalysis();
+      contract("Card.Heading", GATE).slots({ ".Text": true }).strictAnalysis();
     });
 
     const linter = new Linter();
     const messages = linter.verify(
-      `
+      importing(
+        GATE,
+        `
       export const example = (
         <Card.Heading>{items.map((i) => <Card.Heading.Text key={i} />)}</Card.Heading>
       );
     `,
+      ),
       {
         plugins: { "@jsx-contracts": plugin },
         languageOptions,

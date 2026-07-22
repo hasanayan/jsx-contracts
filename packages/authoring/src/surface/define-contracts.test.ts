@@ -24,7 +24,11 @@ describe("defineContracts", () => {
     const row = onlyRow(set.rows);
 
     expect(row.facet).toBe("slots");
-    expect(row.match).toEqual({ kind: "name", name: "Card.Heading" });
+    expect(row.match).toEqual({
+      kind: "name",
+      name: "Card.Heading",
+      from: CARD_FROM,
+    });
   });
 
   it("derives a dotted key's identity from the subject", () => {
@@ -38,8 +42,14 @@ describe("defineContracts", () => {
     const row = onlyRow(set.rows);
 
     expect(row.slots).toEqual([
-      { alias: ".Text", match: { kind: "name", name: "Card.Heading.Text" } },
-      { alias: ".Icon", match: { kind: "name", name: "Card.Heading.Icon" } },
+      {
+        alias: ".Text",
+        match: { kind: "name", name: "Card.Heading.Text", from: CARD_FROM },
+      },
+      {
+        alias: ".Icon",
+        match: { kind: "name", name: "Card.Heading.Icon", from: CARD_FROM },
+      },
     ]);
   });
 

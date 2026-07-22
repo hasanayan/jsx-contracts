@@ -14,7 +14,8 @@ import {
 import type { RenderedNode } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
 
-import type { SlotsRow } from "./rows.js";
+import { matchesElement } from "./match.js";
+import type { MatchKey, SlotsRow } from "./rows.js";
 import { displayName } from "./rows.js";
 
 export type BoundsMessageId =
@@ -24,6 +25,7 @@ type BoundsViolation = Violation<BoundsMessageId>;
 
 interface PreparedSlot {
   name: string;
+  match: MatchKey;
   /** `undefined` for an unconstrained slot. */
   bounds: CountBounds | undefined;
   requires: string[];
@@ -93,6 +95,7 @@ export function prepareBounds(row: SlotsRow): PreparedBounds {
 
     return {
       name,
+      match: slot.match,
       bounds:
         slot.count === undefined
           ? undefined
@@ -116,13 +119,26 @@ export function evaluateBounds(
   const { container } = prepared;
   const violations: BoundsViolation[] = [];
 
-  const vocabulary = new Set(prepared.slots.map((slot) => slot.name));
+  // Each child is attributed to the first slot whose key matches it, so a
+  // gated slot never counts a same-named element from another module.
+  const found: { node: RenderedNode; slot: PreparedSlot }[] = [];
 
-  const found = root.children.filter((child) => vocabulary.has(child.name));
+  for (const child of root.children) {
+    const slot = prepared.slots.find((candidate) =>
+      matchesElement(candidate.match, child),
+    );
+
+    if (slot !== undefined) {
+      found.push({ node: child, slot });
+    }
+  }
+
   const hasUnresolvableContent = root.unknownRefs.length > 0;
 
   const occurrencesOf = (name: string): RenderedNode[] =>
-    found.filter((child) => child.name === name);
+    found
+      .filter((entry) => entry.slot.name === name)
+      .map((entry) => entry.node);
 
   for (const slot of prepared.slots) {
     if (slot.bounds === undefined) {
@@ -169,16 +185,16 @@ export function evaluateBounds(
     for (const element of occurrencesOf(slot.name)) {
       const clashes = found.filter(
         (other) =>
-          banned.has(other.name) &&
-          other !== element &&
-          canCoexist(other, element),
+          banned.has(other.slot.name) &&
+          other.node !== element &&
+          canCoexist(other.node, element),
       );
 
       if (clashes.length === 0) {
         continue;
       }
 
-      const others = [...new Set(clashes.map((clash) => clash.name))];
+      const others = [...new Set(clashes.map((clash) => clash.slot.name))];
 
       violations.push({
         ref: element.ref,

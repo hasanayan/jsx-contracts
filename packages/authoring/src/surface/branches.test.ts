@@ -64,10 +64,13 @@ describe("when → branch rows", () => {
     });
 
     expect(branch?.extend).toEqual([
-      { alias: ".Media", match: { kind: "name", name: "Card.Media" } },
+      {
+        alias: ".Media",
+        match: { kind: "name", name: "Card.Media", from: FROM },
+      },
       {
         alias: ".Body",
-        match: { kind: "name", name: "Card.Body" },
+        match: { kind: "name", name: "Card.Body", from: FROM },
         count: { max: 1 },
       },
     ]);

@@ -31,20 +31,23 @@ describe("count verbs", () => {
     });
 
     expect(slots).toEqual([
-      { alias: ".Bare", match: { kind: "name", name: "Card.Heading.Bare" } },
+      {
+        alias: ".Bare",
+        match: { kind: "name", name: "Card.Heading.Bare", from: FROM },
+      },
       {
         alias: ".Min",
-        match: { kind: "name", name: "Card.Heading.Min" },
+        match: { kind: "name", name: "Card.Heading.Min", from: FROM },
         count: { min: 2 },
       },
       {
         alias: ".Max",
-        match: { kind: "name", name: "Card.Heading.Max" },
+        match: { kind: "name", name: "Card.Heading.Max", from: FROM },
         count: { max: 3 },
       },
       {
         alias: ".Exact",
-        match: { kind: "name", name: "Card.Heading.Exact" },
+        match: { kind: "name", name: "Card.Heading.Exact", from: FROM },
         count: { min: 1, max: 1 },
       },
     ]);
@@ -77,7 +80,7 @@ describe("key forms", () => {
       slotsOf(({ contract }) => {
         contract("Card.Heading", FROM).slots({ ".Text": (s) => s.exactly(1) });
       })[0]?.match,
-    ).toEqual({ kind: "name", name: "Card.Heading.Text" });
+    ).toEqual({ kind: "name", name: "Card.Heading.Text", from: FROM });
   });
 
   it("binds a bare capitalized key through is(name, from)", () => {
@@ -89,8 +92,7 @@ describe("key forms", () => {
 
     expect(slots[0]).toEqual({
       alias: "Badge",
-      match: { kind: "name", name: "Other.Badge" },
-      from: "@other/pkg",
+      match: { kind: "name", name: "Other.Badge", from: "@other/pkg" },
     });
   });
 
@@ -104,6 +106,7 @@ describe("key forms", () => {
     expect(slots[0]?.match).toEqual({
       kind: "name",
       name: "Card.Heading.Icon",
+      from: FROM,
     });
   });
 

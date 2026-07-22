@@ -220,7 +220,9 @@ Two published packages, split by side of the contract:
   semantics read off them. `rule-table/` holds the row types, JSON schema,
   runtime validator and shorthand normalizers — the single source of truth
   for what the plugin accepts; the row's three encodings are pinned to agree
-  by a shared fixture corpus. `activation/` holds the import gate and the
+  by a shared fixture corpus. `match.ts` is the single answer to "is this rule
+  about this element" — name plus the key's import gate; every facet asks it
+  rather than comparing names itself. `activation/` holds the gate matcher and the
   when-condition pool (conditions interned by content, evaluated once per
   element). `facets/` holds one module per facet — prepare, combine,
   evaluate — plus the slots facet's placement pass. At the top:

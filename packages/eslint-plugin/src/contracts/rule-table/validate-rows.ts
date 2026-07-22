@@ -40,6 +40,13 @@ function validateMatch(match: unknown, subject: string, fail: Fail): void {
   if (typeof key.name !== "string" || key.name.length === 0) {
     fail(`${subject} match key must name an element`);
   }
+
+  if (
+    key.from !== undefined &&
+    (typeof key.from !== "string" || key.from.length === 0)
+  ) {
+    fail(`${subject} match key from must be a non-empty string`);
+  }
 }
 
 function validateCount(count: unknown, alias: string, fail: Fail): void {
@@ -334,10 +341,6 @@ function validateForbidden(entries: unknown, label: string, fail: Fail): void {
 
   for (const entry of entries as Forbidden[]) {
     validateMatch(entry.match, label, fail);
-
-    if (entry.from !== undefined && typeof entry.from !== "string") {
-      fail(`${label} from must be a string`);
-    }
   }
 }
 
