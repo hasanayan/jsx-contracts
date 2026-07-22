@@ -7,6 +7,6 @@ export default defineConfig({
     // `src/**` keeps every suite from running twice against its own compiled
     // twin. Where built output genuinely needs covering, a source test imports
     // it by path (the cross-package agreement tests do exactly that).
-    include: ["packages/*/src/**/*.test.ts"],
+    include: ["packages/*/src/**/*.test.ts", "packages/*/src/**/*.test.tsx"],
   },
 });

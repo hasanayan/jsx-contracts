@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { Slot } from "@jsx-contracts/eslint-plugin";
+import type { Slot } from "@jsx-contracts/core";
 
 import { prop } from "./conditions.js";
 import { defineContracts } from "./define-contracts.js";

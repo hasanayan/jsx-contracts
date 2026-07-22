@@ -15,7 +15,7 @@
     "test:watch": "pnpm run build && vitest",
     "release": "node scripts/release.ts",
     "publish": "pnpm -r publish --access public",
-    "standcastle": "npx tsx .sandcastle/main.ts"
+    "sandcastle": "npx tsx .sandcastle/main.ts"
   },
   "devDependencies": {
     "@ai-hero/sandcastle": "0.12.0",

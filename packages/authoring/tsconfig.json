@@ -6,5 +6,5 @@
     "tsBuildInfoFile": "build/.tsbuildinfo"
   },
   "include": ["src"],
-  "references": [{ "path": "../eslint-plugin" }]
+  "references": [{ "path": "../core" }, { "path": "../eslint-plugin" }]
 }

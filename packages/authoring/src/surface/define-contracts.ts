@@ -20,7 +20,7 @@ import type {
   SlotsRow,
   SubtreeBranch,
   SubtreeRow,
-} from "@jsx-contracts/eslint-plugin";
+} from "@jsx-contracts/core";
 
 import type { Condition } from "./conditions.js";
 

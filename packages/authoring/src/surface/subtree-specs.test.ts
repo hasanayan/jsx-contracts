@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { ContractRow, Facet } from "@jsx-contracts/eslint-plugin";
+import type { ContractRow, Facet } from "@jsx-contracts/core";
 
 import { prop } from "./conditions.js";
 import { defineContracts } from "./define-contracts.js";

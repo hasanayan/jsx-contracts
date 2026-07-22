@@ -1,14 +1,11 @@
-import type {
-  Literal,
-  NormalizedCondition,
-} from "../pinned/condition-semantics.js";
-import { matchesWhileAbsent } from "../pinned/condition-semantics.js";
+import type { ConditionValue, NormalizedWhen } from "@jsx-contracts/core";
+import { matchesWhileAbsent } from "@jsx-contracts/core";
 
-function conditionKey(when: NormalizedCondition): string {
+function conditionKey(when: NormalizedWhen): string {
   return JSON.stringify(when);
 }
 
-function disjoint(left: Literal[], right: Literal[]): boolean {
+function disjoint(left: ConditionValue[], right: ConditionValue[]): boolean {
   return !left.some((value) => right.includes(value));
 }
 
@@ -16,10 +13,7 @@ function disjoint(left: Literal[], right: Literal[]): boolean {
  * The negation arm: `a` and `not(b)` are exclusive exactly when `a` implies `b`.
  * Incomplete on purpose — an undecided pair reads as "no".
  */
-function implies(
-  premise: NormalizedCondition,
-  conclusion: NormalizedCondition,
-): boolean {
+function implies(premise: NormalizedWhen, conclusion: NormalizedWhen): boolean {
   if (conditionKey(premise) === conditionKey(conclusion)) {
     return true;
   }
@@ -63,10 +57,7 @@ function implies(
   return premise.values?.every((value) => wider.includes(value)) === true;
 }
 
-function exclusive(
-  left: NormalizedCondition,
-  right: NormalizedCondition,
-): boolean {
+function exclusive(left: NormalizedWhen, right: NormalizedWhen): boolean {
   if ("not" in left) {
     return implies(right, left.not);
   }
@@ -102,8 +93,8 @@ function exclusive(
 
 /** A when-less row is always active, so it is exclusive with nothing. */
 export type Exclusivity = (
-  left: NormalizedCondition | undefined,
-  right: NormalizedCondition | undefined,
+  left: NormalizedWhen | undefined,
+  right: NormalizedWhen | undefined,
 ) => boolean;
 
 /** Keyed by content, never object identity, so a pair is decided once. */

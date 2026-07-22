@@ -3,8 +3,9 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { When } from "@jsx-contracts/core";
+
 import type { PropFact } from "../rendered-tree/rendered-tree.js";
-import type { When } from "../rule-table/rows.js";
 
 import type { ConditionSubject } from "./when-condition-pool.js";
 import { createConditionPool } from "./when-condition-pool.js";

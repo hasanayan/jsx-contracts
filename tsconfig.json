@@ -2,7 +2,8 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "composite": false,
-    "noEmit": true
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
   "include": [
     "eslint.config.ts",
@@ -14,8 +15,10 @@
   "exclude": [".sandcastle/worktrees/**/*"],
   "references": [
     { "path": "packages/bench" },
+    { "path": "packages/core" },
     { "path": "packages/eslint-plugin" },
     { "path": "packages/authoring" },
+    { "path": "packages/storybook" },
     { "path": "packages/playground" }
   ]
 }

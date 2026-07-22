@@ -1,0 +1,35 @@
+{
+  "name": "@jsx-contracts/core",
+  "version": "0.0.14",
+  "type": "module",
+  "license": "MIT",
+  "description": "The shared contract-format kernel for JSX composition contracts — the row schema, its JSON schema, the runtime validator and the condition prose the @jsx-contracts/eslint-plugin enforces and @jsx-contracts/authoring compiles to.",
+  "keywords": [
+    "jsx",
+    "contracts",
+    "composition",
+    "slots",
+    "design-system",
+    "eslint"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hasanayan/jsx-contracts.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/hasanayan/jsx-contracts#readme",
+  "bugs": "https://github.com/hasanayan/jsx-contracts/issues",
+  "exports": {
+    ".": "./build/index.js"
+  },
+  "files": [
+    "build/**/*.js",
+    "build/**/*.js.map",
+    "build/**/*.d.ts",
+    "build/**/*.d.ts.map"
+  ],
+  "sideEffects": false,
+  "devDependencies": {
+    "vitest": "4.1.9"
+  }
+}

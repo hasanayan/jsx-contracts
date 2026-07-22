@@ -2,10 +2,11 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { SlotsRow } from "@jsx-contracts/core";
+
 import type { RenderedNode } from "../rendered-tree/rendered-tree.js";
 
 import { evaluateClosure, prepareClosure } from "./closure.js";
-import type { SlotsRow } from "./rows.js";
 
 function child(name: string): RenderedNode {
   return {

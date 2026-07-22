@@ -7,6 +7,7 @@
     "bench": "tsc --build ../eslint-plugin && tsx src/main.ts"
   },
   "dependencies": {
+    "@jsx-contracts/core": "workspace:*",
     "@jsx-contracts/eslint-plugin": "workspace:*",
     "@typescript-eslint/parser": "8.62.1",
     "eslint": "9.39.4"

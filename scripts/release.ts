@@ -6,10 +6,11 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { publishedManifestPaths } from "./published-packages.ts";
+
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
-const manifestPaths = ["packages/eslint-plugin", "packages/authoring"].map(
-  (dir) => resolve(root, dir, "package.json"),
-);
+
+const manifestPaths = publishedManifestPaths();
 
 const bump = process.argv[2];
 if (bump !== "major" && bump !== "minor" && bump !== "patch") {

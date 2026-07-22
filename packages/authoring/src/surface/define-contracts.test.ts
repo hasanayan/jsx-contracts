@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { SlotsRow } from "@jsx-contracts/eslint-plugin";
+import type { SlotsRow } from "@jsx-contracts/core";
 
 import { defineContracts } from "./define-contracts.js";
 import { mergeContracts } from "./merge-contracts.js";

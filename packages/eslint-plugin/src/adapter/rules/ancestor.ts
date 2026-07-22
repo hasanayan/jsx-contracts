@@ -6,21 +6,21 @@
 import type { JSONSchema, TSESTree } from "@typescript-eslint/utils";
 import { ESLintUtils } from "@typescript-eslint/utils";
 
+import type { ContractRows, MatchKey } from "@jsx-contracts/core";
+import {
+  contractRowsSchema,
+  displayName,
+  validateContractRows,
+} from "@jsx-contracts/core";
+
 import type {
   AncestorMessageId,
   PreparedAncestor,
-} from "../../contracts/rule-table/ancestor.js";
+} from "../../contracts/facets/ancestor.js";
 import {
   evaluateAncestor,
   prepareAncestor,
-} from "../../contracts/rule-table/ancestor.js";
-import { contractRowsSchema } from "../../contracts/rule-table/rows-schema.js";
-import type {
-  ContractRows,
-  MatchKey,
-} from "../../contracts/rule-table/rows.js";
-import { displayName } from "../../contracts/rule-table/rows.js";
-import { validateContractRows } from "../../contracts/rule-table/validate-rows.js";
+} from "../../contracts/facets/ancestor.js";
 import { tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
 

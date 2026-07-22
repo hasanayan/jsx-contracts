@@ -3,12 +3,13 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { Slot, SlotsRow } from "@jsx-contracts/core";
+
 import type { Branch, RenderedNode } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
 
 import type { BoundsMessageId } from "./bounds.js";
 import { evaluateBounds, prepareBounds } from "./bounds.js";
-import type { Slot, SlotsRow } from "./rows.js";
 
 function child(name: string, branches: Branch[] = []): RenderedNode {
   return {

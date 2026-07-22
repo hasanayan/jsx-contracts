@@ -294,6 +294,44 @@ exclusive, `c` and `not(c)` are, and `allOf`/`anyOf` distribute over those.
 Anything undecidable counts as co-satisfiable, so the check may miss a conflict
 but never invents one.
 
+## Describing a contract as documentation
+
+The same compiled rows the linter enforces render as documentation, so docs
+cannot drift from enforcement. `describeContract(rows)` returns a
+`ContractDescription` — a public, semver-stable data tree — and `toSentences`
+renders it in a declarative voice ("exactly one", not the comparative "expects
+exactly 1, found 3" a violation carries):
+
+```ts
+import {
+  defineContracts,
+  describeContract,
+  toSentences,
+} from "@jsx-contracts/authoring";
+
+const cardRules = defineContracts(({ contract }) => {
+  contract("Card.Heading", "@acme/ds").slots({
+    ".Text": (s) => s.exactly(1),
+    ".Icon": true,
+  });
+});
+
+const description = describeContract(cardRules.rows);
+console.log(toSentences(description).join("\n"));
+// <Card.Heading> is closed: only its declared children may appear.
+// <Card.Heading> accepts exactly one <Card.Heading.Text>.
+// <Card.Heading> accepts <Card.Heading.Icon>.
+```
+
+The base section lists every slot with its bounds, `requires`/`excludes`
+relationships (symmetry folded in), and closure. Identity appears only as
+precomputed display strings (`"Card.Heading.Text"`) — never authoring aliases,
+never raw match keys — so a renderer built on the IR survives the identity-key
+change of ADR 0004 untouched. Sections that do not apply are simply absent:
+a contract with no branches or no props map describes minimally. The IR and
+`toSentences` are the public deliverable; any renderer (Storybook, an MDX
+generator, an IDE hover) consumes the same data.
+
 ## Colocating contracts with components
 
 A component's contract can live next to the component in its own `defineContracts`

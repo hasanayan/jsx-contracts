@@ -126,10 +126,16 @@ members)` — the public coordinate, produced by shipped contracts
   or remove it."
 - **Description IR** (ADR 0006) — `describeContract(rows) → ContractDescription`:
   a public data tree in authoring, derived from compiled rows, that renderers
-  (the `@jsx-contracts/storybook` doc block, prose helpers) consume. Base
-  section plus branches as deltas; identity appears only as display strings.
-  Display-name and condition-to-prose rendering is one shared layer, used by
-  both lint messages and the IR's prose helper.
+  (the `@jsx-contracts/storybook` doc block, prose helpers) consume. Rows are
+  grouped by subject identity, so every facet a contract declares folds into one
+  entry: a **base** section — children (slots, closure, `strictAnalysis`), prop
+  rules, `requiresAnyOf`, descendants, subtree bans, `notInside`, `deprecated` —
+  plus **branches as deltas**, one per `when`. A single authored `when` the
+  compiler split across facet rows is reunited into one delta, keyed by its
+  condition. A facet the contract does not use is simply absent, never an empty
+  placeholder. Identity appears only as display strings; prop names stay author
+  strings. Display-name and condition-to-prose rendering is one shared layer,
+  used by both lint messages and the IR's prose helper.
 - **Unsatisfiability check** — `findUnsatisfiable`, the authoring side's
   build-time pass: reports branches that can hold at once and disagree — one
   extends what another forbids, two override one slot differently, a required
@@ -175,13 +181,13 @@ members)` — the public coordinate, produced by shipped contracts
   reportable. `not()` under a spread is inactive only when the spread's type
   actually allows the negated prop — per-prop precision, not a blanket rule.
   The base children map is unconditional, so it stays checked regardless.
-- **Facet registry** — the core's one facet-specific seam: per facet, its
+- **Facet registry** — the engine's one facet-specific seam: per facet, its
   prepare, combine and evaluate functions. Everything above it — grouping,
   activation, dispatch — is generic over rows.
 
 ## Analysis model (implementation)
 
-- **Rendered tree** — pure data the adapter collects, the core evaluates
+- **Rendered tree** — pure data the adapter collects, the engine evaluates
   against. Each node: dotted tag name, branch tags, import provenance, prop
   facts, children (body vs. JSX-through-props, distinguished). Its vocabulary
   is one module, `contracts/rendered-tree/rendered-tree.ts`: the per-facet
@@ -202,8 +208,19 @@ members)` — the public coordinate, produced by shipped contracts
 
 ## Architecture
 
-Two published packages, split by side of the contract:
+Four published packages:
 
+- **Format** (`packages/core`, `@jsx-contracts/core`) — the contract format,
+  owned by neither consumer. It holds the row types, their JSON schema, the
+  runtime validator, the condition-to-English prose (`renderCondition`), the
+  canonical condition form (`normalizeWhen`) and the prop-absence rule
+  (`matchesWhileAbsent`) both consumers share (ADR 0002), the match-key readers
+  (`displayName`, `matchKeyId`) and the shared string helpers (`formatList`,
+  `countWord`) — the single source of truth for what a contract is; the row's
+  three encodings are pinned to agree by a shared fixture corpus.
+  Zero runtime dependencies, so both the plugin (which enforces the format) and
+  authoring (which compiles to it) depend on it with no import cycle.
+  Vitest-tested.
 - **Authoring** (`packages/authoring`, `@jsx-contracts/authoring`) — the
   type-safe DSL, owner of consumer-facing type safety. `authoring/` is the
   DSL: the collector, the `contract` builder with its children/props/
@@ -211,25 +228,33 @@ Two published packages, split by side of the contract:
   type-level names checked against the bound module. `compile/` turns
   contracts into the rule table — shorthand expansion, when-conjunction,
   facet fan-out, the frozen result and its `rules()`. `check/` is the
-  unsatisfiability check and the syntactic exclusivity it decides pairs with.
-  `pinned/` holds the ADR-0002 mirrors, each beside the agreement test that
-  pins it to the core's copy. `integration/` drives a real linter.
-  `index.ts` is the public seam. Zero runtime dependencies. Vitest-tested.
-- **Core** (`packages/eslint-plugin/src/contracts/`) — pure, laid out by
-  subject. `rendered-tree/` holds the facts the adapter owes it and the
-  semantics read off them. `rule-table/` holds the row types, JSON schema,
-  runtime validator and shorthand normalizers — the single source of truth
-  for what the plugin accepts; the row's three encodings are pinned to agree
-  by a shared fixture corpus. `match.ts` is the single answer to "is this rule
-  about this element" — name plus the key's import gate; every facet asks it
-  rather than comparing names itself. `activation/` holds the gate matcher and the
-  when-condition pool (conditions interned by content, evaluated once per
-  element). `facets/` holds one module per facet — prepare, combine,
-  evaluate — plus the slots facet's placement pass. At the top:
-  `facet-registry.ts` (groups, activates, dispatches), `violation.ts`,
-  `message-text.ts`. No ESLint imports in shipped code. Vitest-tested.
+  unsatisfiability check and the syntactic exclusivity it decides pairs with,
+  both reasoning over the format's own `normalizeWhen` and `matchesWhileAbsent`
+  (ADR 0002). `integration/` drives a real linter.
+  `index.ts` is the public seam, which re-exports the format's `renderCondition`.
+  Depends only on `@jsx-contracts/core` at runtime. Vitest-tested.
+- **Storybook** (`packages/storybook`, `@jsx-contracts/storybook`) — the
+  `ContractDocs` doc block (ADR 0006). One thin React component with explicit
+  `rules` and `component` props: it runs `describeContract` and renders the
+  named contract's base section and branch deltas as documentation sections and
+  tables, phrasing conditions through the shared prose layer. Consumes only
+  authoring's public IR and prose — nothing deeper — so a plain React component
+  drops into an MDX or CSF story with no addon, resolver or configuration
+  surface. Peer deps on React and Storybook only, so Storybook's release cadence
+  never drives authoring releases. Vitest-tested (jsdom, testing-library).
+- **Engine** (`packages/eslint-plugin/src/contracts/`) — pure, laid out by
+  subject. It evaluates a rendered tree against the format's rows and emits
+  violations. `rendered-tree/` holds the facts the adapter owes it and the
+  semantics read off them. `facets/` holds one module per facet — `props`,
+  `subtree`, `ancestor`, `bounds`, `closure`, `effective-vocabulary`,
+  `strict-analysis` — the per-facet semantics over the format's rows.
+  `activation/` holds the gate matcher and the when-condition pool (conditions
+  interned by content, evaluated once per element). At the top: `match.ts`, the
+  single answer to "is this rule about this element" — name plus the key's
+  import gate, every facet asks it rather than comparing names itself — and
+  `violation.ts`. No ESLint imports in shipped code. Vitest-tested.
 - **Adapter** (`packages/eslint-plugin/src/adapter/`) — ESLint side: collects
-  the tree via scope analysis, feeds the core, reports. `rules/` holds
+  the tree via scope analysis, feeds the engine, reports. `rules/` holds
   nothing but the rule definitions, one file per facet; `facet-rule.ts` is
   the shared pipeline and `element-facts.ts` the adapter's side of the
   rendered-tree seam, lazy thunks over a per-node cache. `collect/` holds the

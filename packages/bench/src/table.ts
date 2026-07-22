@@ -1,4 +1,4 @@
-import type { ContractRows, MatchKey } from "@jsx-contracts/eslint-plugin";
+import type { ContractRows, MatchKey } from "@jsx-contracts/core";
 
 /** The module the fixture imports its contracted components from. */
 export const GATE = "@acme/ds";

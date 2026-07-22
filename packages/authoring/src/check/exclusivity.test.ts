@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeCondition } from "../pinned/condition-semantics.js";
+import { normalizeWhen } from "@jsx-contracts/core";
+
 import type { Condition } from "../surface/conditions.js";
 import { allOf, anyOf, not, prop } from "../surface/conditions.js";
 
@@ -9,7 +10,7 @@ import { createExclusivity } from "./exclusivity.js";
 // Conditions are values, so a test reads as the pair the check meets: two
 // condition trees, and whether the check believes they can hold at once.
 const exclusive = (a: Condition, b: Condition): boolean =>
-  createExclusivity()(normalizeCondition(a.when), normalizeCondition(b.when));
+  createExclusivity()(normalizeWhen(a.when), normalizeWhen(b.when));
 
 describe("syntactic exclusivity", () => {
   it("calls two value tests on one prop with disjoint values exclusive", () => {

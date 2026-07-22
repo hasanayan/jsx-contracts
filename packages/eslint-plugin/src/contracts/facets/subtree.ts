@@ -4,7 +4,10 @@
  * the row and an activeness predicate — which branches hold is the rule's call.
  */
 
-import { countWord } from "../message-text.js";
+import type { Forbidden, MatchKey, SubtreeRow } from "@jsx-contracts/core";
+import { countWord, displayName, renderCondition } from "@jsx-contracts/core";
+
+import { matchesElement } from "../match.js";
 import type { CountBounds } from "../rendered-tree/count-bounds.js";
 import {
   checkCountBounds,
@@ -17,11 +20,6 @@ import type {
   SubtreeNode,
 } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
-
-import { renderCondition } from "./condition-prose.js";
-import { matchesElement } from "./match.js";
-import type { Forbidden, MatchKey, SubtreeRow } from "./rows.js";
-import { displayName } from "./rows.js";
 
 export type SubtreeMessageId =
   | "forbiddenDescendant"

@@ -6,22 +6,22 @@
 import type { JSONSchema, TSESTree } from "@typescript-eslint/utils";
 import { ESLintUtils } from "@typescript-eslint/utils";
 
+import type { ContractRows, MatchKey } from "@jsx-contracts/core";
+import {
+  contractRowsSchema,
+  displayName,
+  validateContractRows,
+} from "@jsx-contracts/core";
+
 import { createConditionPool } from "../../contracts/activation/when-condition-pool.js";
-import { contractRowsSchema } from "../../contracts/rule-table/rows-schema.js";
-import type {
-  ContractRows,
-  MatchKey,
-} from "../../contracts/rule-table/rows.js";
-import { displayName } from "../../contracts/rule-table/rows.js";
 import type {
   PreparedSubtree,
   SubtreeMessageId,
-} from "../../contracts/rule-table/subtree.js";
+} from "../../contracts/facets/subtree.js";
 import {
   evaluateSubtree,
   prepareSubtree,
-} from "../../contracts/rule-table/subtree.js";
-import { validateContractRows } from "../../contracts/rule-table/validate-rows.js";
+} from "../../contracts/facets/subtree.js";
 import { tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
 

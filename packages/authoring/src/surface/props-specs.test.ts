@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { PropsRow } from "@jsx-contracts/eslint-plugin";
+import type { PropsRow } from "@jsx-contracts/core";
 
 import { prop } from "./conditions.js";
 import type { PropsMap } from "./define-contracts.js";

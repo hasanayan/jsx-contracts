@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import type { MatchKey } from "@jsx-contracts/core";
+
 import { gateAllows, matchesElement } from "./match.js";
-import type { MatchKey } from "./rows.js";
 
 const gated: MatchKey = {
   kind: "name",

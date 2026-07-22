@@ -1,33 +1,8 @@
+import type { ConditionValue, NormalizedWhen, When } from "@jsx-contracts/core";
+import { normalizeWhen } from "@jsx-contracts/core";
+
 import { memoized } from "../../memoized.js";
 import type { PropFact, Ref } from "../rendered-tree/rendered-tree.js";
-import type { ConditionValue, When } from "../rule-table/rows.js";
-
-/** Keys in a fixed order, so two conditions that mean the same thing hash alike. */
-export type NormalizedWhen =
-  | { prop: string; values?: ConditionValue[] }
-  | { all: NormalizedWhen[] }
-  | { any: NormalizedWhen[] }
-  | { not: NormalizedWhen };
-
-// Exported for the cross-package pin only, and not through the "." barrel, so
-// it stays private to consumers (see docs/adr/0002-*).
-export function normalizeWhen(when: When): NormalizedWhen {
-  if ("all" in when) {
-    return { all: when.all.map(normalizeWhen) };
-  }
-
-  if ("any" in when) {
-    return { any: when.any.map(normalizeWhen) };
-  }
-
-  if ("not" in when) {
-    return { not: normalizeWhen(when.not) };
-  }
-
-  return when.values === undefined
-    ? { prop: when.prop }
-    : { prop: when.prop, values: [...when.values] };
-}
 
 // A member expression or identifier matches by its dotted source text.
 function propMatchesValues(prop: PropFact, values: ConditionValue[]): boolean {

@@ -3,8 +3,9 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { SlotsRow } from "@jsx-contracts/core";
+
 import { computeEffectiveVocabulary } from "./effective-vocabulary.js";
-import type { SlotsRow } from "./rows.js";
 
 const base: SlotsRow = {
   facet: "slots",

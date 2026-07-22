@@ -4,13 +4,11 @@
  * predicate — which branches hold is the rule's call.
  */
 
-import { formatList } from "../message-text.js";
+import type { PropDeprecation, PropSpec, PropsRow } from "@jsx-contracts/core";
+import { displayName, formatList, renderCondition } from "@jsx-contracts/core";
+
 import type { PropFact, Ref } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
-
-import { renderCondition } from "./condition-prose.js";
-import type { PropDeprecation, PropSpec, PropsRow } from "./rows.js";
-import { displayName } from "./rows.js";
 
 export type PropsMessageId =
   | "requiredProp"
