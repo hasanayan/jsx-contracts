@@ -1,0 +1,49 @@
+{
+  "name": "@jsx-contracts/storybook",
+  "version": "0.0.14",
+  "type": "module",
+  "license": "MIT",
+  "description": "The ContractDocs Storybook doc block for JSX composition contracts — renders the @jsx-contracts/authoring description IR as documentation sections and tables inside a Storybook story.",
+  "keywords": [
+    "jsx",
+    "react",
+    "storybook",
+    "composition",
+    "contracts",
+    "slots",
+    "design-system",
+    "documentation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hasanayan/jsx-contracts.git",
+    "directory": "packages/storybook"
+  },
+  "homepage": "https://github.com/hasanayan/jsx-contracts#readme",
+  "bugs": "https://github.com/hasanayan/jsx-contracts/issues",
+  "exports": {
+    ".": "./build/index.js"
+  },
+  "files": [
+    "build/**/*.js",
+    "build/**/*.js.map",
+    "build/**/*.d.ts",
+    "build/**/*.d.ts.map"
+  ],
+  "sideEffects": false,
+  "peerDependencies": {
+    "react": ">=18",
+    "storybook": ">=8"
+  },
+  "dependencies": {
+    "@jsx-contracts/authoring": "workspace:*"
+  },
+  "devDependencies": {
+    "@testing-library/react": "16.3.0",
+    "@types/react": "19.2.2",
+    "jsdom": "27.0.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "vitest": "4.1.9"
+  }
+}

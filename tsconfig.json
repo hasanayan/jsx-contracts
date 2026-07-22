@@ -18,6 +18,7 @@
     { "path": "packages/core" },
     { "path": "packages/eslint-plugin" },
     { "path": "packages/authoring" },
+    { "path": "packages/storybook" },
     { "path": "packages/playground" }
   ]
 }

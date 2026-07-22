@@ -208,7 +208,7 @@ members)` — the public coordinate, produced by shipped contracts
 
 ## Architecture
 
-Three published packages:
+Four published packages:
 
 - **Format** (`packages/core`, `@jsx-contracts/core`) — the contract format,
   owned by neither consumer. It holds the row types, their JSON schema, the
@@ -231,6 +231,15 @@ Three published packages:
   pins it to the format's copy. `integration/` drives a real linter.
   `index.ts` is the public seam, which re-exports the format's `renderCondition`.
   Depends only on `@jsx-contracts/core` at runtime. Vitest-tested.
+- **Storybook** (`packages/storybook`, `@jsx-contracts/storybook`) — the
+  `ContractDocs` doc block (ADR 0006). One thin React component with explicit
+  `rules` and `component` props: it runs `describeContract` and renders the
+  named contract's base section and branch deltas as documentation sections and
+  tables, phrasing conditions through the shared prose layer. Consumes only
+  authoring's public IR and prose — nothing deeper — so a plain React component
+  drops into an MDX or CSF story with no addon, resolver or configuration
+  surface. Peer deps on React and Storybook only, so Storybook's release cadence
+  never drives authoring releases. Vitest-tested (jsdom, testing-library).
 - **Core** (`packages/eslint-plugin/src/contracts/`) — pure, laid out by
   subject. `rendered-tree/` holds the facts the adapter owes it and the
   semantics read off them. `rule-table/` holds the shorthand normalizers and the

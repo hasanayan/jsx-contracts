@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": [
+      "es2024",
+      "dom",
+      "dom.iterable",
+      "ESNext.Array",
+      "ESNext.Collection",
+      "ESNext.Error",
+      "ESNext.Iterator",
+      "ESNext.Promise"
+    ],
+    "outDir": "build",
+    "rootDir": "src",
+    "tsBuildInfoFile": "build/.tsbuildinfo",
+    "types": ["node", "react"]
+  },
+  "include": ["src"],
+  "references": [{ "path": "../authoring" }]
+}
