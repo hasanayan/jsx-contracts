@@ -164,6 +164,25 @@ describe("mergeContracts", () => {
     ]);
   });
 
+  it("keeps every facet of a multi-facet contract", () => {
+    const merged = mergeContracts(
+      defineContracts(({ contract }) => {
+        contract("Card", CARD_FROM)
+          .slots({ ".Heading": true })
+          .forbidDescendants("button");
+      }),
+      defineContracts(({ contract }) => {
+        contract("Menu", CARD_FROM).slots({ ".Item": true });
+      }),
+    );
+
+    expect(merged.rows.map((row) => [row.match.name, row.facet])).toEqual([
+      ["Card", "slots"],
+      ["Card", "subtree"],
+      ["Menu", "slots"],
+    ]);
+  });
+
   it("throws on a cross-file duplicate component", () => {
     expect(() =>
       mergeContracts(

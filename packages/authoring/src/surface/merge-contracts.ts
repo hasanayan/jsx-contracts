@@ -12,9 +12,7 @@ export function mergeContracts(...sets: RuleSet[]): RuleSet {
   const rows: ContractRows = [];
 
   for (const set of sets) {
-    for (const row of set.rows) {
-      const name = row.match.name;
-
+    for (const name of new Set(set.rows.map((row) => row.match.name))) {
       if (seen.has(name)) {
         throw new Error(
           `mergeContracts: duplicate contract for "${name}" — one component, ` +
@@ -23,8 +21,9 @@ export function mergeContracts(...sets: RuleSet[]): RuleSet {
       }
 
       seen.add(name);
-      rows.push(row);
     }
+
+    rows.push(...set.rows);
   }
 
   return makeRuleSet(rows);

@@ -1,3 +1,4 @@
 node_modules
 packages/*/build
 pnpm-lock.yaml
+.sandcastle/worktrees
