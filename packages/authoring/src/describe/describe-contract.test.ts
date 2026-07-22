@@ -5,7 +5,15 @@
 import { describe, expect, it } from "vitest";
 
 import type { ContractDescription } from "../index.js";
-import { defineContracts, describeContract, toSentences } from "../index.js";
+import {
+  allOf,
+  anyOf,
+  defineContracts,
+  describeContract,
+  not,
+  prop,
+  toSentences,
+} from "../index.js";
 
 const FROM = "~/components/Card.tsx";
 
@@ -112,6 +120,56 @@ describe("describeContract base section", () => {
   });
 });
 
+describe("describeContract branch deltas", () => {
+  it("carries one delta per branch: condition AST, deltas, because at full fidelity", () => {
+    const [entry] = describeOf(({ contract }) => {
+      contract("Card", FROM)
+        .slots({ ".Body": true, ".Footer": true })
+        .when(prop("onClick").isPresent(), (c) => c.forbidSlot(".Footer"), {
+          because: "A clickable card has no footer.",
+        })
+        .when(prop("variant").is("rich"), (c) =>
+          c.extend({ ".Media": true }).requireSlot(".Body"),
+        );
+    }).contracts;
+
+    expect(entry?.branches).toEqual([
+      {
+        when: { prop: "onClick" },
+        because: "A clickable card has no footer.",
+        forbids: ["Card.Footer"],
+      },
+      {
+        when: { prop: "variant", values: ["rich"] },
+        extend: [{ name: "Card.Media" }],
+        requires: ["Card.Body"],
+      },
+    ]);
+  });
+
+  it("resolves forbid/require aliases to display names and describes extend slots", () => {
+    const [entry] = describeOf(({ contract }) => {
+      contract("Card", FROM)
+        .slots({ ".Body": true })
+        .when(prop("variant").is("rich"), (c) =>
+          c.extend({ ".Media": (s) => s.max(1) }),
+        );
+    }).contracts;
+
+    expect(entry?.branches?.[0]?.extend).toEqual([
+      { name: "Card.Media", bounds: { kind: "atMost", count: 1 } },
+    ]);
+  });
+
+  it("carries no branches array when the contract has none", () => {
+    const [entry] = describeOf(({ contract }) => {
+      contract("Card.Heading", FROM).slots({ ".Text": true });
+    }).contracts;
+
+    expect(entry).not.toHaveProperty("branches");
+  });
+});
+
 describe("toSentences", () => {
   it("renders a base contract as declarative sentences", () => {
     const description = describeOf(({ contract }) => {
@@ -144,6 +202,47 @@ describe("toSentences", () => {
       "<Card.Heading> accepts <Card.Heading.Text> — requires <Card.Heading.Icon>.",
       "<Card.Heading> accepts <Card.Heading.Icon> — excludes <Card.Heading.Avatar>.",
       "<Card.Heading> accepts <Card.Heading.Avatar> — excludes <Card.Heading.Icon>.",
+    ]);
+  });
+
+  it("renders branch deltas declaratively with the shared condition prose", () => {
+    const description = describeOf(({ contract }) => {
+      contract("Card", FROM)
+        .slots({ ".Body": true, ".Footer": true })
+        .when(prop("onClick").isPresent(), (c) => c.forbidSlot(".Footer"), {
+          because: "A clickable card has no footer.",
+        })
+        .when(prop("variant").is("rich"), (c) =>
+          c.extend({ ".Media": (s) => s.max(1) }).requireSlot(".Body"),
+        );
+    });
+
+    expect(toSentences(description)).toEqual([
+      "<Card> is closed: only its declared children may appear.",
+      "<Card> accepts <Card.Body>.",
+      "<Card> accepts <Card.Footer>.",
+      "When `Card` has `onClick`: forbids <Card.Footer> (A clickable card has no footer.).",
+      "When `Card`'s `variant` is `rich`: requires <Card.Body>; also accepts at most one <Card.Media>.",
+    ]);
+  });
+
+  it("phrases nested allOf/anyOf/not conditions through the shared renderer", () => {
+    const description = describeOf(({ contract }) => {
+      contract("Card", FROM)
+        .slots({ ".Footer": true })
+        .when(
+          allOf(
+            anyOf(prop("to").isPresent(), prop("onClick").isPresent()),
+            not(prop("variant").is("plain")),
+          ),
+          (c) => c.forbidSlot(".Footer"),
+        );
+    });
+
+    expect(toSentences(description)).toEqual([
+      "<Card> is closed: only its declared children may appear.",
+      "<Card> accepts <Card.Footer>.",
+      "When `Card` has `to` or `Card` has `onClick` and `Card`'s `variant` is not `plain`: forbids <Card.Footer>.",
     ]);
   });
 });

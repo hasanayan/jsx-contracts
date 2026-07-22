@@ -8,7 +8,15 @@
  * never a row match key — so ADR 0004's key change is invisible to every
  * consumer. Fields evolve additively: sections a contract does not use are
  * absent, never empty placeholders.
+ *
+ * Conditions are the one exception to the display-string rule: a branch carries
+ * the raw `When` AST (`@jsx-contracts/core`), never a pre-rendered string, so the
+ * prose helper and the plugin both phrase it through the same shared renderer.
+ * The AST names props, never row match keys, so ADR 0004's identity change stays
+ * invisible here too.
  */
+
+import type { When } from "@jsx-contracts/core";
 
 /** The whole rule set as data: one entry per described contract. */
 export interface ContractDescription {
@@ -23,6 +31,34 @@ export interface DescribedContract {
    * children facet — an inapplicable section is simply missing.
    */
   base?: BaseSection;
+  /**
+   * One delta per `when` branch, in declaration order. Branches are independent
+   * facts, never flattened into effective-vocabulary combinations — a consumer
+   * that wants the combined view derives it. Absent when the contract has no
+   * branches.
+   */
+  branches?: DescribedBranch[];
+}
+
+/**
+ * A single `when` branch as the delta it was authored as: its condition, what it
+ * changes while active, and the author's `because`. The effective vocabulary
+ * under this condition is a consumer's fold of base and delta, never stored here.
+ */
+export interface DescribedBranch {
+  /**
+   * The condition AST, phrased to English by the prose helper (or the plugin)
+   * through `@jsx-contracts/core`'s shared renderer — never a stored string.
+   */
+  when: When;
+  /** The author's `because`, verbatim; absent when unauthored. */
+  because?: string;
+  /** Slots this branch adds or re-specs while active; absent when none. */
+  extend?: DescribedSlot[];
+  /** Display names of slots this branch forbids while active; absent when none. */
+  forbids?: string[];
+  /** Display names of slots this branch requires while active; absent when none. */
+  requires?: string[];
 }
 
 export interface BaseSection {

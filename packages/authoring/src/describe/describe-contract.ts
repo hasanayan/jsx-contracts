@@ -9,12 +9,18 @@
  * the same names.
  */
 
-import type { ContractRows, Slot, SlotsRow } from "@jsx-contracts/core";
+import type {
+  ContractRows,
+  Slot,
+  SlotBranch,
+  SlotsRow,
+} from "@jsx-contracts/core";
 import { displayName } from "@jsx-contracts/core";
 
 import type {
   BaseSection,
   ContractDescription,
+  DescribedBranch,
   DescribedContract,
   DescribedSlot,
   SlotBounds,
@@ -104,30 +110,38 @@ function excludesByName(
   return new Map([...sets].map(([name, set]) => [name, [...set]]));
 }
 
-function describeBase(row: SlotsRow): BaseSection {
-  const byAlias = new Map(
-    row.slots.map((slot) => [slot.alias, displayName(slot.match)]),
-  );
+/**
+ * The name/bounds/requires shared by base slots and branch-extend slots.
+ * `excludes` is added by the caller: at base level it is the folded symmetric
+ * clique, inside a branch it is the delta's own per-member references.
+ */
+function describeSlot(slot: Slot, byAlias: Map<string, string>): DescribedSlot {
+  const described: DescribedSlot = { name: displayName(slot.match) };
 
+  const bounds = boundsOf(slot);
+
+  if (bounds !== undefined) {
+    described.bounds = bounds;
+  }
+
+  const requires = resolveRefs(slot.requires ?? [], byAlias);
+
+  if (requires.length > 0) {
+    described.requires = requires;
+  }
+
+  return described;
+}
+
+function describeBase(
+  row: SlotsRow,
+  byAlias: Map<string, string>,
+): BaseSection {
   const excludes = excludesByName(row, byAlias);
 
   const slots = row.slots.map((slot): DescribedSlot => {
-    const name = displayName(slot.match);
-    const described: DescribedSlot = { name };
-
-    const bounds = boundsOf(slot);
-
-    if (bounds !== undefined) {
-      described.bounds = bounds;
-    }
-
-    const requires = resolveRefs(slot.requires ?? [], byAlias);
-
-    if (requires.length > 0) {
-      described.requires = requires;
-    }
-
-    const excluded = excludes.get(name) ?? [];
+    const described = describeSlot(slot, byAlias);
+    const excluded = excludes.get(described.name) ?? [];
 
     if (excluded.length > 0) {
       described.excludes = excluded;
@@ -140,10 +154,60 @@ function describeBase(row: SlotsRow): BaseSection {
 }
 
 /**
+ * A branch as its delta: condition AST, the slots it forbids/requires/extends
+ * (aliases resolved to display names), and `because` verbatim. An extend entry
+ * can name a new alias, so its own vocabulary widens the alias map before its
+ * forbid/require references resolve.
+ */
+function describeBranch(
+  branch: SlotBranch,
+  byAlias: Map<string, string>,
+): DescribedBranch {
+  const aliases = new Map(byAlias);
+
+  for (const slot of branch.extend ?? []) {
+    aliases.set(slot.alias, displayName(slot.match));
+  }
+
+  const described: DescribedBranch = { when: branch.when };
+
+  if (branch.because !== undefined) {
+    described.because = branch.because;
+  }
+
+  if (branch.extend !== undefined && branch.extend.length > 0) {
+    described.extend = branch.extend.map((slot): DescribedSlot => {
+      const extended = describeSlot(slot, aliases);
+      const excluded = resolveRefs(slot.excludes ?? [], aliases);
+
+      if (excluded.length > 0) {
+        extended.excludes = excluded;
+      }
+
+      return extended;
+    });
+  }
+
+  const forbids = resolveRefs(branch.forbidSlots ?? [], aliases);
+
+  if (forbids.length > 0) {
+    described.forbids = forbids;
+  }
+
+  const requires = resolveRefs(branch.requireSlots ?? [], aliases);
+
+  if (requires.length > 0) {
+    described.requires = requires;
+  }
+
+  return described;
+}
+
+/**
  * Groups rows by subject and describes each. Only the children facet feeds the
- * base section today; other facets and branches join it additively as later
- * ADR 0006 tickets land, so a subject with no children facet contributes no
- * entry yet rather than an empty one.
+ * base section and its branch deltas today; other facets join additively as
+ * later ADR 0006 tickets land, so a subject with no children facet contributes
+ * no entry yet rather than an empty one.
  */
 export function describeContract(rows: ContractRows): ContractDescription {
   const contracts: DescribedContract[] = [];
@@ -153,10 +217,22 @@ export function describeContract(rows: ContractRows): ContractDescription {
       continue;
     }
 
-    contracts.push({
+    const byAlias = new Map(
+      row.slots.map((slot) => [slot.alias, displayName(slot.match)]),
+    );
+
+    const contract: DescribedContract = {
       subject: displayName(row.match),
-      base: describeBase(row),
-    });
+      base: describeBase(row, byAlias),
+    };
+
+    if (row.branches !== undefined && row.branches.length > 0) {
+      contract.branches = row.branches.map((branch) =>
+        describeBranch(branch, byAlias),
+      );
+    }
+
+    contracts.push(contract);
   }
 
   return { contracts };

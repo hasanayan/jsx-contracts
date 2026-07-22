@@ -10,6 +10,7 @@ export { describeContract } from "./describe-contract.js";
 export type {
   BaseSection,
   ContractDescription,
+  DescribedBranch,
   DescribedContract,
   DescribedSlot,
   SlotBounds,

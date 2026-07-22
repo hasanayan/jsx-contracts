@@ -9,10 +9,11 @@
  * format layer ADR 0006 folds into both this helper and the plugin's messages.
  */
 
-import { countWord, formatList } from "@jsx-contracts/core";
+import { countWord, formatList, renderCondition } from "@jsx-contracts/core";
 
 import type {
   ContractDescription,
+  DescribedBranch,
   DescribedContract,
   DescribedSlot,
   SlotBounds,
@@ -43,7 +44,8 @@ function quantifier(bounds: SlotBounds | undefined): string {
   }
 }
 
-function slotSentence(subject: string, slot: DescribedSlot): string {
+/** "at most one <Card.Media> — requires <…>", the quantified slot with its qualifiers. */
+function slotClause(slot: DescribedSlot): string {
   const qualifiers: string[] = [];
 
   if (slot.requires !== undefined) {
@@ -56,7 +58,38 @@ function slotSentence(subject: string, slot: DescribedSlot): string {
 
   const tail = qualifiers.length > 0 ? ` — ${qualifiers.join("; ")}` : "";
 
-  return `${tag(subject)} accepts ${quantifier(slot.bounds)}${tag(slot.name)}${tail}.`;
+  return `${quantifier(slot.bounds)}${tag(slot.name)}${tail}`;
+}
+
+function slotSentence(subject: string, slot: DescribedSlot): string {
+  return `${tag(subject)} accepts ${slotClause(slot)}.`;
+}
+
+/**
+ * A branch as one declarative sentence. The condition is phrased through the
+ * shared `@jsx-contracts/core` renderer — the same code path the plugin's
+ * violation messages use — so a condition can never read two ways. The delta
+ * clauses stay in the docs' declarative voice.
+ */
+function branchSentence(subject: string, branch: DescribedBranch): string {
+  const clauses: string[] = [];
+
+  if (branch.forbids !== undefined) {
+    clauses.push(`forbids ${formatList(branch.forbids.map(tag))}`);
+  }
+
+  if (branch.requires !== undefined) {
+    clauses.push(`requires ${formatList(branch.requires.map(tag))}`);
+  }
+
+  for (const slot of branch.extend ?? []) {
+    clauses.push(`also accepts ${slotClause(slot)}`);
+  }
+
+  const body = clauses.join("; ");
+  const because = branch.because !== undefined ? ` (${branch.because})` : "";
+
+  return `When ${renderCondition(branch.when, subject)}: ${body}${because}.`;
 }
 
 function contractSentences(contract: DescribedContract): string[] {
@@ -75,6 +108,10 @@ function contractSentences(contract: DescribedContract): string[] {
 
   for (const slot of base.slots) {
     sentences.push(slotSentence(contract.subject, slot));
+  }
+
+  for (const branch of contract.branches ?? []) {
+    sentences.push(branchSentence(contract.subject, branch));
   }
 
   return sentences;
