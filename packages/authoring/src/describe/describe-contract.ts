@@ -18,6 +18,7 @@ import type {
   ContractRow,
   ContractRows,
   Count,
+  Descendant,
   Forbidden,
   PropSpec,
   PropsRow,
@@ -178,6 +179,21 @@ function forbiddenNames(forbidden: Forbidden[]): string[] {
   return forbidden.map((entry) => displayName(entry.match));
 }
 
+/** A required descendant as name plus optional bounds, like a base slot. */
+function describeDescendant(descendant: Descendant): DescribedDescendant {
+  const described: DescribedDescendant = {
+    name: displayName(descendant.match),
+  };
+
+  const bounds = boundsOf(descendant.count);
+
+  if (bounds !== undefined) {
+    described.bounds = bounds;
+  }
+
+  return described;
+}
+
 function describeChildren(
   row: SlotsRow,
   byAlias: Map<string, string>,
@@ -224,16 +240,7 @@ function describeBase(
   }
 
   if (subtree !== undefined && subtree.descendants.length > 0) {
-    base.descendants = subtree.descendants.map((d): DescribedDescendant => {
-      const described: DescribedDescendant = { name: displayName(d.match) };
-      const bounds = boundsOf(d.count);
-
-      if (bounds !== undefined) {
-        described.bounds = bounds;
-      }
-
-      return described;
-    });
+    base.descendants = subtree.descendants.map(describeDescendant);
   }
 
   if (subtree !== undefined && subtree.forbidDescendants.length > 0) {
