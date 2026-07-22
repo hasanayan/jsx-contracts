@@ -5,10 +5,11 @@
  * their JSX tags (`<Card.Heading.Text>`), the display strings the IR already
  * carries.
  *
- * The shared display-name/condition-to-English layer that ADR 0006 folds into
- * both this helper and the plugin's messages arrives with conditions; a base
- * contract needs none of it yet, so the small formatters here stand alone.
+ * The count-word and list formatters come from `@jsx-contracts/core`, the shared
+ * format layer ADR 0006 folds into both this helper and the plugin's messages.
  */
+
+import { countWord, formatList } from "@jsx-contracts/core";
 
 import type {
   ContractDescription,
@@ -16,20 +17,6 @@ import type {
   DescribedSlot,
   SlotBounds,
 } from "./description.js";
-
-/** Spells one as a word; larger counts as digits, matching the plugin's voice. */
-function countWord(count: number): string {
-  return count === 1 ? "one" : String(count);
-}
-
-/** Joins display names as "a, b and c". */
-function formatList(items: string[], conjunction = "and"): string {
-  if (items.length <= 1) {
-    return items.join("");
-  }
-
-  return `${items.slice(0, -1).join(", ")} ${conjunction} ${items.at(-1)}`;
-}
 
 function tag(name: string): string {
   return `<${name}>`;

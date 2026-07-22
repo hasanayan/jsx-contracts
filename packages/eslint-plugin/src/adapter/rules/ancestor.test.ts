@@ -3,7 +3,7 @@
 import { RuleTester } from "@typescript-eslint/rule-tester";
 import { afterAll, describe, it } from "vitest";
 
-import type { ContractRows } from "../../contracts/rule-table/rows.js";
+import type { ContractRows } from "@jsx-contracts/core";
 
 import { ancestorContractRule } from "./ancestor.js";
 

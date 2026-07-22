@@ -4,7 +4,7 @@
  * over by `findUnsatisfiable`.
  */
 
-import type { ConditionValue, When } from "@jsx-contracts/eslint-plugin";
+import type { ConditionValue, When } from "@jsx-contracts/core";
 
 export interface Condition {
   readonly when: When;

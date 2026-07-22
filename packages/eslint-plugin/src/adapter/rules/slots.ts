@@ -6,6 +6,13 @@
 import type { JSONSchema, TSESTree } from "@typescript-eslint/utils";
 import { ESLintUtils } from "@typescript-eslint/utils";
 
+import type { ContractRows, SlotsRow } from "@jsx-contracts/core";
+import {
+  contractRowsSchema,
+  displayName,
+  validateContractRows,
+} from "@jsx-contracts/core";
+
 import { createConditionPool } from "../../contracts/activation/when-condition-pool.js";
 import type {
   BoundsMessageId,
@@ -25,15 +32,8 @@ import {
   prepareClosure,
 } from "../../contracts/rule-table/closure.js";
 import { computeEffectiveVocabulary } from "../../contracts/rule-table/effective-vocabulary.js";
-import { contractRowsSchema } from "../../contracts/rule-table/rows-schema.js";
-import type {
-  ContractRows,
-  SlotsRow,
-} from "../../contracts/rule-table/rows.js";
-import { displayName } from "../../contracts/rule-table/rows.js";
 import type { StrictMessageId } from "../../contracts/rule-table/strict-analysis.js";
 import { evaluateStrictAnalysis } from "../../contracts/rule-table/strict-analysis.js";
-import { validateContractRows } from "../../contracts/rule-table/validate-rows.js";
 import { classifyOpaqueRegion, tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
 

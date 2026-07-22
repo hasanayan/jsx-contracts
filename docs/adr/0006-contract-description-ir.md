@@ -31,9 +31,12 @@ added only when a real consumer demands it.
 
 ## Prose
 
-One shared layer in authoring renders display names and condition ASTs to
-English ("when `to` or `onClick` is set") — used by both lint messages and a
-declarative prose helper over the IR. Where two things must agree, they are
+One shared layer in `@jsx-contracts/core` renders display names and condition
+ASTs to English ("when `to` or `onClick` is set") — `renderCondition`, used by
+both the plugin's lint messages and authoring's declarative prose helper over
+the IR (which re-exports it from its public seam). The layer lives in the format
+package, which both sides already depend on, so there is exactly one code path
+for condition prose and no import cycle. Where two things must agree, they are
 one thing: the same condition never reads two ways across Storybook and the
 editor. Sentence templates stay per-consumer — violations are comparative
 ("expects exactly 1, found 3"), docs are declarative ("exactly 1").
@@ -46,6 +49,6 @@ Storybook): a doc block rendering the IR as sections and tables. Wiring is
 story file; no automatic story-to-contract resolution. Under ADR 0004,
 `<ContractDocs of={Card} />` becomes lookup by identity.
 
-The authoring package stays zero-runtime-deps (ADR 0002): the IR and prose
-helper are pure data-to-data; everything React-flavored lives in the glue
-package.
+The authoring package's only runtime dependency is `@jsx-contracts/core` (ADR
+0002): the IR and prose helper are pure data-to-data; everything React-flavored
+lives in the glue package.

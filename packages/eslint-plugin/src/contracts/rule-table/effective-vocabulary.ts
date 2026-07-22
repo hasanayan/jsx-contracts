@@ -5,10 +5,8 @@
  * wins. Pure over the row and an activeness predicate.
  */
 
-import { renderCondition } from "./condition-prose.js";
-import { matchKeyId } from "./match.js";
-import type { MatchKey, Slot, SlotBranch, SlotsRow } from "./rows.js";
-import { displayName } from "./rows.js";
+import type { MatchKey, Slot, SlotBranch, SlotsRow } from "@jsx-contracts/core";
+import { displayName, matchKeyId, renderCondition } from "@jsx-contracts/core";
 
 interface Exclusion {
   because?: string;

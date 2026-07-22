@@ -9,7 +9,7 @@ import { Linter } from "eslint";
 import tseslint from "typescript-eslint";
 import { describe, expect, it } from "vitest";
 
-import type { When } from "@jsx-contracts/eslint-plugin";
+import type { When } from "@jsx-contracts/core";
 
 // Reached through the plugin's built output, so these internals stay private to
 // consumers (see docs/adr/0002-*).

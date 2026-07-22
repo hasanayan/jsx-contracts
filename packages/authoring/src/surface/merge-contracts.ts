@@ -1,4 +1,4 @@
-import type { ContractRows } from "@jsx-contracts/eslint-plugin";
+import type { ContractRows } from "@jsx-contracts/core";
 
 import type { RuleSet } from "./define-contracts.js";
 import { makeRuleSet } from "./define-contracts.js";

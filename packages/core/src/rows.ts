@@ -3,9 +3,10 @@
  * JSON schema (`rows-schema.ts`) and the runtime validator (`validate-rows.ts`)
  * move together.
  *
- * The match key is one discriminated field and nothing outside row construction
- * reads its insides — consumers ask for {@link displayName} — so ADR 0004's
- * `identity` variant widens the union here and nowhere else.
+ * The match key is one discriminated field and consumers read it only through
+ * the helpers here ({@link displayName}, {@link matchKeyId}) and the plugin's
+ * import gate — so ADR 0004's `identity` variant widens the union here and
+ * nowhere else.
  */
 
 export interface NameMatch {
@@ -25,6 +26,15 @@ export type MatchKey = NameMatch;
 
 export function displayName(match: MatchKey): string {
   return match.name;
+}
+
+/**
+ * Two keys with this id match the same elements. Display names collide across
+ * gates — one `Button` per design system — so anything correlating keys with
+ * each other compares this rather than the name.
+ */
+export function matchKeyId(match: MatchKey): string {
+  return `${match.name} ${match.from ?? ""}`;
 }
 
 /** An omitted end is unconstrained; no `count` at all is 0–∞. */

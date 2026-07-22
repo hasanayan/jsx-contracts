@@ -6,6 +6,13 @@
 import type { JSONSchema, TSESTree } from "@typescript-eslint/utils";
 import { ESLintUtils } from "@typescript-eslint/utils";
 
+import type { ContractRows, MatchKey } from "@jsx-contracts/core";
+import {
+  contractRowsSchema,
+  displayName,
+  validateContractRows,
+} from "@jsx-contracts/core";
+
 import { createConditionPool } from "../../contracts/activation/when-condition-pool.js";
 import type {
   PreparedProps,
@@ -15,13 +22,6 @@ import {
   evaluateProps,
   prepareProps,
 } from "../../contracts/rule-table/props.js";
-import { contractRowsSchema } from "../../contracts/rule-table/rows-schema.js";
-import type {
-  ContractRows,
-  MatchKey,
-} from "../../contracts/rule-table/rows.js";
-import { displayName } from "../../contracts/rule-table/rows.js";
-import { validateContractRows } from "../../contracts/rule-table/validate-rows.js";
 import { tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
 

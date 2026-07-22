@@ -67,6 +67,10 @@ importers:
         version: 4.1.9(@types/node@24.13.2)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/authoring:
+    dependencies:
+      '@jsx-contracts/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@jsx-contracts/eslint-plugin':
         specifier: workspace:*
@@ -86,6 +90,9 @@ importers:
 
   packages/bench:
     dependencies:
+      '@jsx-contracts/core':
+        specifier: workspace:*
+        version: link:../core
       '@jsx-contracts/eslint-plugin':
         specifier: workspace:*
         version: link:../eslint-plugin
@@ -106,8 +113,17 @@ importers:
         specifier: 4.1.9
         version: 4.1.9(@types/node@24.13.2)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/core:
+    devDependencies:
+      vitest:
+        specifier: 4.1.9
+        version: 4.1.9(@types/node@24.13.2)(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/eslint-plugin:
     dependencies:
+      '@jsx-contracts/core':
+        specifier: workspace:*
+        version: link:../core
       '@typescript-eslint/utils':
         specifier: 8.62.1
         version: 8.62.1(eslint@9.39.4(jiti@2.7.0))(typescript@6.0.3)

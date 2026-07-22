@@ -30,19 +30,14 @@
     "build/**/*.d.ts.map"
   ],
   "sideEffects": false,
+  "dependencies": {
+    "@jsx-contracts/core": "workspace:*"
+  },
   "devDependencies": {
     "@jsx-contracts/eslint-plugin": "workspace:*",
     "@typescript-eslint/utils": "8.62.1",
     "eslint": "9.39.4",
     "typescript-eslint": "8.62.1",
     "vitest": "4.1.9"
-  },
-  "peerDependencies": {
-    "@jsx-contracts/eslint-plugin": ">=0.0.9"
-  },
-  "peerDependenciesMeta": {
-    "@jsx-contracts/eslint-plugin": {
-      "optional": true
-    }
   }
 }

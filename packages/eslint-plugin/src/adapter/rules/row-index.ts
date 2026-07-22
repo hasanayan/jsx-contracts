@@ -4,8 +4,9 @@
  * own import satisfies.
  */
 
+import type { MatchKey } from "@jsx-contracts/core";
+
 import { gateAllows } from "../../contracts/rule-table/match.js";
-import type { MatchKey } from "../../contracts/rule-table/rows.js";
 
 export function push<T>(index: Map<string, T[]>, name: string, value: T): void {
   const existing = index.get(name);

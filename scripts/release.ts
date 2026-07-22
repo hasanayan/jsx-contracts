@@ -2,14 +2,29 @@
 // Bumps the published packages in lockstep, commits, and tags vX.Y.Z. Does not
 // push; the push command is printed at the end.
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
-const manifestPaths = ["packages/eslint-plugin", "packages/authoring"].map(
-  (dir) => resolve(root, dir, "package.json"),
-);
+
+// The published set is every non-private workspace package, the way
+// `pnpm -r publish` discovers it — a new package is picked up automatically.
+const publishedManifestPaths = (): string[] => {
+  const packagesDir = resolve(root, "packages");
+  return readdirSync(packagesDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => resolve(packagesDir, entry.name, "package.json"))
+    .filter((path) => {
+      const { private: isPrivate } = JSON.parse(readFileSync(path, "utf8")) as {
+        private?: boolean;
+      };
+      return isPrivate !== true;
+    })
+    .sort();
+};
+
+const manifestPaths = publishedManifestPaths();
 
 const bump = process.argv[2];
 if (bump !== "major" && bump !== "minor" && bump !== "patch") {

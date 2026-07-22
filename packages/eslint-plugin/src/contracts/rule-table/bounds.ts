@@ -4,7 +4,9 @@
  * the same element twice.
  */
 
-import { countWord, formatList } from "../message-text.js";
+import type { MatchKey, SlotsRow } from "@jsx-contracts/core";
+import { countWord, displayName, formatList } from "@jsx-contracts/core";
+
 import { canCoexist } from "../rendered-tree/coexistence.js";
 import type { CountBounds } from "../rendered-tree/count-bounds.js";
 import {
@@ -15,8 +17,6 @@ import type { RenderedNode } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
 
 import { matchesElement } from "./match.js";
-import type { MatchKey, SlotsRow } from "./rows.js";
-import { displayName } from "./rows.js";
 
 export type BoundsMessageId =
   "tooMany" | "tooFew" | "requiresSlot" | "exclusiveSlots";

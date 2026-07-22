@@ -4,17 +4,13 @@
  * rather than builder objects is what keeps documentation from drifting away
  * from enforcement.
  *
- * The authoring package stays zero-runtime-dependencies (ADR 0002): the plugin's
- * `MatchKey` shape is imported type-only and `displayName` is restated here, the
- * same way `define-contracts` restates the closure rule ids.
+ * The format lives in `@jsx-contracts/core`: the `MatchKey` shape and its
+ * `displayName` reader come from there, so documentation and enforcement read
+ * the same names.
  */
 
-import type {
-  ContractRows,
-  MatchKey,
-  Slot,
-  SlotsRow,
-} from "@jsx-contracts/eslint-plugin";
+import type { ContractRows, Slot, SlotsRow } from "@jsx-contracts/core";
+import { displayName } from "@jsx-contracts/core";
 
 import type {
   BaseSection,
@@ -23,15 +19,6 @@ import type {
   DescribedSlot,
   SlotBounds,
 } from "./description.js";
-
-/**
- * Restates the plugin's `displayName` (type-only pin, ADR 0002). Only the IR and
- * ADR 0004's key change touch a match key's insides; every renderer sees the
- * string this produces.
- */
-function displayName(match: MatchKey): string {
-  return match.name;
-}
 
 function boundsOf(slot: Slot): SlotBounds | undefined {
   const { count } = slot;

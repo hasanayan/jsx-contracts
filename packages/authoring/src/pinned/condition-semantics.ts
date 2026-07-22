@@ -1,4 +1,4 @@
-import type { ConditionValue, When } from "@jsx-contracts/eslint-plugin";
+import type { ConditionValue, When } from "@jsx-contracts/core";
 
 export type Literal = ConditionValue;
 

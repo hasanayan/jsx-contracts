@@ -3,6 +3,9 @@
  * one that is not prompts the author rather than scolding them.
  */
 
+import type { MatchKey, SlotsRow } from "@jsx-contracts/core";
+import { displayName } from "@jsx-contracts/core";
+
 import type { RenderedNode } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
 
@@ -11,8 +14,6 @@ import type {
   GatedByName,
 } from "./effective-vocabulary.js";
 import { matchesElement } from "./match.js";
-import type { MatchKey, SlotsRow } from "./rows.js";
-import { displayName } from "./rows.js";
 
 /**
  * `forbiddenSlot` and `conditionalClosure` are the branch-aware forms: a slot an

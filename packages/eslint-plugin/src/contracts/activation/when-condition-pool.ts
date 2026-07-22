@@ -1,6 +1,7 @@
+import type { ConditionValue, When } from "@jsx-contracts/core";
+
 import { memoized } from "../../memoized.js";
 import type { PropFact, Ref } from "../rendered-tree/rendered-tree.js";
-import type { ConditionValue, When } from "../rule-table/rows.js";
 
 /** Keys in a fixed order, so two conditions that mean the same thing hash alike. */
 export type NormalizedWhen =

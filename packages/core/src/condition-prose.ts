@@ -5,8 +5,7 @@
  * `subject` is named in every clause so the reader sees which element it reads.
  */
 
-import { formatList } from "../message-text.js";
-
+import { formatList } from "./message-text.js";
 import type { When } from "./rows.js";
 
 interface PropTest {

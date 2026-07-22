@@ -9,13 +9,8 @@
  * may miss a conflict but never invents one.
  */
 
-import type {
-  MatchKey,
-  Slot,
-  SlotBranch,
-  SlotsRow,
-  When,
-} from "@jsx-contracts/eslint-plugin";
+import type { Slot, SlotBranch, SlotsRow, When } from "@jsx-contracts/core";
+import { displayName } from "@jsx-contracts/core";
 
 import type { Exclusivity } from "../check/exclusivity.js";
 import { createExclusivity } from "../check/exclusivity.js";
@@ -57,11 +52,6 @@ export interface Conflict {
 export interface UnsatisfiableOptions {
   /** Ids to accept as deliberate, so an intended exception is not a permanent warning. */
   allow?: readonly string[];
-}
-
-// Restated rather than imported: `authoring` stays type-only over the plugin.
-function displayName(match: MatchKey): string {
-  return match.name;
 }
 
 function literal(value: string | number | boolean): string {

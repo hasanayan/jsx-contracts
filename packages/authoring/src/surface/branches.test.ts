@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { SlotBranch } from "@jsx-contracts/eslint-plugin";
+import type { SlotBranch } from "@jsx-contracts/core";
 
 import { allOf, prop } from "./conditions.js";
 import { defineContracts } from "./define-contracts.js";
