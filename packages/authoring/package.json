@@ -1,6 +1,6 @@
 {
   "name": "@jsx-contracts/authoring",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "type": "module",
   "license": "MIT",
   "description": "Type-safe authoring API for JSX composition contracts — defineContracts and the schema-shaped contract() surface that compiles to the rule table the @jsx-contracts/eslint-plugin rules consume.",

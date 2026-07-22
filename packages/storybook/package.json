@@ -1,6 +1,6 @@
 {
   "name": "@jsx-contracts/storybook",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "type": "module",
   "license": "MIT",
   "description": "The ContractDocs Storybook doc block for JSX composition contracts — renders the @jsx-contracts/authoring description IR as documentation sections and tables inside a Storybook story.",

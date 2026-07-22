@@ -1,6 +1,6 @@
 {
   "name": "@jsx-contracts/core",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "type": "module",
   "license": "MIT",
   "description": "The shared contract-format kernel for JSX composition contracts — the row schema, its JSON schema, the runtime validator and the condition prose the @jsx-contracts/eslint-plugin enforces and @jsx-contracts/authoring compiles to.",
