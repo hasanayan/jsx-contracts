@@ -299,9 +299,11 @@ function BranchView({
     );
   }
 
+  const condition = renderCondition(branch.when, subject);
+
   return (
-    <section aria-label={`When ${renderCondition(branch.when, subject)}`}>
-      <h5>When {renderCondition(branch.when, subject)}</h5>
+    <section aria-label={`When ${condition}`}>
+      <h5>When {condition}</h5>
       {branch.because !== undefined && <p>{branch.because}</p>}
       <ul>
         {clauses.map((clause) => (
