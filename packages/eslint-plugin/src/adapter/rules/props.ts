@@ -17,11 +17,8 @@ import { createConditionPool } from "../../contracts/activation/when-condition-p
 import type {
   PreparedProps,
   PropsMessageId,
-} from "../../contracts/rule-table/props.js";
-import {
-  evaluateProps,
-  prepareProps,
-} from "../../contracts/rule-table/props.js";
+} from "../../contracts/facets/props.js";
+import { evaluateProps, prepareProps } from "../../contracts/facets/props.js";
 import { tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
 

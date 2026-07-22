@@ -181,13 +181,13 @@ members)` — the public coordinate, produced by shipped contracts
   reportable. `not()` under a spread is inactive only when the spread's type
   actually allows the negated prop — per-prop precision, not a blanket rule.
   The base children map is unconditional, so it stays checked regardless.
-- **Facet registry** — the core's one facet-specific seam: per facet, its
+- **Facet registry** — the engine's one facet-specific seam: per facet, its
   prepare, combine and evaluate functions. Everything above it — grouping,
   activation, dispatch — is generic over rows.
 
 ## Analysis model (implementation)
 
-- **Rendered tree** — pure data the adapter collects, the core evaluates
+- **Rendered tree** — pure data the adapter collects, the engine evaluates
   against. Each node: dotted tag name, branch tags, import provenance, prop
   facts, children (body vs. JSX-through-props, distinguished). Its vocabulary
   is one module, `contracts/rendered-tree/rendered-tree.ts`: the per-facet
@@ -242,19 +242,19 @@ Four published packages:
   drops into an MDX or CSF story with no addon, resolver or configuration
   surface. Peer deps on React and Storybook only, so Storybook's release cadence
   never drives authoring releases. Vitest-tested (jsdom, testing-library).
-- **Core** (`packages/eslint-plugin/src/contracts/`) — pure, laid out by
-  subject. `rendered-tree/` holds the facts the adapter owes it and the
-  semantics read off them. `rule-table/` holds the shorthand normalizers and the
-  per-facet semantics over the format's rows. `match.ts` is the single answer to
-  "is this rule about this element" — name plus the key's import gate; every
-  facet asks it rather than comparing names itself. `activation/` holds the gate matcher and the
-  when-condition pool (conditions interned by content, evaluated once per
-  element). `facets/` holds one module per facet — prepare, combine,
-  evaluate — plus the slots facet's placement pass. At the top:
-  `facet-registry.ts` (groups, activates, dispatches) and `violation.ts`. No
-  ESLint imports in shipped code. Vitest-tested.
+- **Engine** (`packages/eslint-plugin/src/contracts/`) — pure, laid out by
+  subject. It evaluates a rendered tree against the format's rows and emits
+  violations. `rendered-tree/` holds the facts the adapter owes it and the
+  semantics read off them. `facets/` holds one module per facet — `props`,
+  `subtree`, `ancestor`, `bounds`, `closure`, `effective-vocabulary`,
+  `strict-analysis` — the per-facet semantics over the format's rows.
+  `activation/` holds the gate matcher and the when-condition pool (conditions
+  interned by content, evaluated once per element). At the top: `match.ts`, the
+  single answer to "is this rule about this element" — name plus the key's
+  import gate, every facet asks it rather than comparing names itself — and
+  `violation.ts`. No ESLint imports in shipped code. Vitest-tested.
 - **Adapter** (`packages/eslint-plugin/src/adapter/`) — ESLint side: collects
-  the tree via scope analysis, feeds the core, reports. `rules/` holds
+  the tree via scope analysis, feeds the engine, reports. `rules/` holds
   nothing but the rule definitions, one file per facet; `facet-rule.ts` is
   the shared pipeline and `element-facts.ts` the adapter's side of the
   rendered-tree seam, lazy thunks over a per-node cache. `collect/` holds the

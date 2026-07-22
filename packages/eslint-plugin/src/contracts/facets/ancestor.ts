@@ -7,10 +7,9 @@
 import type { AncestorRow, MatchKey } from "@jsx-contracts/core";
 import { displayName } from "@jsx-contracts/core";
 
+import { matchesElement } from "../match.js";
 import type { AncestorFact, Ref } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
-
-import { matchesElement } from "./match.js";
 
 export type AncestorMessageId = "forbiddenAncestor" | "deprecatedComponent";
 

@@ -17,11 +17,11 @@ import { createConditionPool } from "../../contracts/activation/when-condition-p
 import type {
   PreparedSubtree,
   SubtreeMessageId,
-} from "../../contracts/rule-table/subtree.js";
+} from "../../contracts/facets/subtree.js";
 import {
   evaluateSubtree,
   prepareSubtree,
-} from "../../contracts/rule-table/subtree.js";
+} from "../../contracts/facets/subtree.js";
 import { tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
 

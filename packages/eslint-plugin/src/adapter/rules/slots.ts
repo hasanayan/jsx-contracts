@@ -17,23 +17,23 @@ import { createConditionPool } from "../../contracts/activation/when-condition-p
 import type {
   BoundsMessageId,
   PreparedBounds,
-} from "../../contracts/rule-table/bounds.js";
+} from "../../contracts/facets/bounds.js";
 import {
   evaluateBounds,
   prepareBounds,
-} from "../../contracts/rule-table/bounds.js";
+} from "../../contracts/facets/bounds.js";
 import type {
   ClosureMessageId,
   PreparedClosure,
-} from "../../contracts/rule-table/closure.js";
+} from "../../contracts/facets/closure.js";
 import {
   closureOf,
   evaluateClosure,
   prepareClosure,
-} from "../../contracts/rule-table/closure.js";
-import { computeEffectiveVocabulary } from "../../contracts/rule-table/effective-vocabulary.js";
-import type { StrictMessageId } from "../../contracts/rule-table/strict-analysis.js";
-import { evaluateStrictAnalysis } from "../../contracts/rule-table/strict-analysis.js";
+} from "../../contracts/facets/closure.js";
+import { computeEffectiveVocabulary } from "../../contracts/facets/effective-vocabulary.js";
+import type { StrictMessageId } from "../../contracts/facets/strict-analysis.js";
+import { evaluateStrictAnalysis } from "../../contracts/facets/strict-analysis.js";
 import { classifyOpaqueRegion, tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
 

@@ -7,6 +7,7 @@
 import type { Forbidden, MatchKey, SubtreeRow } from "@jsx-contracts/core";
 import { countWord, displayName, renderCondition } from "@jsx-contracts/core";
 
+import { matchesElement } from "../match.js";
 import type { CountBounds } from "../rendered-tree/count-bounds.js";
 import {
   checkCountBounds,
@@ -19,8 +20,6 @@ import type {
   SubtreeNode,
 } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
-
-import { matchesElement } from "./match.js";
 
 export type SubtreeMessageId =
   | "forbiddenDescendant"

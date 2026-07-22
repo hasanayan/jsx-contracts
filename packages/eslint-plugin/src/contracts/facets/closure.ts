@@ -6,6 +6,7 @@
 import type { MatchKey, SlotsRow } from "@jsx-contracts/core";
 import { displayName } from "@jsx-contracts/core";
 
+import { matchesElement } from "../match.js";
 import type { RenderedNode } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
 
@@ -13,7 +14,6 @@ import type {
   EffectiveVocabulary,
   GatedByName,
 } from "./effective-vocabulary.js";
-import { matchesElement } from "./match.js";
 
 /**
  * `forbiddenSlot` and `conditionalClosure` are the branch-aware forms: a slot an

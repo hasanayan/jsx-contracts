@@ -6,8 +6,8 @@
 
 import type { MatchKey } from "@jsx-contracts/core";
 
-import type { ImportMatcher } from "../activation/import-gate.js";
-import { createImportMatcher } from "../activation/import-gate.js";
+import type { ImportMatcher } from "./activation/import-gate.js";
+import { createImportMatcher } from "./activation/import-gate.js";
 
 /** All matching reads of an element: what it is called and where it came from. */
 export interface ElementIdentity {

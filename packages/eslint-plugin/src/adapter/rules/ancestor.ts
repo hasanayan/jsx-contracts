@@ -16,11 +16,11 @@ import {
 import type {
   AncestorMessageId,
   PreparedAncestor,
-} from "../../contracts/rule-table/ancestor.js";
+} from "../../contracts/facets/ancestor.js";
 import {
   evaluateAncestor,
   prepareAncestor,
-} from "../../contracts/rule-table/ancestor.js";
+} from "../../contracts/facets/ancestor.js";
 import { tagName } from "../collect/index.js";
 import { elementFacts } from "../element-facts.js";
 

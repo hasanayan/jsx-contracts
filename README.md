@@ -88,7 +88,7 @@ as co-rendering. Full detail, with examples and the exact diagnostics, is in the
 
 A pnpm workspace with two published packages.
 
-`packages/eslint-plugin` enforces: a framework-agnostic core (`src/contracts/`)
+`packages/eslint-plugin` enforces: a framework-agnostic engine (`src/contracts/`)
 that evaluates contracts over a pure rendered-tree model, plus the ESLint adapter
 (`src/adapter/`) that collects that model from the AST. The plugin owns both
 halves of its own input contract — the rule table's TypeScript shapes, and the

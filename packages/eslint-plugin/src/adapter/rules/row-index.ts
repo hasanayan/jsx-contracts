@@ -6,7 +6,7 @@
 
 import type { MatchKey } from "@jsx-contracts/core";
 
-import { gateAllows } from "../../contracts/rule-table/match.js";
+import { gateAllows } from "../../contracts/match.js";
 
 export function push<T>(index: Map<string, T[]>, name: string, value: T): void {
   const existing = index.get(name);

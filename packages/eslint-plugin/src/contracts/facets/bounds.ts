@@ -7,6 +7,7 @@
 import type { MatchKey, SlotsRow } from "@jsx-contracts/core";
 import { countWord, displayName, formatList } from "@jsx-contracts/core";
 
+import { matchesElement } from "../match.js";
 import { canCoexist } from "../rendered-tree/coexistence.js";
 import type { CountBounds } from "../rendered-tree/count-bounds.js";
 import {
@@ -15,8 +16,6 @@ import {
 } from "../rendered-tree/count-bounds.js";
 import type { RenderedNode } from "../rendered-tree/rendered-tree.js";
 import type { Violation } from "../violation.js";
-
-import { matchesElement } from "./match.js";
 
 export type BoundsMessageId =
   "tooMany" | "tooFew" | "requiresSlot" | "exclusiveSlots";
